@@ -178,6 +178,7 @@ export function SectorKlinePanel({ sectorId }: { sectorId: string }) {
       try {
         const res = await fetch(`/api/sector/${sectorId}?days=40`, {
           cache: "no-store",
+          signal: AbortSignal.timeout(20000),
         });
         const data = await res.json();
         if (cancelled) return;
@@ -189,7 +190,14 @@ export function SectorKlinePanel({ sectorId }: { sectorId: string }) {
           setName(data.sectorName || "");
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗");
+        if (cancelled) return;
+        const msg =
+          e instanceof Error && e.name === "TimeoutError"
+            ? "載入逾時，請重整或回首頁觸發背景更新"
+            : e instanceof Error
+              ? e.message
+              : "載入失敗";
+        setError(msg);
       } finally {
         if (!cancelled) setLoading(false);
       }
