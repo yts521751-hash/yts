@@ -94,13 +94,13 @@ export function SectorRanking({
     [period],
   );
 
-  const rows = useMemo(() => {
+  const { rows, totalMatched } = useMemo(() => {
     const list = sectors.filter((s) => {
       if (filter !== "all" && s.status !== filter) return false;
       if (kindFilter !== "all" && (s.kind ?? "theme") !== kindFilter) return false;
       return true;
     });
-    return [...list].sort((a, b) => {
+    const sorted = [...list].sort((a, b) => {
       const primary =
         sortValue(a, sortKey, period) - sortValue(b, sortKey, period);
       if (primary !== 0) return asc ? primary : -primary;
@@ -112,6 +112,7 @@ export function SectorRanking({
       const secondary = periodFlow(a, period) - periodFlow(b, period);
       return asc ? secondary : -secondary;
     });
+    return { rows: sorted.slice(0, 20), totalMatched: sorted.length };
   }, [sectors, filter, kindFilter, sortKey, asc, period]);
 
   return (
@@ -146,7 +147,9 @@ export function SectorRanking({
           </p>
         </div>
         <p className="text-[11px] tabular-nums text-muted-foreground">
-          共 {rows.length} 板塊 · 預設成交額→淨流
+          顯示前 {rows.length}
+          {totalMatched > rows.length ? `／共 ${totalMatched}` : ""} 板塊 ·
+          預設成交額→淨流
         </p>
       </div>
 

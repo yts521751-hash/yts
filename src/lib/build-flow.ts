@@ -122,8 +122,7 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
         const pxOld = oldestQ?.close ?? 0;
         const changePct = latestQ?.changePct ?? 0;
 
-        if (dayAmt === 0 && d5 === 0 && d20 === 0 && !pxNow) return null;
-
+        // 概念股名單應完整保留（櫃買報價偶發缺漏時仍顯示種子成分）
         return {
           code,
           name: latestQ?.name || oldestQ?.name || m.name,

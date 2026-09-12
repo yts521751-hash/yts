@@ -114,10 +114,23 @@ export async function resolveActiveUniverse(input: {
   const out: SectorDef[] = [];
   for (const s of [...industry, ...themes, ...auto]) {
     if (seen.has(s.id)) continue;
+    // 若已有人工維護的同概念題材，略過高度重疊的新興自動板塊，避免雙份且成分不一致
+    if (s.kind === "auto" && overlapsCuratedTheme(s, themes)) continue;
     seen.add(s.id);
     out.push({ ...s, kind: s.kind ?? "theme" });
   }
   return out;
+}
+
+/** 與既有題材成分重疊過半 → 視為同概念，保留人工名單 */
+function overlapsCuratedTheme(auto: SectorDef, themes: SectorDef[]): boolean {
+  const autoCodes = new Set(auto.members.map((m) => m.code));
+  if (autoCodes.size === 0) return false;
+  for (const theme of themes) {
+    const hit = theme.members.filter((m) => autoCodes.has(m.code)).length;
+    if (hit / autoCodes.size >= 0.5) return true;
+  }
+  return false;
 }
 
 export function watchCodesFromUniverse(sectors: SectorDef[]): Set<string> {

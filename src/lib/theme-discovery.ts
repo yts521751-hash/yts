@@ -53,15 +53,18 @@ const THEME_LEXICON: {
   {
     id: "auto-cpo",
     name: "矽光子／CPO",
-    keys: ["矽光子", "CPO", "光通訊", "光模組", "矽光"],
+    keys: ["矽光子", "CPO", "光通訊", "光模組", "矽光", "光收發", "雷射二極體"],
     seeds: [
+      { code: "3081", name: "聯亞" },
+      { code: "3450", name: "聯鈞" },
+      { code: "4979", name: "華星光" },
+      { code: "6451", name: "訊芯-KY" },
+      { code: "4991", name: "環宇-KY" },
       { code: "3363", name: "上詮" },
       { code: "4977", name: "眾達-KY" },
-      { code: "6451", name: "訊芯-KY" },
-      { code: "4979", name: "華星光" },
-      { code: "3081", name: "聯亞" },
       { code: "6442", name: "光聖" },
-      { code: "3037", name: "欣興" },
+      { code: "3163", name: "波若威" },
+      { code: "2455", name: "全新" },
     ],
   },
   {
@@ -197,27 +200,17 @@ export async function discoverAutoThemes(input: {
     const hitNews = theme.keys.some((k) => blob.includes(k));
     if (!hitNews) continue;
 
-    // 標題同時含題材字與股名／代號才收錄
-    const fromNews: SectorMember[] = [];
-    for (const s of hot) {
-      const name = s.name.replace(/\s+/g, "");
-      const related = input.newsTitles.some(
-        (t) =>
-          theme.keys.some((k) => t.includes(k)) &&
-          (t.includes(name) || t.includes(s.code)),
-      );
-      if (related) fromNews.push(s);
-    }
-
     const seeded = membersFromSeeds(theme.seeds, hot);
-    // 種子優先（確保各新興板塊成分不同），再併入新聞共現；絕不用全市場同一組熱門股當 fallback
-    const finalMembers = uniqMembers([...seeded, ...fromNews]).slice(0, 12);
+    // 新聞只決定「題材是否亮燈」；成分固定走種子名單（對齊券商概念股分類），
+    // 避免標題共現把無關權值／代工股塞進細分板塊
+    const finalMembers = uniqMembers(seeded).slice(0, 12);
 
     if (finalMembers.length < 3) continue;
     themes.push({
       id: theme.id,
       name: `新興・${theme.name}`,
-      basis: "依熱議新聞題材自動聚合（成分以新聞共現＋題材種子為主）",
+      basis:
+        "題材熱度依新聞關鍵字；成分對齊券商常見概念股種子名單（不因單則新聞共現改寫）",
       kind: "auto",
       members: finalMembers,
     });

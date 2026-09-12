@@ -234,18 +234,20 @@ export const SECTOR_UNIVERSE: SectorDef[] = [
   {
     id: "optical",
     name: "光通訊／矽光子",
-    basis: "光模組、矽光子、光通訊元件與代工",
+    basis:
+      "對齊券商常見「矽光子／CPO／光通訊」概念：雷射／光收發、矽光元件與光模組供應鏈（非泛半導體代工）",
     members: [
+      { code: "3081", name: "聯亞" },
+      { code: "3450", name: "聯鈞" },
+      { code: "4979", name: "華星光" },
+      { code: "6451", name: "訊芯-KY" },
+      { code: "4991", name: "環宇-KY" },
       { code: "3363", name: "上詮" },
       { code: "4977", name: "眾達-KY" },
-      { code: "6451", name: "訊芯-KY" },
-      { code: "4979", name: "華星光" },
-      { code: "3081", name: "聯亞" },
       { code: "6442", name: "光聖" },
-      { code: "3231", name: "緯創" },
-      { code: "3037", name: "欣興" },
-      { code: "3711", name: "日月光投控" },
-      { code: "3661", name: "世芯-KY" },
+      { code: "3163", name: "波若威" },
+      { code: "2455", name: "全新" },
+      { code: "4908", name: "前鼎" },
     ],
   },
   {
