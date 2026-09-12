@@ -191,7 +191,7 @@ export function SectorRanking({
           </p>
         </div>
         <p className="text-[11px] tabular-nums text-muted-foreground">
-          顯示前 {rows.length}
+          顯示前 {rows.length}（上限 {RANK_LIMIT}）
           {totalMatched > rows.length ? `／共 ${totalMatched}` : ""} 板塊 ·
           預設成交額→淨流
         </p>

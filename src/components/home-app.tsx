@@ -23,7 +23,7 @@ type LoadState = "loading" | "ready" | "error";
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("theme");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
