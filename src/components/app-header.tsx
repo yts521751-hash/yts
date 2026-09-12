@@ -45,7 +45,7 @@ export function AppHeader({
                 金潮
               </p>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-                台股板塊金流 · 法人資金流向
+                台股板塊金流 · 成交金額熱度
               </p>
             </div>
           </Link>
@@ -107,7 +107,7 @@ export function AppHeader({
         </div>
       </div>
       <p className="mx-auto max-w-[1400px] px-4 pb-2 text-[11px] text-muted-foreground sm:px-6">
-        更新於 {updatedAt} · 不預測行情、不喊買賣點，只把法人每天的錢攤開給你看
+        更新於 {updatedAt} · 不預測行情、不喊買賣點，只把板塊每天的成交攤開給你看
       </p>
     </header>
   );
