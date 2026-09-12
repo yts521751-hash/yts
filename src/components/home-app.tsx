@@ -123,7 +123,7 @@ export function HomeApp() {
 
   return (
     <div className="relative flex min-h-full flex-1 flex-col">
-      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="pulse-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <AppHeader
         dateLabel={brief?.date ?? "載入中"}
         updatedAt={brief?.updatedAt ?? "—"}
