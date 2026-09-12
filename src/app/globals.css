@@ -194,18 +194,6 @@ html[data-textsize="lg"] {
   }
 }
 
-.bubble-canvas {
-  background:
-    linear-gradient(180deg, color-mix(in oklab, var(--panel) 88%, transparent), color-mix(in oklab, var(--muted) 35%, var(--panel))),
-    repeating-linear-gradient(
-      -12deg,
-      transparent,
-      transparent 18px,
-      color-mix(in oklab, var(--foreground) 2.5%, transparent) 18px,
-      color-mix(in oklab, var(--foreground) 2.5%, transparent) 19px
-    );
-}
-
 .status-card {
   animation: rise-in 0.55s ease both;
 }

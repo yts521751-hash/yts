@@ -19,11 +19,11 @@ export interface StockFlow {
 export interface SectorFlow {
   id: string;
   name: string;
-  /** 近 5 日法人累計買賣超（億元）→ 泡泡 X */
+  /** 近 5 日法人累計買賣超（億元） */
   d5: number;
-  /** 相對近 20 日日均的加速度（億元/日）→ 泡泡 Y */
+  /** 相對近 20 日日均的加速度（億元/日） */
   accel: number;
-  /** 近 20 日累計絕對金額規模（億元）→ 泡泡大小 */
+  /** 近 20 日累計絕對金額規模（億元） */
   d20Abs: number;
   /** 近 20 日累計淨額（億元） */
   d20Net: number;

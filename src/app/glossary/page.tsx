@@ -18,9 +18,9 @@ const TERMS = [
     body: "漲潮＝流入且加速；輪動＝還在流入但放緩；觀望＝流出但放緩；退潮＝加速流出。名字取自潮汐——錢像海水，一波一波在板塊間移動。",
   },
   {
-    id: "bubble",
-    title: "泡泡圖怎麼看？",
-    body: "每顆泡泡＝一個板塊。左右＝近 5 日流入／流出；上下＝比近 20 日平均更偏買／偏賣；大小＝近 20 日金額規模。右上＝流入而且還在加速。",
+    id: "ranking",
+    title: "板塊排行榜怎麼看？",
+    body: "每一列＝一個題材板塊。可依近 5 日買賣超、加速度、近 20 日淨額、規模、漲幅或 CP 值排序。點列可展開成分股當日／近五日法人分項。",
   },
   {
     id: "cp",
@@ -44,7 +44,7 @@ export default function GlossaryPage() {
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          回泡泡圖
+          回排行榜
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
           籌碼名詞白話小百科

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/app-header";
-import { BubbleChart } from "@/components/bubble-chart";
 import { CpRanking } from "@/components/cp-ranking";
 import { FocusPanel } from "@/components/focus-panel";
 import { SectorDetail } from "@/components/sector-detail";
+import { SectorRanking } from "@/components/sector-ranking";
 import { StatusCards } from "@/components/status-cards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -15,8 +15,6 @@ import {
   getTopBuySectors,
 } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
-import { STATUS_META } from "@/lib/types";
-import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
 type LoadState = "loading" | "ready" | "error";
@@ -138,11 +136,10 @@ export function HomeApp() {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
-                板塊輪動泡泡圖
+                板塊排行榜
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                越右＝近 5 日買越多 · 越上＝比近 20 日平均更偏買 · 圈越大＝近 20
-                日金額越大
+                依近 5 日、近 20 日淨額、加速度或 CP 值排序，點列看成分股法人分項
                 {!isDemo && source ? ` · ${source}` : ""}
               </p>
               {scheduleHint ? (
@@ -201,41 +198,12 @@ export function HomeApp() {
           <>
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
               <div className="min-h-[480px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:p-3">
-                <BubbleChart
+                <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
                   onSelect={setSelected}
                   filter={filter}
                 />
-                <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
-                  {sectors
-                    .filter((s) => filter === "all" || s.status === filter)
-                    .slice()
-                    .sort((a, b) => b.d5 - a.d5)
-                    .map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setSelected(s)}
-                        className={cn(
-                          "rounded-lg border px-2 py-1 text-[11px] transition",
-                          selected?.id === s.id
-                            ? "border-transparent font-semibold"
-                            : "border-border/50 text-muted-foreground hover:text-foreground",
-                        )}
-                        style={
-                          selected?.id === s.id
-                            ? {
-                                background: STATUS_META[s.status].bg,
-                                color: STATUS_META[s.status].color,
-                              }
-                            : undefined
-                        }
-                      >
-                        {s.name}
-                      </button>
-                    ))}
-                </div>
               </div>
               <SectorDetail
                 sector={selected}
@@ -255,8 +223,8 @@ export function HomeApp() {
             <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
               <Tabs defaultValue="cp">
                 <TabsList>
-                  <TabsTrigger value="cp">CP 值排行</TabsTrigger>
-                  <TabsTrigger value="how">怎麼看這張圖</TabsTrigger>
+                  <TabsTrigger value="cp">CP 值精選</TabsTrigger>
+                  <TabsTrigger value="how">怎麼看排行榜</TabsTrigger>
                 </TabsList>
                 <TabsContent value="cp" className="mt-4">
                   <CpRanking
@@ -269,6 +237,11 @@ export function HomeApp() {
                   value="how"
                   className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
                 >
+                  <p>
+                    排行榜預設依<strong className="text-foreground">近 5 日</strong>
+                    買賣超排序；也可改依加速度、近 20 日淨額、規模、漲幅或 CP
+                    值。點欄位標題可切換升／降序。
+                  </p>
                   <p>
                     <strong className="text-foreground">漲潮</strong>
                     ＝資金流入且在加速；

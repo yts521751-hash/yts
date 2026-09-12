@@ -17,7 +17,7 @@ export function SectorDetail({ sector, onClose }: Props) {
     return (
       <div className="flex h-full min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-border/70 bg-[var(--panel)]/40 px-6 py-10 text-center">
         <p className="font-[family-name:var(--font-display)] text-lg text-foreground/80">
-          點選泡泡看板塊
+          點選排行榜看板塊
         </p>
         <p className="mt-2 max-w-xs text-sm text-muted-foreground">
           會列出成分股當日法人買賣超，以及外資／投信／自營分項。
