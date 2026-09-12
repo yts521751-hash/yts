@@ -45,7 +45,7 @@ export function AppHeader({
                 金潮
               </p>
               <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-                台股板塊金流 · 成交×漲跌
+                台股板塊金流 · 80%成交×漲跌＋20%法人
               </p>
             </div>
           </Link>
