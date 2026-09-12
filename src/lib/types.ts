@@ -81,7 +81,7 @@ export const STATUS_META: Record<
   { label: string; short: string; hint: string; color: string; bg: string }
 > = {
   surge: {
-    label: "湧入",
+    label: "強勢",
     short: "流入加速",
     hint: "近 5 日淨流入為正，且日均流高於近 20 日——資金加速進場",
     color: "var(--mk-surge)",
@@ -102,9 +102,9 @@ export const STATUS_META: Record<
     bg: "var(--mk-watch-bg)",
   },
   ebb: {
-    label: "撤離",
+    label: "出場",
     short: "流出加速",
-    hint: "淨流出且加速度為負——資金加速撤離",
+    hint: "淨流出且加速度為負——資金加速出場",
     color: "var(--mk-ebb)",
     bg: "var(--mk-ebb-bg)",
   },

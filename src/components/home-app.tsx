@@ -23,7 +23,7 @@ type LoadState = "loading" | "ready" | "error";
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("theme");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
@@ -216,7 +216,7 @@ export function HomeApp() {
         {sectors.length > 0 && (
           <>
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-              <div className="min-h-[320px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:min-h-[480px] sm:p-3">
+              <div className="min-h-[320px] rounded-md border border-border/70 bg-[var(--panel)]/80 p-2 shadow-sm sm:min-h-[480px] sm:p-3">
                 <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
@@ -252,7 +252,7 @@ export function HomeApp() {
               />
             )}
 
-            <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
+            <section className="rounded-md border border-border/70 bg-[var(--panel)]/85 p-4">
               <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
                 CP 值精選
               </h2>

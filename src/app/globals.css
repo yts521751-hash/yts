@@ -49,106 +49,105 @@
 }
 
 :root {
-  /* Ledger daylight — cool paper gray + ink, gold signal (not coastal / cream / purple) */
-  --background: #eef1f4;
-  --foreground: #1a1f27;
-  --card: #f8f9fb;
-  --card-foreground: #1a1f27;
-  --popover: #f8f9fb;
-  --popover-foreground: #1a1f27;
-  --primary: #1f3a5f;
-  --primary-foreground: #f5f7fa;
-  --secondary: #e3e7ee;
-  --secondary-foreground: #1a1f27;
-  --muted: #e6eaf0;
-  --muted-foreground: #5b6573;
-  --accent: #ebe4d4;
-  --accent-foreground: #1a1f27;
-  --destructive: #b42318;
-  --border: #c9d0da;
-  --input: #c9d0da;
-  --ring: #1f3a5f;
-  --radius: 0.55rem;
-  --panel: #f7f8fa;
+  /* Pulse terminal — graphite paper + vermillion signal (not coastal teal / cream ledger) */
+  --background: #ebe9e6;
+  --foreground: #1c1917;
+  --card: #f7f5f2;
+  --card-foreground: #1c1917;
+  --popover: #f7f5f2;
+  --popover-foreground: #1c1917;
+  --primary: #9f1239;
+  --primary-foreground: #fff7f8;
+  --secondary: #e4e0db;
+  --secondary-foreground: #1c1917;
+  --muted: #e8e4df;
+  --muted-foreground: #57534e;
+  --accent: #f0ebe3;
+  --accent-foreground: #1c1917;
+  --destructive: #b91c1c;
+  --border: #d6d0c8;
+  --input: #d6d0c8;
+  --ring: #9f1239;
+  --radius: 0.35rem;
+  --panel: #f4f1ec;
 
-  /* TW market: up red / down green; flow states use ink/gold/slate */
-  --mk-up: #c23b3b;
-  --mk-down: #1b8a6b;
-  --mk-surge: #b42318;
-  --mk-surge-bg: color-mix(in oklab, #b42318 12%, white);
-  --mk-rotate: #a16207;
-  --mk-rotate-bg: color-mix(in oklab, #a16207 12%, white);
-  --mk-watch: #64748b;
-  --mk-watch-bg: color-mix(in oklab, #64748b 12%, white);
+  --mk-up: #b91c1c;
+  --mk-down: #047857;
+  --mk-surge: #9f1239;
+  --mk-surge-bg: color-mix(in oklab, #9f1239 11%, white);
+  --mk-rotate: #c2410c;
+  --mk-rotate-bg: color-mix(in oklab, #c2410c 11%, white);
+  --mk-watch: #57534e;
+  --mk-watch-bg: color-mix(in oklab, #57534e 10%, white);
   --mk-ebb: #0f766e;
-  --mk-ebb-bg: color-mix(in oklab, #0f766e 12%, white);
-  --mk-anchor: #b45309;
-  --mk-anchor-bg: color-mix(in oklab, #b45309 12%, white);
-  --mk-ink: #1a1f27;
+  --mk-ebb-bg: color-mix(in oklab, #0f766e 10%, white);
+  --mk-anchor: #9f1239;
+  --mk-anchor-bg: color-mix(in oklab, #9f1239 11%, white);
+  --mk-ink: #1c1917;
 
-  --chart-1: #b42318;
-  --chart-2: #a16207;
-  --chart-3: #64748b;
-  --chart-4: #0f766e;
-  --chart-5: #1f3a5f;
-  --sidebar: #f8f9fb;
-  --sidebar-foreground: #1a1f27;
-  --sidebar-primary: #1f3a5f;
-  --sidebar-primary-foreground: #f5f7fa;
-  --sidebar-accent: #e3e7ee;
-  --sidebar-accent-foreground: #1a1f27;
-  --sidebar-border: #c9d0da;
-  --sidebar-ring: #1f3a5f;
+  --chart-1: #9f1239;
+  --chart-2: #c2410c;
+  --chart-3: #57534e;
+  --chart-4: #047857;
+  --chart-5: #44403c;
+  --sidebar: #f7f5f2;
+  --sidebar-foreground: #1c1917;
+  --sidebar-primary: #9f1239;
+  --sidebar-primary-foreground: #fff7f8;
+  --sidebar-accent: #e4e0db;
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #d6d0c8;
+  --sidebar-ring: #9f1239;
 }
 
 .dark {
-  --background: #07141c;
-  --foreground: #e6f2f5;
-  --card: #0f1f29;
-  --card-foreground: #e6f2f5;
-  --popover: #0f1f29;
-  --popover-foreground: #e6f2f5;
-  --primary: #d4a017;
-  --primary-foreground: #1a1f27;
-  --secondary: #152833;
-  --secondary-foreground: #e6f2f5;
-  --muted: #152833;
-  --muted-foreground: #8aa3ae;
-  --accent: #17303c;
-  --accent-foreground: #e6f2f5;
-  --destructive: #f07167;
-  --border: rgb(255 255 255 / 10%);
-  --input: rgb(255 255 255 / 14%);
-  --ring: #d4a017;
-  --panel: #0d1c26;
+  --background: #0c0b0a;
+  --foreground: #f5f2eb;
+  --card: #171513;
+  --card-foreground: #f5f2eb;
+  --popover: #171513;
+  --popover-foreground: #f5f2eb;
+  --primary: #fb7185;
+  --primary-foreground: #1c1917;
+  --secondary: #221f1c;
+  --secondary-foreground: #f5f2eb;
+  --muted: #221f1c;
+  --muted-foreground: #a8a29e;
+  --accent: #2a2622;
+  --accent-foreground: #f5f2eb;
+  --destructive: #fb7185;
+  --border: rgb(255 255 255 / 9%);
+  --input: rgb(255 255 255 / 12%);
+  --ring: #fb7185;
+  --panel: #12100e;
 
-  --mk-up: #f07167;
-  --mk-down: #3ecf9a;
-  --mk-surge: #f07167;
-  --mk-surge-bg: color-mix(in oklab, #f07167 18%, #0d1c26);
-  --mk-rotate: #e8b84a;
-  --mk-rotate-bg: color-mix(in oklab, #e8b84a 16%, #0d1c26);
-  --mk-watch: #8aa3ae;
-  --mk-watch-bg: color-mix(in oklab, #8aa3ae 14%, #0d1c26);
-  --mk-ebb: #3ecf9a;
-  --mk-ebb-bg: color-mix(in oklab, #3ecf9a 14%, #0d1c26);
-  --mk-anchor: #d4a017;
-  --mk-anchor-bg: color-mix(in oklab, #d4a017 16%, #0d1c26);
-  --mk-ink: #e6f2f5;
+  --mk-up: #fb7185;
+  --mk-down: #34d399;
+  --mk-surge: #fb7185;
+  --mk-surge-bg: color-mix(in oklab, #fb7185 16%, #12100e);
+  --mk-rotate: #fdba74;
+  --mk-rotate-bg: color-mix(in oklab, #fdba74 14%, #12100e);
+  --mk-watch: #a8a29e;
+  --mk-watch-bg: color-mix(in oklab, #a8a29e 12%, #12100e);
+  --mk-ebb: #34d399;
+  --mk-ebb-bg: color-mix(in oklab, #34d399 12%, #12100e);
+  --mk-anchor: #fb7185;
+  --mk-anchor-bg: color-mix(in oklab, #fb7185 14%, #12100e);
+  --mk-ink: #f5f2eb;
 
-  --chart-1: #f07167;
-  --chart-2: #e8b84a;
-  --chart-3: #8aa3ae;
-  --chart-4: #3ecf9a;
-  --chart-5: #d4a017;
-  --sidebar: #0f1f29;
-  --sidebar-foreground: #e6f2f5;
-  --sidebar-primary: #d4a017;
-  --sidebar-primary-foreground: #1a1f27;
-  --sidebar-accent: #152833;
-  --sidebar-accent-foreground: #e6f2f5;
-  --sidebar-border: rgb(255 255 255 / 10%);
-  --sidebar-ring: #d4a017;
+  --chart-1: #fb7185;
+  --chart-2: #fdba74;
+  --chart-3: #a8a29e;
+  --chart-4: #34d399;
+  --chart-5: #e7e5e4;
+  --sidebar: #171513;
+  --sidebar-foreground: #f5f2eb;
+  --sidebar-primary: #fb7185;
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-accent: #221f1c;
+  --sidebar-accent-foreground: #f5f2eb;
+  --sidebar-border: rgb(255 255 255 / 9%);
+  --sidebar-ring: #fb7185;
 }
 
 @layer base {
@@ -163,7 +162,6 @@
   }
 }
 
-/* Text size modes (elder-friendly) */
 html[data-textsize="sm"] {
   font-size: 16px;
 }
@@ -174,53 +172,81 @@ html[data-textsize="lg"] {
   font-size: 20px;
 }
 
-.ledger-atmosphere {
+/* Pulse atmosphere — diagonal hatch + vermillion wash (not ledger grid / tide drift) */
+.pulse-atmosphere {
   background-color: transparent;
   background-image:
-    linear-gradient(color-mix(in oklab, var(--mk-ink) 4.5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklab, var(--mk-ink) 4.5%, transparent) 1px, transparent 1px),
-    radial-gradient(900px 420px at 0% 0%, color-mix(in oklab, var(--mk-anchor) 10%, transparent), transparent 55%),
-    radial-gradient(700px 380px at 100% 0%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 50%);
-  background-size: 48px 48px, 48px 48px, auto, auto;
-  animation: ledger-drift 22s ease-in-out infinite alternate;
+    repeating-linear-gradient(
+      -18deg,
+      transparent,
+      transparent 11px,
+      color-mix(in oklab, var(--mk-ink) 3.5%, transparent) 11px,
+      color-mix(in oklab, var(--mk-ink) 3.5%, transparent) 12px
+    ),
+    radial-gradient(
+      780px 360px at 8% -10%,
+      color-mix(in oklab, var(--mk-anchor) 14%, transparent),
+      transparent 58%
+    ),
+    linear-gradient(
+      165deg,
+      color-mix(in oklab, var(--foreground) 3%, transparent),
+      transparent 42%
+    );
+  animation: pulse-wash 18s ease-in-out infinite alternate;
 }
 
-@keyframes ledger-drift {
+@keyframes pulse-wash {
   from {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.9;
+    opacity: 0.82;
+    filter: saturate(0.92);
   }
   to {
-    transform: translate3d(0, -12px, 0) scale(1.03);
     opacity: 1;
+    filter: saturate(1.05);
   }
 }
 
 .status-card {
-  animation: rise-in 0.55s ease both;
+  animation: snap-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes rise-in {
+@keyframes snap-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 .logo-mark {
-  animation: logo-pulse 3.6s ease-in-out infinite;
+  animation: mark-glow 4s ease-in-out infinite;
 }
 
-@keyframes logo-pulse {
+@keyframes mark-glow {
   0%,
   100% {
-    transform: translateY(0);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--mk-anchor) 0%, transparent);
   }
   50% {
-    transform: translateY(-2px);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--mk-anchor) 18%, transparent);
+  }
+}
+
+.rank-row-enter {
+  animation: row-fade 0.35s ease both;
+}
+
+@keyframes row-fade {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }

@@ -26,11 +26,11 @@ export function StatusCards({ counts, active, onChange }: Props) {
             type="button"
             onClick={() => onChange(selected ? "all" : key)}
             className={cn(
-              "status-card group relative overflow-hidden rounded-2xl border px-3 py-3 text-left transition-all duration-300",
-              "hover:-translate-y-0.5",
+              "status-card group relative overflow-hidden rounded-md border px-3 py-3 text-left transition-all duration-300",
+              "hover:translate-x-0.5",
               selected
-                ? "border-transparent shadow-md ring-2 ring-[color:var(--ring-color)]"
-                : "border-border/60 bg-[var(--panel)]/70 hover:border-border",
+                ? "border-transparent shadow-sm ring-2 ring-[color:var(--ring-color)]"
+                : "border-border/60 bg-[var(--panel)]/80 hover:border-border",
             )}
             style={
               {

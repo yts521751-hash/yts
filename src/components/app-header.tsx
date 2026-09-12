@@ -30,19 +30,22 @@ export function AppHeader({
   onToggleDark,
 }: Props) {
   return (
-    <header className="relative z-20 border-b border-border/50 bg-[var(--panel)]/90 backdrop-blur-md">
+    <header className="relative z-20 border-b border-border/60 bg-[var(--panel)]/95 backdrop-blur-sm">
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <Link href="/" className="group flex items-center gap-2.5">
-            <span className="logo-mark relative flex size-9 items-center justify-center overflow-hidden rounded-lg">
-              <span className="absolute inset-0 bg-[linear-gradient(135deg,var(--mk-anchor),var(--primary))] opacity-95" />
-              <span className="relative font-[family-name:var(--font-display)] text-lg font-bold text-white">
-                脈
+            <span className="logo-mark relative flex size-9 items-center justify-center overflow-hidden rounded-sm">
+              <span className="absolute inset-0 bg-[var(--mk-anchor)]" />
+              <span className="relative font-[family-name:var(--font-display)] text-sm font-bold tracking-widest text-white">
+                JM
               </span>
             </span>
             <div className="min-w-0">
               <p className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight sm:text-2xl">
                 金脈
+              </p>
+              <p className="text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+                JinMai Pulse
               </p>
             </div>
           </Link>

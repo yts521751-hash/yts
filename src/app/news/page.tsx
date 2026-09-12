@@ -67,7 +67,7 @@ export default function NewsPage() {
 
   return (
     <div className="relative min-h-full flex-1">
-      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="pulse-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link

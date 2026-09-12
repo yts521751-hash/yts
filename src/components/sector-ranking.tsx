@@ -59,6 +59,20 @@ function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
   return s[key];
 }
 
+/** 「全部」時產業大板塊會淹沒題材；採配額制讓矽光子等概念股進前 20 */
+function takeTopMixed(sorted: SectorFlow[], limit = 20): SectorFlow[] {
+  const themes = sorted.filter((s) => (s.kind ?? "theme") !== "industry");
+  const industries = sorted.filter((s) => s.kind === "industry");
+  const picked = new Map<string, SectorFlow>();
+  for (const s of themes.slice(0, 12)) picked.set(s.id, s);
+  for (const s of industries.slice(0, 8)) picked.set(s.id, s);
+  for (const s of sorted) {
+    if (picked.size >= limit) break;
+    picked.set(s.id, s);
+  }
+  return sorted.filter((s) => picked.has(s.id)).slice(0, limit);
+}
+
 export function SectorRanking({
   sectors,
   selectedId,
@@ -112,7 +126,9 @@ export function SectorRanking({
       const secondary = periodFlow(a, period) - periodFlow(b, period);
       return asc ? secondary : -secondary;
     });
-    return { rows: sorted.slice(0, 20), totalMatched: sorted.length };
+    const rows =
+      kindFilter === "all" ? takeTopMixed(sorted, 20) : sorted.slice(0, 20);
+    return { rows, totalMatched: sorted.length };
   }, [sectors, filter, kindFilter, sortKey, asc, period]);
 
   return (

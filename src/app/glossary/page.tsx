@@ -29,8 +29,8 @@ const TERMS = [
   },
   {
     id: "states",
-    title: "湧入／輪動／觀望／撤離",
-    body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。湧入＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；撤離＝流出加速。",
+    title: "強勢／輪動／觀望／出場",
+    body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。強勢＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；出場＝流出加速。",
   },
   {
     id: "kline",
@@ -62,7 +62,7 @@ const TERMS = [
 export default function GlossaryPage() {
   return (
     <div className="relative min-h-full flex-1">
-      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="pulse-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <Link
           href="/"
