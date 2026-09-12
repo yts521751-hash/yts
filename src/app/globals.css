@@ -1,0 +1,236 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../../node_modules/shadcn/dist/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  /* Coastal daylight — soft sea mist, not cream/terracotta or purple */
+  --background: #e7f0f2;
+  --foreground: #0c2430;
+  --card: #f5fafb;
+  --card-foreground: #0c2430;
+  --popover: #f5fafb;
+  --popover-foreground: #0c2430;
+  --primary: #0d6e7a;
+  --primary-foreground: #f4fcfd;
+  --secondary: #d5e6ea;
+  --secondary-foreground: #0c2430;
+  --muted: #dce9ed;
+  --muted-foreground: #4d6874;
+  --accent: #cfe6ea;
+  --accent-foreground: #0c2430;
+  --destructive: #c2410c;
+  --border: #b7cfd6;
+  --input: #b7cfd6;
+  --ring: #0d6e7a;
+  --radius: 0.75rem;
+  --panel: #f4fafb;
+
+  /* TW market convention: up red / down green for price; tide states use ocean hues */
+  --tide-up: #c23b3b;
+  --tide-down: #1b8a6b;
+  --tide-surge: #c44536;
+  --tide-surge-bg: color-mix(in oklab, #c44536 14%, white);
+  --tide-rotate: #c47a1a;
+  --tide-rotate-bg: color-mix(in oklab, #c47a1a 14%, white);
+  --tide-watch: #5b6b78;
+  --tide-watch-bg: color-mix(in oklab, #5b6b78 12%, white);
+  --tide-ebb: #1b8a6b;
+  --tide-ebb-bg: color-mix(in oklab, #1b8a6b 12%, white);
+  --tide-anchor: #0d6e7a;
+  --tide-anchor-bg: color-mix(in oklab, #0d6e7a 12%, white);
+  --tide-ink: #0c2430;
+
+  --chart-1: #c44536;
+  --chart-2: #c47a1a;
+  --chart-3: #5b6b78;
+  --chart-4: #1b8a6b;
+  --chart-5: #0d6e7a;
+  --sidebar: #f5fafb;
+  --sidebar-foreground: #0c2430;
+  --sidebar-primary: #0d6e7a;
+  --sidebar-primary-foreground: #f4fcfd;
+  --sidebar-accent: #d5e6ea;
+  --sidebar-accent-foreground: #0c2430;
+  --sidebar-border: #b7cfd6;
+  --sidebar-ring: #0d6e7a;
+}
+
+.dark {
+  --background: #07141c;
+  --foreground: #e6f2f5;
+  --card: #0f1f29;
+  --card-foreground: #e6f2f5;
+  --popover: #0f1f29;
+  --popover-foreground: #e6f2f5;
+  --primary: #5ec8d4;
+  --primary-foreground: #062028;
+  --secondary: #152833;
+  --secondary-foreground: #e6f2f5;
+  --muted: #152833;
+  --muted-foreground: #8aa3ae;
+  --accent: #17303c;
+  --accent-foreground: #e6f2f5;
+  --destructive: #f07167;
+  --border: rgb(255 255 255 / 10%);
+  --input: rgb(255 255 255 / 14%);
+  --ring: #5ec8d4;
+  --panel: #0d1c26;
+
+  --tide-up: #f07167;
+  --tide-down: #3ecf9a;
+  --tide-surge: #f07167;
+  --tide-surge-bg: color-mix(in oklab, #f07167 18%, #0d1c26);
+  --tide-rotate: #e8b84a;
+  --tide-rotate-bg: color-mix(in oklab, #e8b84a 16%, #0d1c26);
+  --tide-watch: #8aa3ae;
+  --tide-watch-bg: color-mix(in oklab, #8aa3ae 14%, #0d1c26);
+  --tide-ebb: #3ecf9a;
+  --tide-ebb-bg: color-mix(in oklab, #3ecf9a 14%, #0d1c26);
+  --tide-anchor: #5ec8d4;
+  --tide-anchor-bg: color-mix(in oklab, #5ec8d4 16%, #0d1c26);
+  --tide-ink: #e6f2f5;
+
+  --chart-1: #f07167;
+  --chart-2: #e8b84a;
+  --chart-3: #8aa3ae;
+  --chart-4: #3ecf9a;
+  --chart-5: #5ec8d4;
+  --sidebar: #0f1f29;
+  --sidebar-foreground: #e6f2f5;
+  --sidebar-primary: #5ec8d4;
+  --sidebar-primary-foreground: #062028;
+  --sidebar-accent: #152833;
+  --sidebar-accent-foreground: #e6f2f5;
+  --sidebar-border: rgb(255 255 255 / 10%);
+  --sidebar-ring: #5ec8d4;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Text size modes (elder-friendly) */
+html[data-textsize="sm"] {
+  font-size: 16px;
+}
+html[data-textsize="md"] {
+  font-size: 18px;
+}
+html[data-textsize="lg"] {
+  font-size: 20px;
+}
+
+.tide-atmosphere {
+  background:
+    radial-gradient(1200px 500px at 10% -10%, color-mix(in oklab, var(--tide-surge) 16%, transparent), transparent 60%),
+    radial-gradient(900px 420px at 90% 0%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 55%),
+    radial-gradient(700px 380px at 50% 110%, color-mix(in oklab, var(--tide-ebb) 12%, transparent), transparent 50%),
+    linear-gradient(180deg, transparent, color-mix(in oklab, var(--background) 40%, transparent));
+  animation: tide-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes tide-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: translate3d(0, -12px, 0) scale(1.03);
+    opacity: 1;
+  }
+}
+
+.bubble-canvas {
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--panel) 88%, transparent), color-mix(in oklab, var(--muted) 35%, var(--panel))),
+    repeating-linear-gradient(
+      -12deg,
+      transparent,
+      transparent 18px,
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) 18px,
+      color-mix(in oklab, var(--foreground) 2.5%, transparent) 19px
+    );
+}
+
+.status-card {
+  animation: rise-in 0.55s ease both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.logo-mark {
+  animation: logo-pulse 3.6s ease-in-out infinite;
+}
+
+@keyframes logo-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
