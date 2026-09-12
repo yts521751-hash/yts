@@ -11,19 +11,28 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 
 export type StockRankPeriod = "day" | "d5";
 
-type SortKey = "amt" | "flow" | "accel" | "heat" | "changePct";
+type SortKey = "changePct" | "amt" | "flow" | "accel" | "heat";
 
 export type StockFlowRankRow = StockFlow & {
   accel?: number;
   heat?: number;
+  close?: number;
 };
 
 type Props = {
   rows: StockFlowRankRow[];
   limit?: number;
+};
+
+type ColDef = {
+  key: SortKey;
+  label: string;
+  tip: string;
+  hideLg?: boolean;
 };
 
 function periodAmt(s: StockFlowRankRow, period: StockRankPeriod): number {
@@ -53,19 +62,35 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("amt");
   const [asc, setAsc] = useState(false);
 
-  const columns = useMemo(
+  const columns = useMemo<ColDef[]>(
     () => [
       {
-        key: "amt" as const,
-        label: period === "day" ? "成交額" : "5 日成交",
+        key: "changePct",
+        label: "漲跌",
+        tip: COLUMN_TIPS.changePct,
       },
       {
-        key: "flow" as const,
-        label: period === "day" ? "當日淨流" : "近 5 日流",
+        key: "amt",
+        label: period === "day" ? "成交額" : "5 日成交",
+        tip: period === "day" ? COLUMN_TIPS.amt : COLUMN_TIPS.amt5,
       },
-      { key: "accel" as const, label: "加速度", hideSm: true },
-      { key: "heat" as const, label: "量能", hideSm: true },
-      { key: "changePct" as const, label: "漲跌" },
+      {
+        key: "flow",
+        label: period === "day" ? "當日淨流" : "近 5 日流",
+        tip: period === "day" ? COLUMN_TIPS.flow : COLUMN_TIPS.flow5,
+      },
+      {
+        key: "accel",
+        label: "加速度",
+        tip: COLUMN_TIPS.accel,
+        hideLg: true,
+      },
+      {
+        key: "heat",
+        label: "量能",
+        tip: COLUMN_TIPS.heat,
+        hideLg: true,
+      },
     ],
     [period],
   );
@@ -90,6 +115,17 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
       setSortKey(key);
       setAsc(false);
     }
+  };
+
+  const renderSortIcon = (key: SortKey) => {
+    if (sortKey !== key) {
+      return <ArrowUpDown className="size-3.5 opacity-40" />;
+    }
+    return asc ? (
+      <ArrowUp className="size-3.5" />
+    ) : (
+      <ArrowDown className="size-3.5" />
+    );
   };
 
   return (
@@ -146,11 +182,22 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                 <p className="truncate font-medium">{s.name}</p>
                 <p className="text-[11px] tabular-nums text-muted-foreground">
                   {s.code}
+                  {s.close != null && s.close > 0
+                    ? ` · ${s.close.toLocaleString("zh-TW")}`
+                    : ""}
+                  <span className={cn("ml-2", signedClass(s.changePct))}>
+                    {formatPct(s.changePct)}
+                  </span>
                 </p>
               </div>
-              <div className="text-right text-xs">
-                <p className="tabular-nums">{formatYi(amt)}</p>
-                <p className={cn("font-medium tabular-nums", signedClass(flow))}>
+              <div className="shrink-0 text-right text-xs">
+                <p className="whitespace-nowrap tabular-nums">{formatYi(amt)}</p>
+                <p
+                  className={cn(
+                    "whitespace-nowrap font-medium tabular-nums",
+                    signedClass(flow),
+                  )}
+                >
                   {formatYiSigned(flow)}
                 </p>
               </div>
@@ -159,40 +206,41 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
         })}
       </div>
 
-      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+      <div className="hidden min-h-0 flex-1 overflow-x-auto md:block">
+        <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
+          <colgroup>
+            <col className="w-10" />
+            <col className="w-[28%]" />
+            <col className="w-[12%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[14%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <thead className="sticky top-0 z-10 bg-[var(--panel)]">
-            <tr className="text-left text-[11px] text-muted-foreground">
-              <th className="w-10 px-2 py-2.5 font-medium sm:px-3">#</th>
-              <th className="px-2 py-2.5 font-medium sm:px-3">個股</th>
+            <tr className="text-[11px] text-muted-foreground">
+              <th className="px-2 py-2.5 text-left font-medium sm:px-3">#</th>
+              <th className="px-2 py-2.5 text-left font-medium sm:px-3">個股</th>
               {columns.map((col) => {
                 const active = sortKey === col.key;
                 return (
                   <th
                     key={col.key}
                     className={cn(
-                      "px-2 py-2.5 font-medium sm:px-3",
-                      "hideSm" in col && col.hideSm && "hidden lg:table-cell",
+                      "px-2 py-2.5 text-right font-medium sm:px-3",
+                      col.hideLg && "hidden lg:table-cell",
                     )}
                   >
                     <button
                       type="button"
                       onClick={() => onSort(col.key)}
                       className={cn(
-                        "inline-flex items-center gap-1 transition hover:text-foreground",
+                        "inline-flex w-full items-center justify-end gap-1 whitespace-nowrap transition hover:text-foreground",
                         active && "text-foreground",
                       )}
                     >
-                      {col.label}
-                      {active ? (
-                        asc ? (
-                          <ArrowUp className="size-3.5" />
-                        ) : (
-                          <ArrowDown className="size-3.5" />
-                        )
-                      ) : (
-                        <ArrowUpDown className="size-3.5 opacity-40" />
-                      )}
+                      <ColumnTip tip={col.tip}>{col.label}</ColumnTip>
+                      {renderSortIcon(col.key)}
                     </button>
                   </th>
                 );
@@ -213,17 +261,28 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                     {i + 1}
                   </td>
                   <td className="px-2 py-2.5 sm:px-3">
-                    <div className="font-medium">{s.name}</div>
-                    <div className="text-[11px] tabular-nums text-muted-foreground">
+                    <div className="truncate font-medium">{s.name}</div>
+                    <div className="truncate text-[11px] tabular-nums text-muted-foreground">
                       {s.code}
+                      {s.close != null && s.close > 0
+                        ? ` · ${s.close.toLocaleString("zh-TW")}`
+                        : ""}
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
+                      signedClass(s.changePct),
+                    )}
+                  >
+                    {formatPct(s.changePct)}
+                  </td>
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3">
                     {formatYi(amt)}
                   </td>
                   <td
                     className={cn(
-                      "px-2 py-2.5 text-right font-semibold tabular-nums sm:px-3",
+                      "px-2 py-2.5 text-right whitespace-nowrap font-semibold tabular-nums sm:px-3",
                       signedClass(flow),
                     )}
                   >
@@ -231,22 +290,14 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.accel ?? 0),
                     )}
                   >
                     {formatYiSigned(s.accel ?? 0)}
                   </td>
-                  <td className="hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3">
+                  <td className="hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3">
                     {formatHeat(s.heat ?? 1)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-2 py-2.5 text-right tabular-nums sm:px-3",
-                      signedClass(s.changePct),
-                    )}
-                  >
-                    {formatPct(s.changePct)}
                   </td>
                 </tr>
               );

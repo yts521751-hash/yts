@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { formatPct, formatYi, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 
 type Row = {
   rank: number;
@@ -49,9 +50,9 @@ export default function TurnoverPage() {
     void load(false);
   }, [load]);
 
-  // 盡量接近即時：每 30 秒刷新；盤中會嘗試重抓當日行情
+  // 盤中每 5 秒刷新；盤後仍 15 秒讀快取（排名通常不變）
   useEffect(() => {
-    const t = setInterval(() => void load(true), 30000);
+    const t = setInterval(() => void load(true), 5000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -73,7 +74,7 @@ export default function TurnoverPage() {
         <p className="mt-2 text-[11px] text-muted-foreground">資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
           <p className="text-xs text-muted-foreground">
             {date ? `${date}` : ""}
-            {source === "live-refresh" ? " · 盤中刷新" : ""}
+            {source === "live-refresh" ? " · 盤中約 5 秒刷新" : " · 約 5 秒更新"}
             {updatedAt
               ? ` · ${new Date(updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`
               : ""}
@@ -92,9 +93,15 @@ export default function TurnoverPage() {
                   <th className="px-3 py-3 font-medium">#</th>
                   <th className="px-3 py-3 font-medium">代號</th>
                   <th className="px-3 py-3 font-medium">名稱</th>
-                  <th className="px-3 py-3 text-right font-medium">成交金額</th>
-                  <th className="px-3 py-3 text-right font-medium">漲跌</th>
-                  <th className="px-3 py-3 text-right font-medium">收盤</th>
+                  <th className="px-3 py-3 text-right font-medium">
+                    <ColumnTip tip={COLUMN_TIPS.amt}>成交金額</ColumnTip>
+                  </th>
+                  <th className="px-3 py-3 text-right font-medium">
+                    <ColumnTip tip={COLUMN_TIPS.changePct}>漲跌</ColumnTip>
+                  </th>
+                  <th className="px-3 py-3 text-right font-medium">
+                    <ColumnTip tip={COLUMN_TIPS.close}>收盤</ColumnTip>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -108,18 +115,18 @@ export default function TurnoverPage() {
                     </td>
                     <td className="px-3 py-2.5 font-medium tabular-nums">{r.code}</td>
                     <td className="px-3 py-2.5">{r.name}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                    <td className="px-3 py-2.5 text-right tabular-nums font-medium transition-all duration-300">
                       {formatYi(r.turnoverYi)}
                     </td>
                     <td
                       className={cn(
-                        "px-3 py-2.5 text-right tabular-nums",
+                        "px-3 py-2.5 text-right tabular-nums transition-colors duration-300",
                         signedClass(r.changePct),
                       )}
                     >
                       {formatPct(r.changePct)}
                     </td>
-                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                    <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground transition-all duration-300">
                       {r.close.toFixed(2)}
                     </td>
                   </tr>

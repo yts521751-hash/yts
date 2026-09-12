@@ -13,6 +13,7 @@ import {
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 
 export type RankPeriod = "day" | "d5";
 
@@ -120,16 +121,38 @@ export function SectorRanking({
       {
         key: "amt" as const,
         label: period === "day" ? "成交額" : "5 日成交",
+        tip: period === "day" ? COLUMN_TIPS.amt : COLUMN_TIPS.amt5,
       },
       {
         key: "flow" as const,
         label: period === "day" ? "當日淨流" : "近 5 日流",
+        tip: period === "day" ? COLUMN_TIPS.flow : COLUMN_TIPS.flow5,
       },
-      { key: "accel" as const, label: "加速度", hideSm: true },
-      { key: "d20Flow" as const, label: "近 20 日流", hideSm: true },
-      { key: "heat" as const, label: "量能", hideSm: true },
-      { key: "priceChange20d" as const, label: "20 日漲幅", hideSm: true },
-      { key: "cp" as const, label: "CP" },
+      {
+        key: "accel" as const,
+        label: "加速度",
+        tip: COLUMN_TIPS.accel,
+        hideLg: true,
+      },
+      {
+        key: "d20Flow" as const,
+        label: "近 20 日流",
+        tip: COLUMN_TIPS.flow20,
+        hideLg: true,
+      },
+      {
+        key: "heat" as const,
+        label: "量能",
+        tip: COLUMN_TIPS.heat,
+        hideLg: true,
+      },
+      {
+        key: "priceChange20d" as const,
+        label: "20 日漲幅",
+        tip: COLUMN_TIPS.priceChange20d,
+        hideLg: true,
+      },
+      { key: "cp" as const, label: "CP", tip: COLUMN_TIPS.cp },
     ],
     [period],
   );
@@ -245,20 +268,20 @@ export function SectorRanking({
         })}
       </div>
 
-      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
+      <div className="hidden min-h-0 flex-1 overflow-x-auto md:block">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--panel)]/95 backdrop-blur-sm">
-            <tr className="text-left text-[11px] text-muted-foreground">
-              <th className="w-10 px-2 py-2.5 font-medium sm:px-3">#</th>
-              <th className="px-2 py-2.5 font-medium sm:px-3">板塊</th>
+            <tr className="text-[11px] text-muted-foreground">
+              <th className="w-10 px-2 py-2.5 text-left font-medium sm:px-3">#</th>
+              <th className="px-2 py-2.5 text-left font-medium sm:px-3">板塊</th>
               {columns.map((col) => {
                 const active = sortKey === col.key;
                 return (
                   <th
                     key={col.key}
                     className={cn(
-                      "px-2 py-2.5 font-medium sm:px-3",
-                      "hideSm" in col && col.hideSm && "hidden lg:table-cell",
+                      "px-2 py-2.5 text-right font-medium sm:px-3",
+                      "hideLg" in col && col.hideLg && "hidden lg:table-cell",
                     )}
                   >
                     <button
@@ -271,11 +294,11 @@ export function SectorRanking({
                         }
                       }}
                       className={cn(
-                        "inline-flex items-center gap-1 transition hover:text-foreground",
+                        "inline-flex w-full items-center justify-end gap-1 whitespace-nowrap transition hover:text-foreground",
                         active && "text-foreground",
                       )}
                     >
-                      {col.label}
+                      <ColumnTip tip={col.tip}>{col.label}</ColumnTip>
                       {active ? (
                         asc ? (
                           <ArrowUp className="size-3.5" />
@@ -329,12 +352,12 @@ export function SectorRanking({
                       </div>
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3">
                     {formatYi(amt)}
                   </td>
                   <td
                     className={cn(
-                      "px-2 py-2.5 text-right font-medium tabular-nums sm:px-3",
+                      "px-2 py-2.5 text-right whitespace-nowrap font-medium tabular-nums sm:px-3",
                       signedClass(flow),
                     )}
                   >
@@ -342,7 +365,7 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.accel),
                     )}
                   >
@@ -350,24 +373,24 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.d20Flow),
                     )}
                   >
                     {formatYiSigned(s.d20Flow, 0)}
                   </td>
-                  <td className="hidden px-2 py-2.5 text-right tabular-nums text-muted-foreground lg:table-cell sm:px-3">
+                  <td className="hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground lg:table-cell sm:px-3">
                     {formatHeat(s.heat)}
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.priceChange20d),
                     )}
                   >
                     {formatPct(s.priceChange20d)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-[var(--mk-surge)] sm:px-3">
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap font-semibold tabular-nums text-[var(--mk-surge)] sm:px-3">
                     {Number.isFinite(score) ? score.toFixed(0) : "—"}
                   </td>
                 </tr>

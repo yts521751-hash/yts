@@ -28,58 +28,38 @@ export type TurnoverPayload = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** 盤中 live 結果短快取，避免前端 5 秒輪詢打爆交易所 */
+const LIVE_TTL_MS = 5_000;
+let liveMemo: { at: number; payload: TurnoverPayload } | null = null;
+
 function isCommonStock(code: string) {
   return /^\d{4}$/.test(code);
 }
 
-function taipeiHour() {
+function taipeiSession() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Taipei",
     hour: "numeric",
+    minute: "numeric",
     hour12: false,
     weekday: "short",
   }).formatToParts(new Date());
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  return { hour, weekday };
+  const isWeekday = !["Sat", "Sun"].includes(weekday);
+  const mins = hour * 60 + minute;
+  // 09:00–13:35（含尾盤撮合緩衝）
+  const inSession = isWeekday && mins >= 9 * 60 && mins < 13 * 60 + 35;
+  return { hour, minute, weekday, isWeekday, inSession };
 }
 
-/** 盤中嘗試刷新當日行情；盤後／假日只讀快取 */
-export async function buildTurnoverRanking(
-  limit = 50,
-  options?: { live?: boolean },
-): Promise<TurnoverPayload | null> {
-  const want = Math.min(50, Math.max(1, limit));
-  const { hour, weekday } = taipeiHour();
-  const isWeekday = !["Sat", "Sun"].includes(weekday);
-  const inSession = isWeekday && hour >= 9 && hour < 14;
-  let source: TurnoverPayload["source"] = "cache";
-
-  let days = await listCachedTradingDays(1, 30);
-  let ymd = days[0];
-
-  if (options?.live && inSession) {
-    const today = toYmd(new Date());
-    try {
-      const fresh = await loadMergedQuotesDay(today, { force: true });
-      if (fresh?.quotes?.length) {
-        ymd = today;
-        source = "live-refresh";
-      }
-    } catch {
-      /* keep cache */
-    }
-  }
-
-  if (!ymd) {
-    days = await listCachedTradingDays(1, 30);
-    ymd = days[0];
-  }
-  if (!ymd) return null;
-
-  const map = await getCachedDayQuotes(ymd);
-  if (!map?.size) return null;
-
+function rankFromQuotes(
+  map: Map<string, QuoteRow>,
+  ymd: string,
+  want: number,
+  source: TurnoverPayload["source"],
+): TurnoverPayload {
   const rows = [...map.values()]
     .filter((q) => isCommonStock(q.code) && q.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
@@ -101,6 +81,56 @@ export async function buildTurnoverRanking(
     source,
     total: rows.length,
   };
+}
+
+/** 盤中嘗試刷新當日行情；盤後／假日只讀快取 */
+export async function buildTurnoverRanking(
+  limit = 50,
+  options?: { live?: boolean },
+): Promise<TurnoverPayload | null> {
+  const want = Math.min(50, Math.max(1, limit));
+  const { inSession } = taipeiSession();
+
+  if (options?.live && inSession && liveMemo) {
+    const age = Date.now() - liveMemo.at;
+    if (age >= 0 && age < LIVE_TTL_MS) return liveMemo.payload;
+  }
+
+  let source: TurnoverPayload["source"] = "cache";
+  let days = await listCachedTradingDays(1, 30);
+  let ymd = days[0];
+
+  if (options?.live && inSession) {
+    const today = toYmd(new Date());
+    try {
+      const fresh = await loadMergedQuotesDay(today, { force: true });
+      if (fresh?.quotes?.length) {
+        ymd = today;
+        source = "live-refresh";
+        const map = new Map(fresh.quotes.map((q) => [q.code, q]));
+        const payload = rankFromQuotes(map, ymd, want, source);
+        liveMemo = { at: Date.now(), payload };
+        return payload;
+      }
+    } catch {
+      /* keep cache */
+    }
+  }
+
+  if (!ymd) {
+    days = await listCachedTradingDays(1, 30);
+    ymd = days[0];
+  }
+  if (!ymd) return null;
+
+  const map = await getCachedDayQuotes(ymd);
+  if (!map?.size) return null;
+
+  const payload = rankFromQuotes(map, ymd, want, source);
+  if (options?.live && inSession) {
+    liveMemo = { at: Date.now(), payload };
+  }
+  return payload;
 }
 
 export async function ensureQuoteHistory(needDays = 80) {

@@ -11,7 +11,6 @@ import {
 } from "@/components/stock-ranking";
 import { countByStatus, migrateSectorIfNeeded } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
-import type { KindFilter } from "@/components/sector-ranking";
 import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
@@ -20,7 +19,6 @@ type BoardMode = "sector" | "stock";
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
-  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [boardMode, setBoardMode] = useState<BoardMode>("sector");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [textSize, setTextSize] = useState<TextSize>("sm");
@@ -250,37 +248,11 @@ export function HomeApp() {
                 </button>
               </div>
             ) : (
-              <>
-                <div className="flex flex-wrap gap-1.5">
-                  {(
-                    [
-                      ["all", "全部"],
-                      ["industry", "官方產業"],
-                      ["theme", "題材"],
-                      ["auto", "新興自動"],
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => setKindFilter(k)}
-                      className={cn(
-                        "border px-2.5 py-1 text-xs transition",
-                        kindFilter === k
-                          ? "border-[var(--mk-anchor)] bg-[var(--mk-anchor)] text-white"
-                          : "border-border bg-muted/30 text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <StatusCards
-                  counts={counts}
-                  active={filter}
-                  onChange={setFilter}
-                />
-              </>
+              <StatusCards
+                counts={counts}
+                active={filter}
+                onChange={setFilter}
+              />
             )
           ) : null}
         </section>
@@ -294,7 +266,7 @@ export function HomeApp() {
                   selectedId={selected?.id}
                   onSelect={setSelected}
                   filter={filter}
-                  kindFilter={kindFilter}
+                  kindFilter="all"
                 />
               </div>
               <div className="hidden lg:block">

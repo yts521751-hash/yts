@@ -5,6 +5,8 @@ import "server-only";
 
 import {
   fetchTpexQuotes,
+  getCachedDayQuotes,
+  listCachedTradingDays,
   listRecentTradingDays,
   readCacheFile,
   writeCacheFile,
@@ -101,7 +103,8 @@ async function fetchYahooCloses(symbol: string): Promise<{
     const result = data.chart?.result?.[0];
     const raw = result?.indicators?.quote?.[0]?.close ?? [];
     const closes = raw.filter((x): x is number => typeof x === "number" && x > 0);
-    if (closes.length < 60) return null;
+    // 櫃買指數有時資料點略少於加權，40 日已夠算 BIAS20／波動
+    if (closes.length < 40) return null;
     const last = closes[closes.length - 1];
     const prev = closes[closes.length - 2] ?? last;
     const ts = result?.timestamp?.[result.timestamp.length - 1];
@@ -125,51 +128,133 @@ type TpexSeries = {
 
 const TPEX_SERIES = "wind-tpex-series.json";
 
+/** 櫃買常見指標股：用來從合併行情快取抽出上櫃權值近似 */
+const OTC_MARKER_CODES = new Set([
+  "3081",
+  "4966",
+  "4979",
+  "5274",
+  "6488",
+  "3529",
+  "8299",
+  "6546",
+  "3105",
+  "3227",
+  "3260",
+  "3374",
+  "3443",
+  "3481",
+  "3532",
+  "3661",
+  "3707",
+  "4128",
+  "4743",
+  "5347",
+  "5483",
+  "6104",
+  "6182",
+  "6274",
+  "6415",
+  "6446",
+  "6462",
+  "6510",
+  "6669",
+  "8028",
+]);
+
+async function loadOtcCodeSet(): Promise<Set<string>> {
+  const map = await readCacheFile<{
+    stocks?: { code: string; market?: string }[];
+  }>("industry-map.json");
+  const set = new Set<string>();
+  for (const s of map?.stocks ?? []) {
+    if (s.market === "tpex" && /^\d{4}$/.test(s.code)) set.add(s.code);
+  }
+  if (set.size < 50) {
+    for (const c of OTC_MARKER_CODES) set.add(c);
+  }
+  return set;
+}
+
+function weightedDayChange(
+  quotes: { code: string; changePct: number; turnover: number }[],
+  otcCodes: Set<string>,
+): number | null {
+  let num = 0;
+  let den = 0;
+  for (const q of quotes) {
+    if (!otcCodes.has(q.code)) continue;
+    if (!q.turnover || q.turnover <= 0) continue;
+    if (!Number.isFinite(q.changePct)) continue;
+    num += q.changePct * q.turnover;
+    den += q.turnover;
+  }
+  if (den <= 0) return null;
+  return num / den;
+}
+
 async function buildTpexSyntheticCloses(): Promise<{
   closes: number[];
   asOf: string;
   changePct: number;
   source: string;
 } | null> {
-  // 維護上櫃合成指數序列：每次最多補最近幾個交易日，避免一次打爆 API
+  // 維護上櫃合成指數：優先用本機合併行情快取回填，不足再打櫃買 API
   const series =
     (await readCacheFile<TpexSeries>(TPEX_SERIES)) ?? {
       points: [],
       updatedAt: "",
     };
   const known = new Set(series.points.map((p) => p.ymd));
-  const days = await listRecentTradingDays(8, 20);
-  const missing = days.filter((d) => !known.has(d)).reverse();
+  const otcCodes = await loadOtcCodeSet();
+
+  const need = Math.max(60, 20 - series.points.length + 5);
+  const cachedDays = await listCachedTradingDays(need, 160);
+  const missingCached = cachedDays.filter((d) => !known.has(d)).reverse();
 
   let level =
     series.points.length > 0
       ? series.points[series.points.length - 1].close
       : 100;
 
-  for (const ymd of missing) {
-    try {
-      const bundle = await fetchTpexQuotes(ymd);
-      const quotes = bundle?.quotes ?? [];
-      if (!quotes.length) continue;
-      let num = 0;
-      let den = 0;
-      for (const q of quotes) {
-        if (!q.turnover || q.turnover <= 0) continue;
-        if (!Number.isFinite(q.changePct)) continue;
-        num += q.changePct * q.turnover;
-        den += q.turnover;
+  for (const ymd of missingCached) {
+    const map = await getCachedDayQuotes(ymd);
+    if (!map?.size) continue;
+    const chg = weightedDayChange([...map.values()], otcCodes);
+    if (chg == null) continue;
+    level *= 1 + chg / 100;
+    series.points.push({ ymd, close: level, changePct: chg });
+    known.add(ymd);
+  }
+
+  // 若仍不足，補抓最近交易日櫃買行情（限制次數避免打爆）
+  if (series.points.length < 20) {
+    const days = await listRecentTradingDays(40, 90);
+    const missing = days.filter((d) => !known.has(d)).reverse().slice(0, 25);
+    for (const ymd of missing) {
+      try {
+        const bundle = await fetchTpexQuotes(ymd);
+        const quotes = bundle?.quotes ?? [];
+        if (!quotes.length) continue;
+        const chg = weightedDayChange(
+          quotes.map((q) => ({
+            code: q.code,
+            changePct: q.changePct,
+            turnover: q.turnover,
+          })),
+          new Set(quotes.map((q) => q.code)),
+        );
+        if (chg == null) continue;
+        level *= 1 + chg / 100;
+        series.points.push({ ymd, close: level, changePct: chg });
+        known.add(ymd);
+      } catch {
+        /* skip day */
       }
-      if (den <= 0) continue;
-      const chg = num / den;
-      level *= 1 + chg / 100;
-      series.points.push({ ymd, close: level, changePct: chg });
-    } catch {
-      /* skip day */
     }
   }
 
   series.points.sort((a, b) => a.ymd.localeCompare(b.ymd));
-  // 去重保最新
   const byYmd = new Map<string, (typeof series.points)[0]>();
   for (const p of series.points) byYmd.set(p.ymd, p);
   series.points = [...byYmd.values()].sort((a, b) => a.ymd.localeCompare(b.ymd));
@@ -282,20 +367,32 @@ export async function computeWindPayload(options?: {
     : fallbackReading("twse", "上市（加權）", options?.twseDayChangePct ?? 0);
 
   let tpex: WindReading;
-  try {
-    const syn = await buildTpexSyntheticCloses();
-    tpex = syn
-      ? readingFromCloses(
-          "tpex",
-          "上櫃（櫃買合成）",
-          syn.closes,
-          syn.changePct,
-          syn.asOf,
-          syn.source,
-        )
-      : fallbackReading("tpex", "上櫃（櫃買合成）", 0);
-  } catch {
-    tpex = fallbackReading("tpex", "上櫃（櫃買合成）", 0);
+  const twoii = await fetchYahooCloses("^TWOII");
+  if (twoii) {
+    tpex = readingFromCloses(
+      "tpex",
+      "上櫃（櫃買）",
+      twoii.closes,
+      twoii.changePct,
+      twoii.asOf,
+      "yahoo-TWOII",
+    );
+  } else {
+    try {
+      const syn = await buildTpexSyntheticCloses();
+      tpex = syn
+        ? readingFromCloses(
+            "tpex",
+            "上櫃（櫃買合成）",
+            syn.closes,
+            syn.changePct,
+            syn.asOf,
+            syn.source,
+          )
+        : fallbackReading("tpex", "上櫃（櫃買合成）", 0);
+    } catch {
+      tpex = fallbackReading("tpex", "上櫃（櫃買合成）", 0);
+    }
   }
 
   const payload: WindPayload = {

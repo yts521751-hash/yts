@@ -25,6 +25,8 @@ export type StockFlowRow = StockFlow & {
   accel: number;
   /** 近 5 日日均成交 / 近 20 日日均成交 */
   heat: number;
+  /** 最新收盤／成交價 */
+  close: number;
 };
 
 export type StockFlowPayload = {
@@ -158,6 +160,7 @@ export async function buildStockFlowRanking(
       d5: round1(d5Amt),
       d20: round1(d20Amt),
       changePct: round2(latestQ.changePct),
+      close: round2(latestQ.close),
       accel: round1(avg5Flow - avg20Flow),
       heat: avg20Amt > 0 ? round2(avg5Amt / avg20Amt) : 1,
     });
