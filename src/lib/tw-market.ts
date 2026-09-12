@@ -85,22 +85,34 @@ export async function fetchJsonViaCurl<T>(url: string): Promise<T | null> {
     const { execFile } = await import("child_process");
     const { promisify } = await import("util");
     const run = promisify(execFile);
-    const { stdout } = await run(
-      "curl",
-      [
-        "-sS",
-        "-k",
-        "--http1.1",
-        "--compressed",
-        "-A",
-        "Mozilla/5.0",
-        "--max-time",
-        "90",
-        url,
-      ],
-      { maxBuffer: 40 * 1024 * 1024 },
-    );
-    if (!stdout?.trim()) return null;
+    // 櫃買大量 JSON：http1.1＋壓縮＋重試較穩；傳輸中斷時 curl 可能 exit≠0，
+    // 但仍可能已寫完整 body 在 stdout，需容錯解析。
+    const args = [
+      "-sS",
+      "-k",
+      "--http1.1",
+      "--compressed",
+      "--retry",
+      "5",
+      "--retry-all-errors",
+      "--retry-delay",
+      "1",
+      "-A",
+      "Mozilla/5.0 (compatible; JinLiu/1.0)",
+      "--max-time",
+      "120",
+      url,
+    ];
+    let stdout = "";
+    try {
+      const res = await run("curl", args, { maxBuffer: 64 * 1024 * 1024 });
+      stdout = String(res.stdout ?? "");
+    } catch (err) {
+      const e = err as { stdout?: string | Buffer };
+      stdout = String(e.stdout ?? "");
+      if (!stdout.trim()) return null;
+    }
+    if (!stdout.trim()) return null;
     return JSON.parse(stdout) as T;
   } catch {
     return null;
@@ -190,47 +202,59 @@ export async function fetchTpexQuotes(ymd: string): Promise<{
   quotes: QuoteRow[];
 } | null> {
   const url = `https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes?date=${toSlashDate(ymd)}&id=&response=json`;
-  const payload =
-    (await fetchJsonViaCurl<TpexDailyQuotes>(url)) ??
-    (await fetchJson<TpexDailyQuotes>(url));
-  const table = payload?.tables?.[0];
-  if (!table?.data?.length) return null;
 
-  const fields = (table.fields ?? []).map((f) =>
-    f.replace(/<[^>]+>/g, "").trim(),
-  );
-  const iCode = fields.findIndex((f) => f.includes("代號"));
-  const iName = fields.findIndex((f) => f.includes("名稱"));
-  const iOpen = fields.findIndex((f) => f.includes("開盤"));
-  const iHigh = fields.findIndex((f) => f.includes("最高"));
-  const iLow = fields.findIndex((f) => f.includes("最低"));
-  const iClose = fields.findIndex((f) => f.includes("收盤"));
-  const iChange = fields.findIndex((f) => f.includes("漲跌"));
-  const iAmt = fields.findIndex((f) => f.includes("成交金額"));
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const payload =
+      (await fetchJsonViaCurl<TpexDailyQuotes>(url)) ??
+      (await fetchJson<TpexDailyQuotes>(url));
+    const table = payload?.tables?.[0];
+    if (!table?.data?.length) {
+      await sleep(400 * (attempt + 1));
+      continue;
+    }
 
-  const quotes: QuoteRow[] = [];
-  for (const row of table.data) {
-    const code = String(row[Math.max(iCode, 0)] ?? "").trim();
-    if (!/^\d{4}/.test(code)) continue;
-    const close = parseNumber(row[iClose]);
-    if (close <= 0) continue;
-    const change = parseNumber(row[iChange]);
-    const prev = close - change;
-    const open = iOpen >= 0 ? parseNumber(row[iOpen]) : close;
-    const high = iHigh >= 0 ? parseNumber(row[iHigh]) : Math.max(open, close);
-    const low = iLow >= 0 ? parseNumber(row[iLow]) : Math.min(open, close);
-    quotes.push({
-      code,
-      name: String(row[Math.max(iName, 1)] ?? "").trim(),
-      open: open > 0 ? open : close,
-      high: high > 0 ? high : close,
-      low: low > 0 ? low : close,
-      close,
-      changePct: prev > 0 ? (change / prev) * 100 : 0,
-      turnover: iAmt >= 0 ? parseNumber(row[iAmt]) : 0,
-    });
+    const fields = (table.fields ?? []).map((f) =>
+      f.replace(/<[^>]+>/g, "").trim(),
+    );
+    const iCode = fields.findIndex((f) => f.includes("代號"));
+    const iName = fields.findIndex((f) => f.includes("名稱"));
+    const iOpen = fields.findIndex((f) => f.includes("開盤"));
+    const iHigh = fields.findIndex((f) => f.includes("最高"));
+    const iLow = fields.findIndex((f) => f.includes("最低"));
+    const iClose = fields.findIndex((f) => f.includes("收盤"));
+    const iChange = fields.findIndex(
+      (f) => f.includes("漲跌") && !f.includes("%") && !f.includes("幅"),
+    );
+    const iAmt = fields.findIndex((f) => f.includes("成交金額"));
+
+    const quotes: QuoteRow[] = [];
+    for (const row of table.data) {
+      const code = String(row[Math.max(iCode, 0)] ?? "").trim();
+      // 只要普通股／KY（四碼，可選英文字尾）；排除權證與過長代號
+      if (!/^\d{4}[A-Za-z]{0,2}$/.test(code)) continue;
+      const close = parseNumber(row[iClose]);
+      if (close <= 0) continue;
+      const change = iChange >= 0 ? parseNumber(row[iChange]) : 0;
+      const prev = close - change;
+      const open = iOpen >= 0 ? parseNumber(row[iOpen]) : close;
+      const high = iHigh >= 0 ? parseNumber(row[iHigh]) : Math.max(open, close);
+      const low = iLow >= 0 ? parseNumber(row[iLow]) : Math.min(open, close);
+      quotes.push({
+        code,
+        name: String(row[Math.max(iName, 1)] ?? "").trim(),
+        open: open > 0 ? open : close,
+        high: high > 0 ? high : close,
+        low: low > 0 ? low : close,
+        close,
+        changePct: prev > 0 ? (change / prev) * 100 : 0,
+        turnover: iAmt >= 0 ? parseNumber(row[iAmt]) : 0,
+      });
+    }
+    // 上櫃普通股通常數百檔以上；太少代表 JSON 被截斷或解析失敗
+    if (quotes.length >= 400) return { quotes };
+    await sleep(500 * (attempt + 1));
   }
-  return { quotes };
+  return null;
 }
 
 export async function fetchTwseT86(ymd: string): Promise<InstiRow[] | null> {
@@ -390,6 +414,15 @@ export function klineCacheName(sectorId: string) {
   return `kline-${sectorId}.json`;
 }
 
+/** 快取是否已涵蓋足夠上櫃股（否則聯亞等 OTC 會變成成交 0） */
+function looksLikeTwseOnly(quotes: QuoteRow[]): boolean {
+  if (quotes.length >= 1800) return false;
+  // 幾個常見上櫃指標股：缺一堆就當「櫃買沒併進去」
+  const otcMarkers = ["3081", "4979", "6488", "3529", "8299"];
+  const hit = otcMarkers.filter((c) => quotes.some((q) => q.code === c)).length;
+  return hit < 2;
+}
+
 /** 合併上市＋上櫃當日報價並快取 */
 export async function loadMergedQuotesDay(
   ymd: string,
@@ -398,7 +431,28 @@ export async function loadMergedQuotesDay(
   const name = dayCacheName(ymd);
   if (!options?.force) {
     const cached = await readCacheFile<DayQuoteCache>(name);
-    if (cached?.quotes?.length) return cached;
+    if (cached?.quotes?.length && !looksLikeTwseOnly(cached.quotes)) {
+      return cached;
+    }
+    // 舊快取只有上市 → 下面補抓櫃買後覆寫
+    if (cached?.quotes?.length) {
+      const quotes = new Map(cached.quotes.map((q) => [q.code, q]));
+      const tpex = await fetchTpexQuotes(ymd);
+      if (tpex?.quotes.length) {
+        for (const q of tpex.quotes) {
+          if (!quotes.has(q.code)) quotes.set(q.code, q);
+        }
+        const bundle: DayQuoteCache = {
+          ...cached,
+          quotes: [...quotes.values()],
+          fetchedAt: new Date().toISOString(),
+        };
+        await writeCacheFile(name, bundle);
+        return bundle;
+      }
+      // 櫃買仍失敗就先用舊快取，避免整日空白
+      return cached;
+    }
   }
 
   const quotes = new Map<string, QuoteRow>();

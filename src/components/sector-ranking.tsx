@@ -59,7 +59,7 @@ function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
   return s[key];
 }
 
-/** 「全部」時產業大板塊會淹沒題材；配額＋關鍵概念保底，讓矽光子等進前 30 */
+/** 「全部」時產業大板塊會淹沒題材；配額＋關鍵概念保底，讓矽光子等進前 20 */
 const PIN_THEME_IDS = new Set([
   "optical",
   "ai-server",
@@ -68,7 +68,7 @@ const PIN_THEME_IDS = new Set([
   "advanced-packaging",
 ]);
 
-const RANK_LIMIT = 30;
+const RANK_LIMIT = 20;
 
 function takeTopMixed(sorted: SectorFlow[], limit = RANK_LIMIT): SectorFlow[] {
   const themes = sorted.filter((s) => (s.kind ?? "theme") !== "industry");
@@ -78,8 +78,8 @@ function takeTopMixed(sorted: SectorFlow[], limit = RANK_LIMIT): SectorFlow[] {
   for (const s of sorted) {
     if (PIN_THEME_IDS.has(s.id)) picked.set(s.id, s);
   }
-  for (const s of themes.slice(0, 18)) picked.set(s.id, s);
-  for (const s of industries.slice(0, 12)) picked.set(s.id, s);
+  for (const s of themes.slice(0, 12)) picked.set(s.id, s);
+  for (const s of industries.slice(0, 8)) picked.set(s.id, s);
   for (const s of sorted) {
     if (picked.size >= limit) break;
     picked.set(s.id, s);

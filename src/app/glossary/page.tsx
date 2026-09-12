@@ -52,11 +52,6 @@ const TERMS = [
     title: "灰度同步是什麼？",
     body: "行情／法人每日排程先寫 staging，驗證後原子切 active，並預熱產業日線。新聞則是每 10 分鐘做同樣的 staging→active。開網頁永遠讀 active。",
   },
-  {
-    id: "cp",
-    title: "CP 值排行",
-    body: "近 20 日成交金額大、股價漲幅仍相對溫和，並略偏好淨流入的板塊。解讀成「換手熱絡、價格尚未完全反應」的觀察清單，不是保證上漲。",
-  },
 ];
 
 export default function GlossaryPage() {
@@ -72,10 +67,10 @@ export default function GlossaryPage() {
           回排行榜
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          金脈名詞白話小百科
+          金流看板名詞白話小百科
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          專有名詞用白話講一次。金脈不預測行情，只把成交、漲跌與法人攤開成資金流給你看。資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料。
+          專有名詞用白話講一次。金流看板不預測行情，只把成交、漲跌與法人攤開成資金流給你看。資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料。
         </p>
         <div className="mt-8 space-y-4">
           {TERMS.map((t) => (

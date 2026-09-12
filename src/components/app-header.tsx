@@ -38,15 +38,15 @@ export function AppHeader({
             <span className="logo-mark relative flex size-9 items-center justify-center overflow-hidden">
               <span className="absolute inset-0 bg-[var(--mk-anchor)]" />
               <span className="relative font-[family-name:var(--font-display)] text-xs font-bold tracking-[0.2em] text-white">
-                JM
+                流
               </span>
             </span>
             <div className="min-w-0">
               <p className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight sm:text-2xl">
-                金脈
+                金流看板
               </p>
               <p className="font-mono text-[10px] tracking-[0.22em] text-muted-foreground uppercase">
-                JinMai Board
+                Cashflow Board
               </p>
             </div>
           </Link>

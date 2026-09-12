@@ -2,16 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/app-header";
-import { CpRanking } from "@/components/cp-ranking";
-import { FocusPanel } from "@/components/focus-panel";
 import { SectorDetail } from "@/components/sector-detail";
 import { SectorRanking } from "@/components/sector-ranking";
 import { StatusCards } from "@/components/status-cards";
 import {
   countByStatus,
-  getContrarianSectors,
-  getCpRanking,
-  getTopBuySectors,
   migrateSectorIfNeeded,
 } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
@@ -116,9 +111,6 @@ export function HomeApp() {
   };
 
   const counts = useMemo(() => countByStatus(sectors), [sectors]);
-  const cp = useMemo(() => getCpRanking(sectors), [sectors]);
-  const volumeSpikes = useMemo(() => getContrarianSectors(sectors), [sectors]);
-  const topTurnover = useMemo(() => getTopBuySectors(sectors), [sectors]);
   const isDemo = brief?.isDemo === true || source.includes("demo");
 
   return (
@@ -242,32 +234,12 @@ export function HomeApp() {
                 </div>
               </div>
             )}
-
-            {brief && (
-              <FocusPanel
-                market={brief}
-                volumeSpikes={volumeSpikes}
-                topTurnover={topTurnover}
-                onSelect={setSelected}
-              />
-            )}
-
-            <section className="border border-border bg-[var(--panel)] p-4">
-              <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
-                CP 值精選
-              </h2>
-              <CpRanking
-                items={cp}
-                onSelect={setSelected}
-                selectedId={selected?.id}
-              />
-            </section>
           </>
         )}
       </main>
 
       <footer className="relative z-10 space-y-1 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        <p>金脈</p>
+        <p>金流看板</p>
         <p>資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
       </footer>
     </div>
