@@ -11,10 +11,14 @@ export interface StockFlow {
   dayIn: number;
   /** 當日流出貢獻（億） */
   dayOut: number;
+  /** 近 3 日資金流合計（億） */
+  d3Flow: number;
   /** 近 5 日資金流合計（億） */
   d5Flow: number;
   /** 近 20 日資金流合計（億） */
   d20Flow: number;
+  /** 近 3 日成交金額合計（億） */
+  d3: number;
   /** 近 5 日成交金額合計（億） */
   d5: number;
   /** 近 20 日成交金額合計（億） */
@@ -32,10 +36,14 @@ export interface SectorFlow {
   dayFlow: number;
   dayIn: number;
   dayOut: number;
+  /** 近 3 日淨資金流合計（億） */
+  d3Flow: number;
   /** 近 5 日淨資金流合計（億） */
   d5Flow: number;
   /** 近 20 日淨資金流合計（億） */
   d20Flow: number;
+  /** 近 3 日成交金額合計（億） */
+  d3: number;
   /** 近 5 日成交金額合計（億） */
   d5: number;
   /** 近 20 日成交金額合計（億） */

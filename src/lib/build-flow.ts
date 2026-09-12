@@ -75,6 +75,7 @@ function flowForCode(day: DayBundle, code: string) {
 function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow[] {
   const latest = dayData[0];
   const oldest = dayData[dayData.length - 1];
+  const d3Days = dayData.slice(0, Math.min(3, dayData.length));
   const d5Days = dayData.slice(0, Math.min(5, dayData.length));
   const d20Days = dayData.slice(0, Math.min(20, dayData.length));
   const n5 = d5Days.length;
@@ -98,6 +99,15 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
           dayFlow = dayParts.flow;
           dayIn = dayParts.inflow;
           dayOut = dayParts.outflow;
+        }
+
+        let d3 = 0;
+        let d3Flow = 0;
+        for (const day of d3Days) {
+          const p = flowForCode(day, code);
+          if (!p) continue;
+          d3 += p.amt;
+          d3Flow += p.flow;
         }
 
         let d5 = 0;
@@ -130,8 +140,10 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
           dayFlow: round1(dayFlow),
           dayIn: round1(dayIn),
           dayOut: round1(dayOut),
+          d3Flow: round1(d3Flow),
           d5Flow: round1(d5Flow),
           d20Flow: round1(d20Flow),
+          d3: round1(d3),
           d5: round1(d5),
           d20: round1(d20),
           changePct: round2(changePct),
@@ -149,8 +161,10 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
     const dayFlow = stocks.reduce((s, x) => s + x.dayFlow, 0);
     const dayIn = stocks.reduce((s, x) => s + x.dayIn, 0);
     const dayOut = stocks.reduce((s, x) => s + x.dayOut, 0);
+    const d3 = stocks.reduce((s, x) => s + x.d3, 0);
     const d5 = stocks.reduce((s, x) => s + x.d5, 0);
     const d20 = stocks.reduce((s, x) => s + x.d20, 0);
+    const d3Flow = stocks.reduce((s, x) => s + x.d3Flow, 0);
     const d5Flow = stocks.reduce((s, x) => s + x.d5Flow, 0);
     const d20Flow = stocks.reduce((s, x) => s + x.d20Flow, 0);
 
@@ -190,8 +204,10 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
       dayFlow: round1(dayFlow),
       dayIn: round1(dayIn),
       dayOut: round1(dayOut),
+      d3Flow: round1(d3Flow),
       d5Flow: round1(d5Flow),
       d20Flow: round1(d20Flow),
+      d3: round1(d3),
       d5: round1(d5),
       d20: round1(d20),
       accel: round1(accel),

@@ -20,7 +20,7 @@ type Props = {
   onClose: () => void;
 };
 
-type StockPeriod = "day" | "d5";
+type StockPeriod = "day" | "d3" | "d5";
 
 export function SectorDetail({ sector, onClose }: Props) {
   const [stockPeriod, setStockPeriod] = useState<StockPeriod>("day");
@@ -28,11 +28,11 @@ export function SectorDetail({ sector, onClose }: Props) {
   const stocks = useMemo(() => {
     if (!sector) return [];
     const list = [...sector.stocks];
-    list.sort((a, b) =>
-      stockPeriod === "day"
-        ? b.dayAmt - a.dayAmt
-        : b.d5 - a.d5 || b.d5Flow - a.d5Flow,
-    );
+    list.sort((a, b) => {
+      if (stockPeriod === "day") return b.dayAmt - a.dayAmt;
+      if (stockPeriod === "d3") return b.d3 - a.d3 || b.d3Flow - a.d3Flow;
+      return b.d5 - a.d5 || b.d5Flow - a.d5Flow;
+    });
     return list;
   }, [sector, stockPeriod]);
 
@@ -86,6 +86,11 @@ export function SectorDetail({ sector, onClose }: Props) {
         />
         <Metric label="成交額" value={formatYi(sector.dayAmt)} />
         <Metric
+          label="近 3 日流"
+          value={formatYiSigned(sector.d3Flow)}
+          tone={sector.d3Flow}
+        />
+        <Metric
           label="近 5 日流"
           value={formatYiSigned(sector.d5Flow)}
           tone={sector.d5Flow}
@@ -114,6 +119,7 @@ export function SectorDetail({ sector, onClose }: Props) {
           {(
             [
               ["day", "當日"],
+              ["d3", "3 日"],
               ["d5", "5 日"],
             ] as const
           ).map(([key, label]) => (
@@ -140,18 +146,36 @@ export function SectorDetail({ sector, onClose }: Props) {
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="px-2 py-1.5 font-medium">代號／名稱</th>
               <th className="px-2 py-1.5 text-right font-medium">
-                {stockPeriod === "day" ? "成交" : "5日成交"}
+                {stockPeriod === "day"
+                  ? "成交"
+                  : stockPeriod === "d3"
+                    ? "3日成交"
+                    : "5日成交"}
               </th>
               <th className="px-2 py-1.5 text-right font-medium">
-                {stockPeriod === "day" ? "淨流" : "5日流"}
+                {stockPeriod === "day"
+                  ? "淨流"
+                  : stockPeriod === "d3"
+                    ? "3日流"
+                    : "5日流"}
               </th>
               <th className="px-2 py-1.5 text-right font-medium">漲跌</th>
             </tr>
           </thead>
           <tbody>
             {stocks.map((s) => {
-              const amt = stockPeriod === "day" ? s.dayAmt : s.d5;
-              const flow = stockPeriod === "day" ? s.dayFlow : s.d5Flow;
+              const amt =
+                stockPeriod === "day"
+                  ? s.dayAmt
+                  : stockPeriod === "d3"
+                    ? s.d3
+                    : s.d5;
+              const flow =
+                stockPeriod === "day"
+                  ? s.dayFlow
+                  : stockPeriod === "d3"
+                    ? s.d3Flow
+                    : s.d5Flow;
               return (
                 <tr
                   key={s.code}

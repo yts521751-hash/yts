@@ -9,6 +9,7 @@ import {
   StockRanking,
   type StockFlowRankRow,
 } from "@/components/stock-ranking";
+import { FlowBulletin } from "@/components/flow-bulletin";
 import { countByStatus, migrateSectorIfNeeded } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -143,6 +144,36 @@ export function HomeApp() {
   const counts = useMemo(() => countByStatus(sectors), [sectors]);
   const isDemo = brief?.isDemo === true || source.includes("demo");
 
+  const sectorBulletinRows = useMemo(
+    () =>
+      sectors.map((s) => ({
+        id: s.id,
+        name: s.name,
+        dayFlow: s.dayFlow,
+        d3Flow: s.d3Flow ?? 0,
+        d5Flow: s.d5Flow,
+      })),
+    [sectors],
+  );
+
+  const stockBulletinRows = useMemo(
+    () =>
+      stocks.map((s) => ({
+        id: s.code,
+        name: `${s.name} ${s.code}`,
+        dayFlow: s.dayFlow,
+        d3Flow: s.d3Flow ?? 0,
+        d5Flow: s.d5Flow,
+      })),
+    [stocks],
+  );
+
+  // 公布欄個股資料背景預載
+  useEffect(() => {
+    if (stocks.length || stocksLoading) return;
+    void loadStocks(false);
+  }, [stocks.length, stocksLoading, loadStocks]);
+
   return (
     <div className="relative flex min-h-full flex-1 flex-col">
       <div
@@ -256,6 +287,13 @@ export function HomeApp() {
             )
           ) : null}
         </section>
+
+        {boardMode === "sector" && sectors.length > 0 ? (
+          <FlowBulletin title="板塊金流公布欄" rows={sectorBulletinRows} />
+        ) : null}
+        {boardMode === "stock" && stocks.length > 0 ? (
+          <FlowBulletin title="個股金流公布欄" rows={stockBulletinRows} />
+        ) : null}
 
         {boardMode === "sector" && sectors.length > 0 && (
           <>

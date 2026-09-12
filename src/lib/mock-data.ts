@@ -16,9 +16,11 @@ export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
   const dayFlow = (i % 2 === 0 ? 1 : -1) * (12 - i * 0.45);
   const dayIn = Math.max(0, dayFlow) + dayAmt * 0.12;
   const dayOut = Math.max(0, -dayFlow) + dayAmt * 0.08;
+  const d3Flow = dayFlow * 2.6;
   const d5Flow = dayFlow * 4.2;
   const d20Flow = dayFlow * 14;
   const accel = d5Flow / 5 - d20Flow / 20;
+  const d3 = dayAmt * 2.6;
   const d5 = dayAmt * 4.2;
   const d20 = dayAmt * 16;
   const heat = 1.25 - i * 0.035;
@@ -33,8 +35,10 @@ export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
       dayFlow: Math.round(flow * 10) / 10,
       dayIn: Math.round(Math.max(0, flow) * 10) / 10,
       dayOut: Math.round(Math.max(0, -flow) * 10) / 10,
+      d3Flow: Math.round(flow * 2.5 * 10) / 10,
       d5Flow: Math.round(flow * 4 * 10) / 10,
       d20Flow: Math.round(flow * 15 * 10) / 10,
+      d3: Math.max(0.5, amt * 2.5),
       d5: Math.max(1, amt * 4),
       d20: Math.max(3, amt * 15),
       changePct,
@@ -47,8 +51,10 @@ export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
     dayFlow: Math.round(dayFlow * 10) / 10,
     dayIn: Math.round(dayIn * 10) / 10,
     dayOut: Math.round(dayOut * 10) / 10,
+    d3Flow: Math.round(d3Flow * 10) / 10,
     d5Flow: Math.round(d5Flow * 10) / 10,
     d20Flow: Math.round(d20Flow * 10) / 10,
+    d3: Math.round(d3 * 10) / 10,
     d5: Math.round(d5 * 10) / 10,
     d20: Math.round(d20 * 10) / 10,
     accel: Math.round(accel * 10) / 10,
@@ -63,6 +69,7 @@ export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
 /** 舊快取缺欄位時補預設，避免 UI 炸掉 */
 export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
   const dayFlow = s.dayFlow ?? 0;
+  const d3Flow = s.d3Flow ?? (s.d5Flow ?? 0) * 0.6;
   const d5Flow = s.d5Flow ?? 0;
   const d20Flow = s.d20Flow ?? 0;
   const accel = s.accel ?? d5Flow / 5 - d20Flow / 20;
@@ -71,8 +78,10 @@ export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
     dayFlow,
     dayIn: s.dayIn ?? Math.max(0, dayFlow),
     dayOut: s.dayOut ?? Math.max(0, -dayFlow),
+    d3Flow,
     d5Flow,
     d20Flow,
+    d3: s.d3 ?? (s.d5 ?? 0) * 0.6,
     d5: s.d5 ?? 0,
     d20: s.d20 ?? 0,
     accel,
@@ -83,8 +92,10 @@ export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
       dayFlow: st.dayFlow ?? 0,
       dayIn: st.dayIn ?? Math.max(0, st.dayFlow ?? 0),
       dayOut: st.dayOut ?? Math.max(0, -(st.dayFlow ?? 0)),
+      d3Flow: st.d3Flow ?? (st.d5Flow ?? 0) * 0.6,
       d5Flow: st.d5Flow ?? 0,
       d20Flow: st.d20Flow ?? 0,
+      d3: st.d3 ?? (st.d5 ?? 0) * 0.6,
       d5: st.d5 ?? 0,
       d20: st.d20 ?? 0,
     })),

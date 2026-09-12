@@ -113,6 +113,7 @@ export async function buildStockFlowRanking(
   if (snaps.length < 5) return null;
 
   const latest = snaps[0];
+  const d3 = snaps.slice(0, Math.min(3, snaps.length));
   const d5 = snaps.slice(0, Math.min(5, snaps.length));
   const d20 = snaps.slice(0, Math.min(20, snaps.length));
   const n5 = d5.length;
@@ -124,6 +125,15 @@ export async function buildStockFlowRanking(
     if (!latestQ) continue;
     const dayParts = flowForQuote(latestQ, latest.insti.get(code));
     if (!dayParts) continue;
+
+    let d3Amt = 0;
+    let d3Flow = 0;
+    for (const day of d3) {
+      const p = flowForQuote(day.quotes.get(code), day.insti.get(code));
+      if (!p) continue;
+      d3Amt += p.amt;
+      d3Flow += p.flow;
+    }
 
     let d5Amt = 0;
     let d5Flow = 0;
@@ -155,8 +165,10 @@ export async function buildStockFlowRanking(
       dayFlow: round1(dayParts.flow),
       dayIn: round1(dayParts.inflow),
       dayOut: round1(dayParts.outflow),
+      d3Flow: round1(d3Flow),
       d5Flow: round1(d5Flow),
       d20Flow: round1(d20Flow),
+      d3: round1(d3Amt),
       d5: round1(d5Amt),
       d20: round1(d20Amt),
       changePct: round2(latestQ.changePct),

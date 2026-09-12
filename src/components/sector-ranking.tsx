@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 
-export type RankPeriod = "day" | "d5";
+export type RankPeriod = "day" | "d3" | "d5";
 
 type SortKey =
   | "amt"
@@ -43,11 +43,15 @@ const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
 };
 
 function periodAmt(s: SectorFlow, period: RankPeriod): number {
-  return period === "day" ? s.dayAmt : s.d5;
+  if (period === "d3") return s.d3;
+  if (period === "d5") return s.d5;
+  return s.dayAmt;
 }
 
 function periodFlow(s: SectorFlow, period: RankPeriod): number {
-  return period === "day" ? s.dayFlow : s.d5Flow;
+  if (period === "d3") return s.d3Flow;
+  if (period === "d5") return s.d5Flow;
+  return s.dayFlow;
 }
 
 function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
@@ -120,13 +124,29 @@ export function SectorRanking({
     () => [
       {
         key: "amt" as const,
-        label: period === "day" ? "成交額" : "5 日成交",
-        tip: period === "day" ? COLUMN_TIPS.amt : COLUMN_TIPS.amt5,
+        label:
+          period === "day" ? "成交額" : period === "d3" ? "3 日成交" : "5 日成交",
+        tip:
+          period === "day"
+            ? COLUMN_TIPS.amt
+            : period === "d3"
+              ? COLUMN_TIPS.amt3
+              : COLUMN_TIPS.amt5,
       },
       {
         key: "flow" as const,
-        label: period === "day" ? "當日淨流" : "近 5 日流",
-        tip: period === "day" ? COLUMN_TIPS.flow : COLUMN_TIPS.flow5,
+        label:
+          period === "day"
+            ? "當日淨流"
+            : period === "d3"
+              ? "近 3 日流"
+              : "近 5 日流",
+        tip:
+          period === "day"
+            ? COLUMN_TIPS.flow
+            : period === "d3"
+              ? COLUMN_TIPS.flow3
+              : COLUMN_TIPS.flow5,
       },
       {
         key: "accel" as const,
@@ -190,6 +210,7 @@ export function SectorRanking({
             {(
               [
                 ["day", "當日"],
+                ["d3", "3 日"],
                 ["d5", "5 日"],
               ] as const
             ).map(([key, label]) => (

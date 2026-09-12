@@ -193,24 +193,33 @@ function weightedDayChange(
   return num / den;
 }
 
-async function buildTpexSyntheticCloses(): Promise<{
+async function buildTpexSyntheticCloses(options?: {
+  force?: boolean;
+}): Promise<{
   closes: number[];
   asOf: string;
   changePct: number;
   source: string;
 } | null> {
   // 維護上櫃合成指數：優先用本機合併行情快取回填，不足再打櫃買 API
-  const series =
+  let series =
     (await readCacheFile<TpexSeries>(TPEX_SERIES)) ?? {
       points: [],
       updatedAt: "",
     };
+  // 點數不足或強制更新時整段重算，避免殘留少數壞點永遠補不齊
+  if (options?.force || series.points.length < 20) {
+    series = { points: [], updatedAt: "" };
+  }
   const known = new Set(series.points.map((p) => p.ymd));
   const otcCodes = await loadOtcCodeSet();
 
-  const need = Math.max(60, 20 - series.points.length + 5);
+  const need = Math.max(80, 20 - series.points.length + 5);
   const cachedDays = await listCachedTradingDays(need, 160);
-  const missingCached = cachedDays.filter((d) => !known.has(d)).reverse();
+  // 由舊到新累乘，才不會把指數基準弄亂
+  const missingCached = cachedDays
+    .filter((d) => !known.has(d))
+    .sort((a, b) => a.localeCompare(b));
 
   let level =
     series.points.length > 0
@@ -366,33 +375,38 @@ export async function computeWindPayload(options?: {
       )
     : fallbackReading("twse", "上市（加權）", options?.twseDayChangePct ?? 0);
 
+  // 櫃買：優先本機上櫃股成交加權合成。Yahoo ^TWOII 圖表近期失真（單日可達 -7%），不當作主來源。
   let tpex: WindReading;
-  const twoii = await fetchYahooCloses("^TWOII");
-  if (twoii) {
-    tpex = readingFromCloses(
-      "tpex",
-      "上櫃（櫃買）",
-      twoii.closes,
-      twoii.changePct,
-      twoii.asOf,
-      "yahoo-TWOII",
-    );
-  } else {
-    try {
-      const syn = await buildTpexSyntheticCloses();
-      tpex = syn
+  try {
+    const syn = await buildTpexSyntheticCloses({ force: options?.force });
+    if (syn) {
+      tpex = readingFromCloses(
+        "tpex",
+        "上櫃（櫃買加權）",
+        syn.closes,
+        syn.changePct,
+        syn.asOf,
+        syn.source,
+      );
+    } else {
+      const twoii = await fetchYahooCloses("^TWOII");
+      const yahooOk =
+        twoii &&
+        Math.abs(twoii.changePct) <= 5 &&
+        twoii.closes.length >= 40;
+      tpex = yahooOk
         ? readingFromCloses(
             "tpex",
-            "上櫃（櫃買合成）",
-            syn.closes,
-            syn.changePct,
-            syn.asOf,
-            syn.source,
+            "上櫃（櫃買）",
+            twoii.closes,
+            twoii.changePct,
+            twoii.asOf,
+            "yahoo-TWOII",
           )
-        : fallbackReading("tpex", "上櫃（櫃買合成）", 0);
-    } catch {
-      tpex = fallbackReading("tpex", "上櫃（櫃買合成）", 0);
+        : fallbackReading("tpex", "上櫃（櫃買加權）", 0);
     }
+  } catch {
+    tpex = fallbackReading("tpex", "上櫃（櫃買加權）", 0);
   }
 
   const payload: WindPayload = {
