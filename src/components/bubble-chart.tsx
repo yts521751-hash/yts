@@ -19,7 +19,14 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 520 });
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 });
-  const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const drag = useRef<{
+    x: number;
+    y: number;
+    tx: number;
+    ty: number;
+    moved: boolean;
+    bubbleId: string | null;
+  } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,6 +82,11 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
     [maxAbs],
   );
 
+  const bubbleIdFromEvent = (target: EventTarget | null) => {
+    const el = target as Element | null;
+    return el?.closest?.("[data-bubble]")?.getAttribute("data-bubble") ?? null;
+  };
+
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -94,22 +106,38 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("[data-bubble]")) return;
-    drag.current = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
+    drag.current = {
+      x: e.clientX,
+      y: e.clientY,
+      tx: view.tx,
+      ty: view.ty,
+      moved: false,
+      bubbleId: bubbleIdFromEvent(e.target),
+    };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
+    const dx = e.clientX - drag.current.x;
+    const dy = e.clientY - drag.current.y;
+    if (!drag.current.moved && Math.hypot(dx, dy) > 4) {
+      drag.current.moved = true;
+    }
+    if (drag.current.bubbleId && !drag.current.moved) return;
     setView((v) => ({
       ...v,
-      tx: drag.current!.tx + (e.clientX - drag.current!.x),
-      ty: drag.current!.ty + (e.clientY - drag.current!.y),
+      tx: drag.current!.tx + dx,
+      ty: drag.current!.ty + dy,
     }));
   };
 
   const onPointerUp = () => {
+    const d = drag.current;
     drag.current = null;
+    if (!d || d.moved || !d.bubbleId) return;
+    const sector = visible.find((s) => s.id === d.bubbleId);
+    if (sector) onSelect(sector);
   };
 
   const origin = toXY(0, 0);
@@ -226,16 +254,14 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
               return (
                 <g
                   key={s.id}
-                  data-bubble
+                  data-bubble={s.id}
                   transform={`translate(${x} ${y})`}
                   className="cursor-pointer"
                   onMouseEnter={() => setHoverId(s.id)}
                   onMouseLeave={() => setHoverId(null)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect(s);
-                  }}
                 >
+                  {/* larger invisible hit area */}
+                  <circle r={r + 8} fill="transparent" />
                   <circle
                     r={r + (selected || hovered ? 3 : 0)}
                     fill={meta.color}
@@ -244,6 +270,7 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
                     strokeWidth={selected ? 2.5 : 1.2}
                     strokeOpacity={0.95}
                     className="transition-[r,fill-opacity] duration-200"
+                    pointerEvents="none"
                   />
                   <circle r={r} fill="url(#bubbleGlow)" pointerEvents="none" />
                   {s.contrarian && (
@@ -254,6 +281,7 @@ export function BubbleChart({ sectors, selectedId, onSelect, filter = "all" }: P
                       fill="var(--tide-anchor)"
                       stroke="var(--background)"
                       strokeWidth="1.5"
+                      pointerEvents="none"
                     />
                   )}
                   {r > 22 && (

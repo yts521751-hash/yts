@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 43127 -H 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 43127 -H 0.0.0.0",
     "lint": "eslint"
   },
   "dependencies": {
@@ -28,6 +28,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "playwright": "^1.63.0",
+    "playwright-core": "^1.63.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

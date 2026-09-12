@@ -17,6 +17,8 @@ import {
   getTopBuySectors,
 } from "@/lib/mock-data";
 import type { SectorFlow, TideStatus } from "@/lib/types";
+import { STATUS_META } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
 
@@ -110,6 +112,31 @@ export function HomeApp() {
               onSelect={onSelect}
               filter={filter}
             />
+            <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
+              {SECTORS.filter((s) => filter === "all" || s.status === filter)
+                .slice()
+                .sort((a, b) => b.d5 - a.d5)
+                .map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSelect(s)}
+                    className={cn(
+                      "rounded-lg border px-2 py-1 text-[11px] transition",
+                      selected?.id === s.id
+                        ? "border-transparent font-semibold text-foreground"
+                        : "border-border/50 text-muted-foreground hover:text-foreground",
+                    )}
+                    style={
+                      selected?.id === s.id
+                        ? { background: STATUS_META[s.status].bg, color: STATUS_META[s.status].color }
+                        : undefined
+                    }
+                  >
+                    {s.name}
+                  </button>
+                ))}
+            </div>
           </div>
           <SectorDetail sector={selected} onClose={() => setSelected(null)} />
         </section>
