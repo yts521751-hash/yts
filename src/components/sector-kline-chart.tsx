@@ -155,8 +155,10 @@ export function SectorKlineChart({ candles }: Props) {
       </div>
 
       <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        K 線以成分股當日成交金額加權報酬串成指數；下方綠柱為流入、紅柱為流出（成交金額 ×
-        softSign(漲跌幅)）。邏輯近似三竹族群圖的「個股合成板塊」。
+        K 線以成分股當日成交金額加權報酬串成指數；下方綠柱為流入、紅柱為流出（
+        <strong className="font-medium text-foreground/80">80%</strong> 成交金額 ×
+        softSign(漲跌)＋<strong className="font-medium text-foreground/80">20%</strong>{" "}
+        三大法人買賣超）。邏輯近似三竹族群圖的「個股合成板塊」。
       </p>
     </div>
   );
@@ -199,8 +201,9 @@ export function SectorKlinePanel({ sectorId }: { sectorId: string }) {
 
   if (loading) {
     return (
-      <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-        組建產業合成 K 線中…
+      <div className="flex h-72 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+        <p>讀取產業合成 K 線…</p>
+        <p className="text-xs opacity-70">通常不到 1 秒；若超過請重整或回首頁觸發背景更新</p>
       </div>
     );
   }
@@ -209,7 +212,7 @@ export function SectorKlinePanel({ sectorId }: { sectorId: string }) {
       <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-6 text-sm text-amber-900 dark:text-amber-100">
         {error}
         <p className="mt-2 text-xs opacity-80">
-          若剛啟動伺服器，請稍候背景灰度同步完成日行情快取後再重整。
+          產業 K 線只讀本機日行情快取，不會在瀏覽器端卡住抓證交所。請回首頁按「觸發背景更新」後再進來。
         </p>
       </div>
     );

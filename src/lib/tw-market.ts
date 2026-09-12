@@ -16,6 +16,16 @@ export type QuoteRow = {
   turnover: number;
 };
 
+/** 三大法人買賣超（股數，可為負） */
+export type InstiRow = {
+  code: string;
+  name: string;
+  foreign: number;
+  trust: number;
+  dealer: number;
+  total: number;
+};
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function toYmd(d: Date): string {
@@ -27,6 +37,10 @@ export function toYmd(d: Date): string {
 
 export function toSlashDate(ymd: string): string {
   return `${ymd.slice(0, 4)}/${ymd.slice(4, 6)}/${ymd.slice(6, 8)}`;
+}
+
+export function toRocSlash(ymd: string): string {
+  return `${Number(ymd.slice(0, 4)) - 1911}/${ymd.slice(4, 6)}/${ymd.slice(6, 8)}`;
 }
 
 export function ymdToIso(ymd: string): string {
@@ -219,6 +233,75 @@ export async function fetchTpexQuotes(ymd: string): Promise<{
   return { quotes };
 }
 
+export async function fetchTwseT86(ymd: string): Promise<InstiRow[] | null> {
+  const url = `https://www.twse.com.tw/rwd/zh/fund/T86?date=${ymd}&selectType=ALL&response=json`;
+  const payload = await fetchJson<{
+    stat?: string;
+    fields?: string[];
+    data?: string[][];
+  }>(url);
+  if (!payload || payload.stat !== "OK" || !payload.data?.length) return null;
+
+  const fields = payload.fields ?? [];
+  const idx = (pred: (f: string) => boolean) => fields.findIndex(pred);
+  const iCode = idx((f) => f.includes("證券代號"));
+  const iName = idx((f) => f.includes("證券名稱"));
+  const iForeign = idx((f) => f.includes("外陸資買賣超股數(不含"));
+  const iForeignDealer = idx((f) => f.includes("外資自營商買賣超"));
+  const iTrust = idx((f) => f === "投信買賣超股數");
+  const iDealer = idx((f) => f === "自營商買賣超股數");
+  const iTotal = idx((f) => f.includes("三大法人買賣超"));
+
+  return payload.data
+    .map((row) => {
+      const foreign =
+        parseNumber(row[iForeign]) +
+        (iForeignDealer >= 0 ? parseNumber(row[iForeignDealer]) : 0);
+      const trust = iTrust >= 0 ? parseNumber(row[iTrust]) : 0;
+      const dealer = iDealer >= 0 ? parseNumber(row[iDealer]) : 0;
+      const total =
+        iTotal >= 0 ? parseNumber(row[iTotal]) : foreign + trust + dealer;
+      return {
+        code: String(row[Math.max(iCode, 0)] ?? "").trim(),
+        name: String(row[Math.max(iName, 1)] ?? "").trim(),
+        foreign,
+        trust,
+        dealer,
+        total,
+      };
+    })
+    .filter((r) => /^\d{4}/.test(r.code));
+}
+
+export async function fetchTpexInsti(ymd: string): Promise<InstiRow[] | null> {
+  const modernUrl = `https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?date=${toSlashDate(ymd)}&type=Daily&cate=All&search=&response=json`;
+  const legacyUrl = `https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d=${encodeURIComponent(toRocSlash(ymd))}&s=0,asc`;
+
+  type TpexInsti = {
+    tables?: { fields?: string[]; data?: string[][] }[];
+  };
+
+  const payload =
+    (await fetchJsonViaCurl<TpexInsti>(modernUrl)) ??
+    (await fetchJson<TpexInsti>(modernUrl)) ??
+    (await fetchJsonViaCurl<TpexInsti>(legacyUrl)) ??
+    (await fetchJson<TpexInsti>(legacyUrl));
+
+  const table = payload?.tables?.[0];
+  if (!table?.data?.length) return null;
+
+  return table.data
+    .map((row) => ({
+      code: String(row[0] ?? "").trim(),
+      name: String(row[1] ?? "").trim(),
+      foreign: parseNumber(row[10]),
+      trust: parseNumber(row[13]),
+      dealer: parseNumber(row[22]),
+      total: parseNumber(row[23]),
+    }))
+    .filter((r) => /^\d{4}/.test(r.code));
+}
+
 const CACHE_DIR = path.join(process.cwd(), ".cache");
 
 export const ACTIVE_FLOW_CACHE = "flow-active.json";
@@ -289,8 +372,22 @@ type DayQuoteCache = {
   fetchedAt: string;
 };
 
+type DayInstiCache = {
+  ymd: string;
+  rows: InstiRow[];
+  fetchedAt: string;
+};
+
 function dayCacheName(ymd: string) {
   return `quotes-${ymd}.json`;
+}
+
+function instiCacheName(ymd: string) {
+  return `insti-${ymd}.json`;
+}
+
+export function klineCacheName(sectorId: string) {
+  return `kline-${sectorId}.json`;
 }
 
 /** 合併上市＋上櫃當日報價並快取 */
@@ -332,9 +429,13 @@ export async function loadMergedQuotesDay(
   return bundle;
 }
 
-export async function listRecentTradingDays(
+/**
+ * 只掃本機 quotes 快取，不打證交所。
+ * 產業 K 線請求路徑必須用這個，避免週末／假日逐日網路探測造成「頁面掛住」。
+ */
+export async function listCachedTradingDays(
   need: number,
-  lookbackCalendar = 50,
+  lookbackCalendar = 120,
 ): Promise<string[]> {
   const days: string[] = [];
   const cursor = new Date();
@@ -342,6 +443,33 @@ export async function listRecentTradingDays(
 
   for (let i = 0; i < lookbackCalendar && days.length < need; i++) {
     const ymd = toYmd(cursor);
+    const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
+    if (cached?.quotes?.length) days.push(ymd);
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return days;
+}
+
+export async function listRecentTradingDays(
+  need: number,
+  lookbackCalendar = 50,
+  options?: { cacheOnly?: boolean },
+): Promise<string[]> {
+  if (options?.cacheOnly) return listCachedTradingDays(need, lookbackCalendar);
+
+  const days: string[] = [];
+  const cursor = new Date();
+  cursor.setHours(12, 0, 0, 0);
+
+  for (let i = 0; i < lookbackCalendar && days.length < need; i++) {
+    const ymd = toYmd(cursor);
+    const dow = cursor.getDay();
+    // 週六日不打網路，減少無謂等待
+    if (dow === 0 || dow === 6) {
+      cursor.setDate(cursor.getDate() - 1);
+      continue;
+    }
+
     const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
     if (cached?.quotes?.length) {
       days.push(ymd);
@@ -369,4 +497,53 @@ export async function getCachedDayQuotes(
   const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
   if (!cached?.quotes?.length) return null;
   return new Map(cached.quotes.map((q) => [q.code, q]));
+}
+
+/** 合併上市 T86 + 櫃買法人日報並快取 */
+export async function loadMergedInstiDay(
+  ymd: string,
+  options?: { force?: boolean; watchCodes?: Set<string> },
+): Promise<Map<string, InstiRow> | null> {
+  const name = instiCacheName(ymd);
+  if (!options?.force) {
+    const cached = await readCacheFile<DayInstiCache>(name);
+    if (cached?.rows?.length) {
+      return new Map(cached.rows.map((r) => [r.code, r]));
+    }
+  }
+
+  const byCode = new Map<string, InstiRow>();
+  const twse = await fetchTwseT86(ymd);
+  if (twse) {
+    for (const row of twse) {
+      if (options?.watchCodes && !options.watchCodes.has(row.code)) continue;
+      byCode.set(row.code, row);
+    }
+  }
+  await sleep(180);
+  const tpex = await fetchTpexInsti(ymd);
+  if (tpex) {
+    for (const row of tpex) {
+      if (options?.watchCodes && !options.watchCodes.has(row.code)) continue;
+      if (!byCode.has(row.code)) byCode.set(row.code, row);
+    }
+  }
+
+  if (byCode.size === 0) return null;
+
+  const bundle: DayInstiCache = {
+    ymd,
+    rows: [...byCode.values()],
+    fetchedAt: new Date().toISOString(),
+  };
+  await writeCacheFile(name, bundle);
+  return byCode;
+}
+
+export async function getCachedDayInsti(
+  ymd: string,
+): Promise<Map<string, InstiRow> | null> {
+  const cached = await readCacheFile<DayInstiCache>(instiCacheName(ymd));
+  if (!cached?.rows?.length) return null;
+  return new Map(cached.rows.map((r) => [r.code, r]));
 }

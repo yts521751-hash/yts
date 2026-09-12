@@ -27,7 +27,7 @@ export function SectorDetail({ sector, onClose }: Props) {
           點選排行榜看板塊
         </p>
         <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-          會列出成分股成交金額、資金流（成交×漲跌）與漲跌幅，並可進入產業 K 線。
+          會列出成分股成交金額、資金流（80%成交×漲跌＋20%法人）與漲跌幅，並可進入產業 K 線。
         </p>
       </div>
     );

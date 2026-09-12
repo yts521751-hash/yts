@@ -3,7 +3,7 @@ import { buildSectorKline } from "@/lib/sector-kline";
 import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 30;
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -16,14 +16,16 @@ export async function GET(req: Request, ctx: Ctx) {
 
   const { searchParams } = new URL(req.url);
   const days = Math.min(60, Math.max(10, Number(searchParams.get("days") || 40)));
+  const force = searchParams.get("force") === "1";
 
   try {
-    const data = await buildSectorKline(id, days);
+    const data = await buildSectorKline(id, days, { force });
     if (!data?.candles?.length) {
       return NextResponse.json(
         {
           ok: false,
-          error: "產業 K 線資料不足（可能尚在背景同步日行情）",
+          error:
+            "產業 K 線資料不足。請回首頁按「觸發背景更新」暖機日行情後再試（本頁只讀快取，不會卡住瀏覽器）。",
           sectorId: id,
           sectorName: def.name,
         },

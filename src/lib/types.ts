@@ -5,7 +5,7 @@ export interface StockFlow {
   name: string;
   /** 當日成交金額（億元） */
   dayAmt: number;
-  /** 當日資金流（億）＝成交金額 × softSign(漲跌幅) */
+  /** 當日資金流（億）＝0.8×(成交×softSign)＋0.2×法人買賣超 */
   dayFlow: number;
   /** 當日流入貢獻（億） */
   dayIn: number;

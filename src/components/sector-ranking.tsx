@@ -37,7 +37,7 @@ const COLUMNS: {
   hint: string;
   hideSm?: boolean;
 }[] = [
-  { key: "dayFlow", label: "當日淨流", hint: "成交金額 × softSign(漲跌幅)（億）" },
+  { key: "dayFlow", label: "當日淨流", hint: "80%成交×漲跌＋20%法人（億）" },
   { key: "dayAmt", label: "成交額", hint: "當日成交金額合計（億）" },
   { key: "d5Flow", label: "近 5 日流", hint: "近 5 日淨資金流合計（億）" },
   {

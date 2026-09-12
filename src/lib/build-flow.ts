@@ -1,10 +1,16 @@
 import type { MarketBrief, SectorFlow, StockFlow, TideStatus } from "@/lib/types";
 import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
-import { signedFlowFromQuote, statusFromFlow } from "@/lib/money-flow";
+import {
+  blendFlow,
+  instiSharesToYi,
+  signedFlowFromQuote,
+  statusFromFlow,
+} from "@/lib/money-flow";
 import {
   ACTIVE_FLOW_CACHE,
   STAGING_FLOW_CACHE,
   listRecentTradingDays,
+  loadMergedInstiDay,
   loadMergedQuotesDay,
   promoteStagingToActive,
   readCacheFile,
@@ -12,12 +18,18 @@ import {
   writeCacheFile,
   writeDeployMeta,
   ymdToIso,
+  type InstiRow,
   type QuoteRow,
 } from "@/lib/tw-market";
+import { warmSectorKlineCaches } from "@/lib/sector-kline";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+const WATCH_CODES = new Set(
+  SECTOR_UNIVERSE.flatMap((s) => s.members.map((m) => m.code)),
+);
 
 export type FlowPayload = {
   brief: MarketBrief;
@@ -26,11 +38,14 @@ export type FlowPayload = {
   source: "twse+tpex" | "cache" | "staging";
   builtAt: string;
   deploySlot?: "active" | "staging";
+  /** 資金流公式版本 */
+  formula?: "blend-80-20";
 };
 
-type DayQuotes = {
+type DayBundle = {
   ymd: string;
   quotes: Map<string, QuoteRow>;
+  insti: Map<string, InstiRow>;
   indexChangePct: number | null;
 };
 
@@ -53,7 +68,17 @@ function rebuildBag() {
   return g.__jinchaoRebuild;
 }
 
-function computeSectors(dayData: DayQuotes[]): SectorFlow[] {
+function flowForCode(day: DayBundle, code: string) {
+  const q = day.quotes.get(code);
+  if (!q) return null;
+  const price = signedFlowFromQuote(q.turnover, q.changePct);
+  const row = day.insti.get(code);
+  const instiYi =
+    row && q.close > 0 ? instiSharesToYi(row.total, q.close) : null;
+  return blendFlow(price, instiYi);
+}
+
+function computeSectors(dayData: DayBundle[]): SectorFlow[] {
   const latest = dayData[0];
   const oldest = dayData[dayData.length - 1];
   const d5Days = dayData.slice(0, Math.min(5, dayData.length));
@@ -73,20 +98,19 @@ function computeSectors(dayData: DayQuotes[]): SectorFlow[] {
         let dayFlow = 0;
         let dayIn = 0;
         let dayOut = 0;
-        if (latestQ) {
-          const p = signedFlowFromQuote(latestQ.turnover, latestQ.changePct);
-          dayAmt = p.amt;
-          dayFlow = p.flow;
-          dayIn = p.inflow;
-          dayOut = p.outflow;
+        const dayParts = flowForCode(latest, code);
+        if (dayParts) {
+          dayAmt = dayParts.amt;
+          dayFlow = dayParts.flow;
+          dayIn = dayParts.inflow;
+          dayOut = dayParts.outflow;
         }
 
         let d5 = 0;
         let d5Flow = 0;
         for (const day of d5Days) {
-          const q = day.quotes.get(code);
-          if (!q) continue;
-          const p = signedFlowFromQuote(q.turnover, q.changePct);
+          const p = flowForCode(day, code);
+          if (!p) continue;
           d5 += p.amt;
           d5Flow += p.flow;
         }
@@ -94,9 +118,8 @@ function computeSectors(dayData: DayQuotes[]): SectorFlow[] {
         let d20 = 0;
         let d20Flow = 0;
         for (const day of d20Days) {
-          const q = day.quotes.get(code);
-          if (!q) continue;
-          const p = signedFlowFromQuote(q.turnover, q.changePct);
+          const p = flowForCode(day, code);
+          if (!p) continue;
           d20 += p.amt;
           d20Flow += p.flow;
         }
@@ -200,16 +223,22 @@ export async function rebuildFlowPayload(options?: {
       throw new Error("無法取得足夠交易日（證交所可能維護中或尚未收盤）");
     }
 
-    const dayData: DayQuotes[] = [];
+    const dayData: DayBundle[] = [];
     for (const ymd of tradingDays) {
       const bundle = await loadMergedQuotesDay(ymd);
-      if (bundle?.quotes?.length) {
-        dayData.push({
-          ymd,
-          quotes: new Map(bundle.quotes.map((q) => [q.code, q])),
-          indexChangePct: bundle.indexChangePct,
-        });
+      if (!bundle?.quotes?.length) {
+        await sleep(100);
+        continue;
       }
+      const insti =
+        (await loadMergedInstiDay(ymd, { watchCodes: WATCH_CODES })) ??
+        new Map<string, InstiRow>();
+      dayData.push({
+        ymd,
+        quotes: new Map(bundle.quotes.map((q) => [q.code, q])),
+        insti,
+        indexChangePct: bundle.indexChangePct,
+      });
       await sleep(100);
     }
     if (dayData.length < 5) {
@@ -235,6 +264,7 @@ export async function rebuildFlowPayload(options?: {
       source: "twse+tpex",
       builtAt: new Date().toISOString(),
       deploySlot: "staging",
+      formula: "blend-80-20",
     };
 
     await writeCacheFile(STAGING_FLOW_CACHE, {
@@ -246,6 +276,13 @@ export async function rebuildFlowPayload(options?: {
       stagingBuiltAt: payload.builtAt,
     });
     await promoteStagingToActive();
+
+    // 預熱產業 K 線快取，避免點進頁面才重算
+    try {
+      await warmSectorKlineCaches(40);
+    } catch (err) {
+      console.warn("[rebuild] kline warm failed:", err);
+    }
 
     return { ...payload, deploySlot: "active" };
   } catch (err) {

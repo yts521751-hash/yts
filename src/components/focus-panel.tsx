@@ -30,7 +30,7 @@ export function FocusPanel({
           <p className="mt-1 text-xs text-muted-foreground">
             {showSpike
               ? "大盤跌逾 1%，這些板塊自己也跌，但成交遠高於近 20 日均量——用來縮小注意範圍，不是買賣點。"
-              : "依當日淨資金流（成交金額 × softSign(漲跌)）排序，看熱錢相對落點。"}
+              : "依當日淨資金流（80%成交×漲跌＋20%法人）排序，看熱錢相對落點。"}
           </p>
         </div>
         <div className="rounded-xl bg-muted/50 px-3 py-1.5 text-right text-xs">

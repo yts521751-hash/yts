@@ -1,14 +1,17 @@
 /**
- * 金潮資金流核心觀念：
- * 成交金額 alone 沒有方向；漲跌幅 alone 沒有規模。
- * 兩者經 softSign 平滑後相乘，才得到「有方向的資金關注度」。
+ * 金潮資金流：
+ * 主訊號（80%）＝成交金額 × softSign(漲跌幅)
+ * 輔訊號（20%）＝三大法人買賣超股數 × 收盤價（換成億元）
  *
- * softSign(chg) ≈ tanh(chg / 2.5)：
- *   +2.5% → ~0.76、+5% → ~0.96；下跌對稱為負。
- * 小波動權重低，避免平盤附近假訊號。
+ * softSign(chg) ≈ tanh(chg / 2.5)：小波動權重低，避免平盤假訊號。
  */
 
 const YI = 1e8;
+
+/** 成交×漲跌權重 */
+export const PRICE_FLOW_WEIGHT = 0.8;
+/** 法人買賣超權重 */
+export const INSTI_FLOW_WEIGHT = 0.2;
 
 export function toYi(ntd: number): number {
   return ntd / YI;
@@ -38,6 +41,38 @@ export function signedFlowFromQuote(
     flow,
     inflow: w > 0 ? flow : 0,
     outflow: w < 0 ? -flow : 0,
+  };
+}
+
+/** 法人買賣超股數 × 股價 → 億元（可為負＝賣超） */
+export function instiSharesToYi(shares: number, price: number): number {
+  if (!Number.isFinite(shares) || !Number.isFinite(price) || price <= 0) {
+    return 0;
+  }
+  return toYi(shares * price);
+}
+
+/**
+ * 混合資金流。若當日沒有法人資料，退回純成交×漲跌，避免整體被縮成 80%。
+ */
+export function blendFlow(
+  price: FlowParts,
+  instiYi: number | null | undefined,
+): FlowParts {
+  if (instiYi == null || !Number.isFinite(instiYi)) {
+    return price;
+  }
+  const instiIn = Math.max(0, instiYi);
+  const instiOut = Math.max(0, -instiYi);
+  const inflow =
+    PRICE_FLOW_WEIGHT * price.inflow + INSTI_FLOW_WEIGHT * instiIn;
+  const outflow =
+    PRICE_FLOW_WEIGHT * price.outflow + INSTI_FLOW_WEIGHT * instiOut;
+  return {
+    amt: price.amt,
+    flow: inflow - outflow,
+    inflow,
+    outflow,
   };
 }
 

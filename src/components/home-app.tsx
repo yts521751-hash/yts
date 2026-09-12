@@ -142,7 +142,7 @@ export function HomeApp() {
                 板塊資金流排行榜
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                資金流＝成交金額 × softSign(股價漲跌幅)：上漲日成交偏流入、下跌日偏流出，再看近 5／20 日加速度分成四態
+                資金流＝80%（成交金額 × softSign(漲跌)）＋20% 三大法人買賣超，再看近 5／20 日加速度分成四態
                 {!isDemo && source ? ` · ${source}` : ""}
               </p>
               {scheduleHint ? (
@@ -240,9 +240,11 @@ export function HomeApp() {
                   className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
                 >
                   <p>
-                    單日資金流＝該股<strong className="text-foreground">成交金額</strong>×
-                    <strong className="text-foreground">softSign(漲跌幅)</strong>
-                    。上漲日成交計入流入、下跌日計入流出；小波動權重較低。
+                    單日資金流＝
+                    <strong className="text-foreground">80%</strong>（成交金額 ×
+                    softSign(漲跌幅)）＋
+                    <strong className="text-foreground">20%</strong>
+                    三大法人買賣超（股數×收盤價）。沒有法人日資料時退回純價量流。
                   </p>
                   <p>
                     <strong className="text-foreground">漲潮</strong>＝近 5 日淨流入且加速；
@@ -253,7 +255,7 @@ export function HomeApp() {
                   <p>
                     點板塊可進<strong className="text-foreground">產業合成 K 線</strong>
                     （成分股成交加權，類似三竹族群圖），並對照每日流入／流出。每日盤後以灰度寫入
-                    staging，再原子切換 active——開網頁不會等幾分鐘。
+                    staging，再原子切換 active，並預熱 K 線快取——開網頁不會等幾分鐘。
                   </p>
                 </TabsContent>
               </Tabs>
@@ -263,7 +265,7 @@ export function HomeApp() {
       </main>
 
       <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮 JinChao · 成交金額×漲跌幅資金流 · 證交所／櫃買每日收盤行情
+        金潮 JinChao · 80%成交×漲跌＋20%法人 · 證交所／櫃買
         {isDemo ? " · 目前為示範後備資料" : " · 真實盤後資料"}
       </footer>
     </div>

@@ -27,7 +27,7 @@ export default async function SectorPage({ params }: Props) {
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           產業合成 K 線：以成分股當日成交金額為權重，融合個股開高低收報酬（類似三竹族群圖）。
-          下方對照每日流入／流出——成交金額 × softSign(漲跌幅)。
+          下方對照每日流入／流出——80% 成交×漲跌＋20% 法人買賣超。
         </p>
         <div className="mt-6 rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 backdrop-blur-sm">
           <SectorKlinePanel sectorId={def.id} />
