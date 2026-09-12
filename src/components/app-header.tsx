@@ -94,18 +94,26 @@ export function AppHeader({
             {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </button>
 
-          <Link
-            href="/turnover"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
-          >
-            成交排行
-          </Link>
-          <Link
-            href="/news"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
-          >
-            熱議新聞
-          </Link>
+          <div className="hidden items-center gap-2 sm:flex">
+            <Link
+              href="/wind"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
+            >
+              風度
+            </Link>
+            <Link
+              href="/turnover"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
+            >
+              成交排行
+            </Link>
+            <Link
+              href="/news"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
+            >
+              熱議新聞
+            </Link>
+          </div>
         </div>
       </div>
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2 px-4 pb-2 text-[11px] text-muted-foreground sm:px-6">

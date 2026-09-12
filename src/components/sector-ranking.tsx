@@ -24,44 +24,36 @@ type SortKey =
   | "priceChange20d"
   | "cp";
 
+export type KindFilter = "all" | "industry" | "theme" | "auto";
+
 type Props = {
   sectors: SectorFlow[];
   selectedId?: string | null;
   onSelect: (s: SectorFlow) => void;
   filter?: TideStatus | "all";
+  kindFilter?: KindFilter;
 };
 
 const COLUMNS: {
   key: SortKey;
   label: string;
-  hint?: string;
   hideSm?: boolean;
 }[] = [
   { key: "dayFlow", label: "當日淨流" },
   { key: "dayAmt", label: "成交額" },
   { key: "d5Flow", label: "近 5 日流" },
-  {
-    key: "accel",
-    label: "加速度",
-    hideSm: true,
-  },
-  {
-    key: "d20Flow",
-    label: "近 20 日流",
-    hideSm: true,
-  },
-  {
-    key: "heat",
-    label: "量能",
-    hideSm: true,
-  },
-  {
-    key: "priceChange20d",
-    label: "20 日漲幅",
-    hideSm: true,
-  },
+  { key: "accel", label: "加速度", hideSm: true },
+  { key: "d20Flow", label: "近 20 日流", hideSm: true },
+  { key: "heat", label: "量能", hideSm: true },
+  { key: "priceChange20d", label: "20 日漲幅", hideSm: true },
   { key: "cp", label: "CP" },
 ];
+
+const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
+  industry: "產業",
+  theme: "題材",
+  auto: "新興",
+};
 
 function sortValue(s: SectorFlow, key: SortKey): number {
   if (key === "cp") {
@@ -76,29 +68,80 @@ export function SectorRanking({
   selectedId,
   onSelect,
   filter = "all",
+  kindFilter = "all",
 }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("dayFlow");
   const [asc, setAsc] = useState(false);
 
   const rows = useMemo(() => {
-    const list = sectors.filter((s) => filter === "all" || s.status === filter);
+    const list = sectors.filter((s) => {
+      if (filter !== "all" && s.status !== filter) return false;
+      if (kindFilter !== "all" && (s.kind ?? "theme") !== kindFilter) return false;
+      return true;
+    });
     return [...list].sort((a, b) => {
       const diff = sortValue(a, sortKey) - sortValue(b, sortKey);
       return asc ? diff : -diff;
     });
-  }, [sectors, filter, sortKey, asc]);
+  }, [sectors, filter, kindFilter, sortKey, asc]);
 
   return (
-    <div className="flex h-full min-h-[480px] flex-col">
+    <div className="flex h-full min-h-[320px] flex-col sm:min-h-[480px]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-2 pb-2 sm:px-3">
         <p className="text-xs text-muted-foreground">
-          {filter !== "all" ? `篩選：${STATUS_META[filter].label}` : "全部板塊"}
+          {kindFilter !== "all" ? KIND_LABEL[kindFilter] : "全部"}
+          {filter !== "all" ? ` · ${STATUS_META[filter].label}` : ""}
         </p>
         <p className="text-[11px] tabular-nums text-muted-foreground">
           共 {rows.length} 板塊
         </p>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-auto p-1 md:hidden">
+        {rows.map((s, i) => {
+          const meta = STATUS_META[s.status];
+          const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSelect(s)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
+                selectedId === s.id
+                  ? "border-transparent bg-[var(--mk-surge-bg)] ring-1 ring-[var(--mk-surge)]"
+                  : "border-border/40 bg-[var(--panel)]/50 hover:bg-muted/40",
+              )}
+            >
+              <span className="w-6 shrink-0 text-center text-xs tabular-nums text-muted-foreground">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="truncate font-medium">{s.name}</span>
+                  <span
+                    className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                    style={{ background: meta.bg, color: meta.color }}
+                  >
+                    {meta.label}
+                  </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {KIND_LABEL[kind]}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex gap-3 text-[11px] text-muted-foreground">
+                  <span>成交 {formatYi(s.dayAmt)}</span>
+                  <span className={signedClass(s.dayFlow)}>
+                    淨流 {formatYiSigned(s.dayFlow)}
+                  </span>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
         <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--panel)]/95 backdrop-blur-sm">
             <tr className="text-left text-[11px] text-muted-foreground">
@@ -111,12 +154,11 @@ export function SectorRanking({
                     key={col.key}
                     className={cn(
                       "px-2 py-2.5 font-medium sm:px-3",
-                      col.hideSm && "hidden md:table-cell",
+                      col.hideSm && "hidden lg:table-cell",
                     )}
                   >
                     <button
                       type="button"
-                     
                       onClick={() => {
                         if (sortKey === col.key) setAsc((v) => !v);
                         else {
@@ -149,6 +191,7 @@ export function SectorRanking({
             {rows.map((s, i) => {
               const meta = STATUS_META[s.status];
               const score = cpScore(s);
+              const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
               return (
                 <tr
                   key={s.id}
@@ -166,18 +209,23 @@ export function SectorRanking({
                   <td className="px-2 py-2.5 sm:px-3">
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate font-medium">{s.name}</span>
-                      <span
-                        className="w-fit rounded-md px-1.5 py-0.5 text-[10px] font-medium"
-                        style={{ background: meta.bg, color: meta.color }}
-                      >
-                        {meta.label}
-                        {s.volumeSpike ? " · 放量" : ""}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        <span
+                          className="w-fit rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ background: meta.bg, color: meta.color }}
+                        >
+                          {meta.label}
+                          {s.volumeSpike ? " · 放量" : ""}
+                        </span>
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {KIND_LABEL[kind]}
+                        </span>
+                      </div>
                     </div>
                   </td>
                   <td
                     className={cn(
-                      "px-2 py-2.5 text-right tabular-nums font-medium sm:px-3",
+                      "px-2 py-2.5 text-right font-medium tabular-nums sm:px-3",
                       signedClass(s.dayFlow),
                     )}
                   >
@@ -196,7 +244,7 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.accel),
                     )}
                   >
@@ -204,24 +252,24 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.d20Flow),
                     )}
                   >
                     {formatYiSigned(s.d20Flow, 0)}
                   </td>
-                  <td className="hidden px-2 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell sm:px-3">
+                  <td className="hidden px-2 py-2.5 text-right tabular-nums text-muted-foreground lg:table-cell sm:px-3">
                     {formatHeat(s.heat)}
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      "hidden px-2 py-2.5 text-right tabular-nums lg:table-cell sm:px-3",
                       signedClass(s.priceChange20d),
                     )}
                   >
                     {formatPct(s.priceChange20d)}
                   </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-[var(--mk-surge)] sm:px-3">
+                  <td className="px-2 py-2.5 text-right font-semibold tabular-nums text-[var(--mk-surge)] sm:px-3">
                     {Number.isFinite(score) ? score.toFixed(0) : "—"}
                   </td>
                 </tr>

@@ -15,12 +15,15 @@ import {
   migrateSectorIfNeeded,
 } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
+import type { KindFilter } from "@/components/sector-ranking";
+import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
 type LoadState = "loading" | "ready" | "error";
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
@@ -180,23 +183,65 @@ export function HomeApp() {
               </button>
             </div>
           ) : (
-            <StatusCards counts={counts} active={filter} onChange={setFilter} />
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    ["all", "全部"],
+                    ["industry", "官方產業"],
+                    ["theme", "題材"],
+                    ["auto", "新興自動"],
+                  ] as const
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setKindFilter(k)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1 text-xs transition",
+                      kindFilter === k
+                        ? "border-transparent bg-foreground text-background"
+                        : "border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <StatusCards counts={counts} active={filter} onChange={setFilter} />
+            </>
           )}
         </section>
 
         {sectors.length > 0 && (
           <>
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-              <div className="min-h-[480px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:p-3">
+              <div className="min-h-[320px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:min-h-[480px] sm:p-3">
                 <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
                   onSelect={setSelected}
                   filter={filter}
+                  kindFilter={kindFilter}
                 />
               </div>
-              <SectorDetail sector={selected} onClose={() => setSelected(null)} />
+              <div className="hidden lg:block">
+                <SectorDetail sector={selected} onClose={() => setSelected(null)} />
+              </div>
             </section>
+            {selected && (
+              <div className="fixed inset-0 z-50 lg:hidden">
+                <button
+                  type="button"
+                  className="absolute inset-0 bg-black/40"
+                  aria-label="關閉"
+                  onClick={() => setSelected(null)}
+                />
+                <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-2xl border border-border/60 bg-[var(--panel)] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl">
+                  <SectorDetail sector={selected} onClose={() => setSelected(null)} />
+                </div>
+              </div>
+            )}
 
             {brief && (
               <FocusPanel

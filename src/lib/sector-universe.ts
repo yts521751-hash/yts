@@ -11,11 +11,15 @@
 
 export type SectorMember = { code: string; name: string };
 
+export type SectorKind = "industry" | "theme" | "auto";
+
 export type SectorDef = {
   id: string;
   name: string;
   /** 分類說明（給小百科／頁面提示用） */
   basis: string;
+  /** industry=官方產業；theme=題材；auto=新聞自動聚合 */
+  kind?: SectorKind;
   members: SectorMember[];
 };
 
@@ -30,10 +34,7 @@ export const SECTOR_UNIVERSE: SectorDef[] = [
       { code: "3231", name: "緯創" },
       { code: "2356", name: "英業達" },
       { code: "2376", name: "技嘉" },
-      { code: "2324", name: "仁寶" },
-      { code: "2353", name: "宏碁" },
-      { code: "2357", name: "華碩" },
-      { code: "3017", name: "奇鋐" },
+      { code: "2324", name: "仁寶" },      { code: "3017", name: "奇鋐" },
       { code: "3706", name: "神基" },
       { code: "6414", name: "樺漢" },
       { code: "2395", name: "研華" },
@@ -48,9 +49,7 @@ export const SECTOR_UNIVERSE: SectorDef[] = [
       { code: "3324", name: "雙鴻" },
       { code: "6235", name: "華孚" },
       { code: "2421", name: "建準" },
-      { code: "3653", name: "健策" },
-      { code: "2465", name: "麗臺" },
-      { code: "8255", name: "朋程" },
+      { code: "3653", name: "健策" },      { code: "8255", name: "朋程" },
       { code: "3037", name: "欣興" },
       { code: "3483", name: "力致" },
       { code: "4540", name: "全球傳動" },

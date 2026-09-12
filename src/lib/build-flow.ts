@@ -1,5 +1,6 @@
 import type { MarketBrief, SectorFlow, StockFlow, TideStatus } from "@/lib/types";
-import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
+import { SECTOR_UNIVERSE, type SectorDef } from "@/lib/sector-universe";
+import { resolveActiveUniverse } from "@/lib/resolve-universe";
 import {
   blendFlow,
   instiSharesToYi,
@@ -28,7 +29,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-const WATCH_CODES = new Set(
+let WATCH_CODES = new Set(
   SECTOR_UNIVERSE.flatMap((s) => s.members.map((m) => m.code)),
 );
 
@@ -71,7 +72,7 @@ function flowForCode(day: DayBundle, code: string) {
   return blendFlow(price, instiYi);
 }
 
-function computeSectors(dayData: DayBundle[]): SectorFlow[] {
+function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow[] {
   const latest = dayData[0];
   const oldest = dayData[dayData.length - 1];
   const d5Days = dayData.slice(0, Math.min(5, dayData.length));
@@ -79,7 +80,7 @@ function computeSectors(dayData: DayBundle[]): SectorFlow[] {
   const n5 = d5Days.length;
   const n20 = d20Days.length;
 
-  return SECTOR_UNIVERSE.map((def) => {
+  return universe.map((def) => {
     type Rich = StockFlow & { pxNow: number; pxOld: number };
     const stocksRich = def.members
       .map((m) => {
@@ -200,6 +201,7 @@ function computeSectors(dayData: DayBundle[]): SectorFlow[] {
       status,
       volumeSpike,
       stocks,
+      kind: def.kind ?? "theme",
     };
   }).filter((s) => s.stocks.length > 0);
 }
@@ -239,7 +241,18 @@ export async function rebuildFlowPayload(options?: {
     }
 
     const latest = dayData[0];
-    const sectors = computeSectors(dayData);
+    let newsTitles: string[] = [];
+    try {
+      const { getActiveNewsPayload } = await import("@/lib/news");
+      const news = await getActiveNewsPayload();
+      newsTitles = (news.items ?? []).map((n: { title?: string }) => n.title || "").filter(Boolean);
+    } catch { /* news optional */ }
+    const universe = await resolveActiveUniverse({
+      quotes: latest.quotes,
+      newsTitles,
+    });
+    WATCH_CODES = new Set(universe.flatMap((s) => s.members.map((m) => m.code)));
+    const sectors = computeSectors(dayData, universe);
     const indexChangePct = latest.indexChangePct ?? 0;
     const fear = await computeFearGauge(
       dayData

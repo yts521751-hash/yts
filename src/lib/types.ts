@@ -49,6 +49,8 @@ export interface SectorFlow {
   status: TideStatus;
   volumeSpike?: boolean;
   stocks: StockFlow[];
+  /** industry=官方產業；theme=題材；auto=自動新興 */
+  kind?: "industry" | "theme" | "auto";
 }
 
 /** 產業合成 K 線 */
