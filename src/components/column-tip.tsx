@@ -23,7 +23,7 @@ export const COLUMN_TIPS = {
   cp: "綜合資金流與漲幅的相對效率參考分數，愈高表示單位漲幅帶進的資金效益愈好。",
   close: "最近一筆成交價／收盤價。",
   revenueYoy: "最近月份營收較去年同月增減（%），來源：證交所／櫃買公開月營收。",
-  epsGrowth: "優先用 Yahoo 分析師共識「下一年平均 EPS」相對本年度／近四季 EPS 推算成長率；若共識暫不可用，則改以公開財報近四季 EPS 年增率推估。",
+  epsGrowth: "優先取全市場法人報告共識：各家外資／券商預估 EPS 的平均（FactSet／鉅亨），用下一年平均相對本年度平均推算成長率；共識暫缺時才回退 Yahoo 或公開財報近四季年增。",
 } as const;
 
 export function ColumnTip({

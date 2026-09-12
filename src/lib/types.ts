@@ -29,11 +29,11 @@ export interface StockFlow {
   revenueYoy?: number | null;
   /** 營收資料年月 */
   revenueMonth?: string | null;
-  /** 市場共識 EPS 成長率 % */
+  /** 法人共識 EPS 成長率 %（各家外資預估平均） */
   epsGrowth?: number | null;
-  /** 共識下一年平均 EPS */
+  /** 下一年法人預估 EPS 平均 */
   nextYearEps?: number | null;
-  /** 基準 EPS */
+  /** 本年度法人預估 EPS 平均（或財報基準） */
   baseEps?: number | null;
 }
 
