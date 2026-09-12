@@ -29,6 +29,7 @@ export function HomeApp() {
   const [sectors, setSectors] = useState<SectorFlow[]>([]);
   const [brief, setBrief] = useState<MarketBrief | null>(null);
   const [source, setSource] = useState("");
+  const [scheduleHint, setScheduleHint] = useState("");
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,6 +65,7 @@ export function HomeApp() {
       setSectors(data.sectors as SectorFlow[]);
       setBrief(data.brief as MarketBrief);
       setSource(String(data.source ?? ""));
+      setScheduleHint(String(data.schedule?.description ?? ""));
       setLoadState("ready");
       if (!data.ok && data.error) setError(String(data.error));
       setSelected((prev) => {
@@ -143,6 +145,11 @@ export function HomeApp() {
                 日金額越大
                 {!isDemo && source ? ` · ${source}` : ""}
               </p>
+              {scheduleHint ? (
+                <p className="mt-1 text-xs text-muted-foreground/80">
+                  自動同步：{scheduleHint}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
