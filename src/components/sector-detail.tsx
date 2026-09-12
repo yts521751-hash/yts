@@ -2,7 +2,13 @@
 
 import type { SectorFlow } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
-import { formatPct, formatYi, signedClass } from "@/lib/format";
+import {
+  formatHeat,
+  formatPct,
+  formatYi,
+  formatYiSigned,
+  signedClass,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { X } from "lucide-react";
@@ -20,14 +26,14 @@ export function SectorDetail({ sector, onClose }: Props) {
           點選排行榜看板塊
         </p>
         <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-          會列出成分股當日法人買賣超，以及外資／投信／自營分項。
+          會列出成分股當日與近五日成交金額，以及當日漲跌。
         </p>
       </div>
     );
   }
 
   const meta = STATUS_META[sector.status];
-  const stocks = [...sector.stocks].sort((a, b) => b.dayNet - a.dayNet);
+  const stocks = [...sector.stocks].sort((a, b) => b.dayAmt - a.dayAmt);
 
   return (
     <div className="flex h-full min-h-[280px] flex-col rounded-2xl border border-border/60 bg-[var(--panel)]/80 shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-right-2 duration-300">
@@ -43,28 +49,25 @@ export function SectorDetail({ sector, onClose }: Props) {
             >
               {meta.label}
             </span>
-            {sector.contrarian && (
+            {sector.volumeSpike && (
               <span className="rounded-md bg-[var(--tide-anchor-bg)] px-2 py-0.5 text-xs font-medium text-[var(--tide-anchor)]">
-                ⚓ 逆勢買超
+                大跌日放量
               </span>
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{meta.hint}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          aria-label="關閉"
-        >
+        <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground" aria-label="關閉">
           <X className="size-4" />
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-4">
-        <Metric label="近 5 日" value={formatYi(sector.d5)} tone={sector.d5} />
-        <Metric label="加速度/日" value={formatYi(sector.accel)} tone={sector.accel} />
-        <Metric label="近 20 日淨額" value={formatYi(sector.d20Net)} tone={sector.d20Net} />
+      <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3">
+        <Metric label="當日成交" value={formatYi(sector.dayAmt)} />
+        <Metric label="近 5 日" value={formatYi(sector.d5)} />
+        <Metric label="熱度" value={formatHeat(sector.heat)} />
+        <Metric label="加速度/日" value={formatYiSigned(sector.accel)} tone={sector.accel} />
+        <Metric label="近 20 日" value={formatYi(sector.d20)} />
         <Metric label="近 20 日漲幅" value={formatPct(sector.priceChange20d)} tone={sector.priceChange20d} />
       </div>
 
@@ -73,43 +76,21 @@ export function SectorDetail({ sector, onClose }: Props) {
           <thead>
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="px-2 py-1.5 font-medium">代號／名稱</th>
-              <th className="px-2 py-1.5 text-right font-medium">當日</th>
+              <th className="px-2 py-1.5 text-right font-medium">當日成交</th>
               <th className="hidden px-2 py-1.5 text-right font-medium sm:table-cell">近 5 日</th>
               <th className="px-2 py-1.5 text-right font-medium">漲跌</th>
             </tr>
           </thead>
           <tbody>
             {stocks.map((s) => (
-              <tr
-                key={s.code}
-                className="border-t border-border/40 transition hover:bg-muted/40"
-              >
+              <tr key={s.code} className="border-t border-border/40 transition hover:bg-muted/40">
                 <td className="px-2 py-2">
                   <div className="font-medium">{s.name}</div>
                   <div className="text-[11px] tabular-nums text-muted-foreground">{s.code}</div>
-                  <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground sm:hidden">
-                    <span>外 {formatYi(s.foreign, 1)}</span>
-                    <span>投 {formatYi(s.trust, 1)}</span>
-                    <span>自 {formatYi(s.dealer, 1)}</span>
-                  </div>
                 </td>
-                <td className={cn("px-2 py-2 text-right tabular-nums font-medium", signedClass(s.dayNet))}>
-                  {formatYi(s.dayNet)}
-                  <div className="mt-0.5 hidden text-[10px] font-normal text-muted-foreground sm:block">
-                    外{formatYi(s.foreign, 1)} · 投{formatYi(s.trust, 1)} · 自{formatYi(s.dealer, 1)}
-                  </div>
-                </td>
-                <td
-                  className={cn(
-                    "hidden px-2 py-2 text-right tabular-nums sm:table-cell",
-                    signedClass(s.d5),
-                  )}
-                >
-                  {formatYi(s.d5)}
-                </td>
-                <td className={cn("px-2 py-2 text-right tabular-nums", signedClass(s.changePct))}>
-                  {formatPct(s.changePct)}
-                </td>
+                <td className="px-2 py-2 text-right tabular-nums font-medium">{formatYi(s.dayAmt)}</td>
+                <td className="hidden px-2 py-2 text-right tabular-nums sm:table-cell">{formatYi(s.d5)}</td>
+                <td className={cn("px-2 py-2 text-right tabular-nums", signedClass(s.changePct))}>{formatPct(s.changePct)}</td>
               </tr>
             ))}
           </tbody>
@@ -119,19 +100,11 @@ export function SectorDetail({ sector, onClose }: Props) {
   );
 }
 
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: number;
-}) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: number }) {
   return (
     <div className="rounded-xl bg-muted/40 px-2.5 py-2">
       <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={cn("mt-0.5 text-sm font-semibold tabular-nums", signedClass(tone))}>{value}</p>
+      <p className={cn("mt-0.5 text-sm font-semibold tabular-nums", tone !== undefined ? signedClass(tone) : undefined)}>{value}</p>
     </div>
   );
 }

@@ -4,20 +4,13 @@ import path from "path";
 const UA =
   "Mozilla/5.0 (compatible; JinChao/1.0; +https://localhost; research)";
 
-export type InstiRow = {
-  code: string;
-  name: string;
-  foreign: number;
-  trust: number;
-  dealer: number;
-  total: number;
-};
-
 export type QuoteRow = {
   code: string;
   name: string;
   close: number;
   changePct: number;
+  /** 成交金額（元） */
+  turnover: number;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -29,8 +22,8 @@ export function toYmd(d: Date): string {
   return `${y}${m}${day}`;
 }
 
-export function toRocSlash(ymd: string): string {
-  return `${Number(ymd.slice(0, 4)) - 1911}/${ymd.slice(4, 6)}/${ymd.slice(6, 8)}`;
+export function toSlashDate(ymd: string): string {
+  return `${ymd.slice(0, 4)}/${ymd.slice(4, 6)}/${ymd.slice(6, 8)}`;
 }
 
 export function parseNumber(raw: unknown): number {
@@ -46,7 +39,10 @@ export async function fetchJson<T>(url: string, retries = 2): Promise<T | null> 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(url, {
-        headers: { "User-Agent": UA, Accept: "application/json,text/plain,*/*" },
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json,text/plain,*/*",
+        },
         cache: "no-store",
       });
       if (!res.ok) {
@@ -70,8 +66,18 @@ export async function fetchJsonViaCurl<T>(url: string): Promise<T | null> {
     const run = promisify(execFile);
     const { stdout } = await run(
       "curl",
-      ["-sS", "-k", "-A", UA, "--max-time", "90", url],
-      { maxBuffer: 30 * 1024 * 1024 },
+      [
+        "-sS",
+        "-k",
+        "--http1.1",
+        "--compressed",
+        "-A",
+        "Mozilla/5.0",
+        "--max-time",
+        "90",
+        url,
+      ],
+      { maxBuffer: 40 * 1024 * 1024 },
     );
     if (!stdout?.trim()) return null;
     return JSON.parse(stdout) as T;
@@ -82,74 +88,12 @@ export async function fetchJsonViaCurl<T>(url: string): Promise<T | null> {
 
 type TwseTable = {
   stat?: string;
-  fields?: string[];
-  data?: string[][];
   tables?: { title?: string; fields?: string[]; data?: string[][] }[];
 };
 
-type TpexTable = {
-  tables?: { fields?: string[]; data?: string[][] }[];
+type TpexDailyQuotes = {
+  tables?: { title?: string; fields?: string[]; data?: string[][] }[];
 };
-
-type TpexQuoteApi = {
-  Date?: string;
-  SecuritiesCompanyCode?: string;
-  CompanyName?: string;
-  Close?: string;
-  Change?: string;
-};
-
-export async function fetchTwseT86(ymd: string): Promise<InstiRow[] | null> {
-  const url = `https://www.twse.com.tw/rwd/zh/fund/T86?date=${ymd}&selectType=ALL&response=json`;
-  const payload = await fetchJson<TwseTable>(url);
-  if (!payload || payload.stat !== "OK" || !payload.data?.length) return null;
-
-  const fields = payload.fields ?? [];
-  const idx = (pred: (f: string) => boolean) => fields.findIndex(pred);
-  const iCode = idx((f) => f.includes("證券代號"));
-  const iName = idx((f) => f.includes("證券名稱"));
-  const iForeign = idx((f) => f.includes("外陸資買賣超股數(不含"));
-  const iForeignDealer = idx((f) => f.includes("外資自營商買賣超"));
-  const iTrust = idx((f) => f === "投信買賣超股數");
-  const iDealer = idx((f) => f === "自營商買賣超股數");
-  const iTotal = idx((f) => f.includes("三大法人買賣超"));
-
-  return payload.data.map((row) => {
-    const foreign =
-      parseNumber(row[iForeign]) +
-      (iForeignDealer >= 0 ? parseNumber(row[iForeignDealer]) : 0);
-    const trust = iTrust >= 0 ? parseNumber(row[iTrust]) : 0;
-    const dealer = iDealer >= 0 ? parseNumber(row[iDealer]) : 0;
-    const total =
-      iTotal >= 0 ? parseNumber(row[iTotal]) : foreign + trust + dealer;
-    return {
-      code: String(row[Math.max(iCode, 0)] ?? "").trim(),
-      name: String(row[Math.max(iName, 1)] ?? "").trim(),
-      foreign,
-      trust,
-      dealer,
-      total,
-    };
-  });
-}
-
-export async function fetchTpexInsti(ymd: string): Promise<InstiRow[] | null> {
-  const d = toRocSlash(ymd);
-  const url = `https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d=${encodeURIComponent(d)}&s=0,asc`;
-  const payload =
-    (await fetchJsonViaCurl<TpexTable>(url)) ?? (await fetchJson<TpexTable>(url));
-  const table = payload?.tables?.[0];
-  if (!table?.data?.length) return null;
-
-  return table.data.map((row) => ({
-    code: String(row[0] ?? "").trim(),
-    name: String(row[1] ?? "").trim(),
-    foreign: parseNumber(row[10]),
-    trust: parseNumber(row[13]),
-    dealer: parseNumber(row[22]),
-    total: parseNumber(row[23]),
-  }));
-}
 
 export async function fetchTwseQuotes(ymd: string): Promise<{
   quotes: QuoteRow[];
@@ -175,6 +119,7 @@ export async function fetchTwseQuotes(ymd: string): Promise<{
   const fields = quoteTable.fields ?? [];
   const iCode = fields.findIndex((f) => f.includes("證券代號"));
   const iName = fields.findIndex((f) => f.includes("證券名稱"));
+  const iTurnover = fields.findIndex((f) => f.includes("成交金額"));
   const iClose = fields.findIndex((f) => f === "收盤價");
   const iSign = fields.findIndex((f) => f.includes("漲跌(+/-)"));
   const iDiff = fields.findIndex((f) => f.includes("漲跌價差"));
@@ -199,6 +144,7 @@ export async function fetchTwseQuotes(ymd: string): Promise<{
       name: String(row[iName] ?? "").trim(),
       close,
       changePct: prev > 0 ? (diff / prev) * 100 : 0,
+      turnover: iTurnover >= 0 ? parseNumber(row[iTurnover]) : 0,
     });
   }
   return { quotes, indexChangePct };
@@ -207,34 +153,42 @@ export async function fetchTwseQuotes(ymd: string): Promise<{
 export async function fetchTpexQuotes(ymd: string): Promise<{
   quotes: QuoteRow[];
 } | null> {
-  const url =
-    "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes";
+  const url = `https://www.tpex.org.tw/www/zh-tw/afterTrading/dailyQuotes?date=${toSlashDate(ymd)}&id=&response=json`;
   const payload =
-    (await fetchJsonViaCurl<TpexQuoteApi[]>(url)) ??
-    (await fetchJson<TpexQuoteApi[]>(url));
-  if (!Array.isArray(payload) || !payload.length) return null;
+    (await fetchJsonViaCurl<TpexDailyQuotes>(url)) ??
+    (await fetchJson<TpexDailyQuotes>(url));
+  const table = payload?.tables?.[0];
+  if (!table?.data?.length) return null;
 
-  const want = `${Number(ymd.slice(0, 4)) - 1911}${ymd.slice(4)}`;
-  const filtered = payload.filter((r) => !r.Date || r.Date === want);
-  const rows = filtered.length ? filtered : payload;
+  const fields = (table.fields ?? []).map((f) =>
+    f.replace(/<[^>]+>/g, "").trim(),
+  );
+  const iCode = fields.findIndex((f) => f.includes("代號"));
+  const iName = fields.findIndex((f) => f.includes("名稱"));
+  const iClose = fields.findIndex((f) => f.includes("收盤"));
+  const iChange = fields.findIndex((f) => f.includes("漲跌"));
+  const iAmt = fields.findIndex((f) => f.includes("成交金額"));
 
-  return {
-    quotes: rows
-      .map((r) => {
-        const close = parseNumber(r.Close);
-        const change = parseNumber(r.Change);
-        const prev = close - change;
-        return {
-          code: String(r.SecuritiesCompanyCode ?? "").trim(),
-          name: String(r.CompanyName ?? "").trim(),
-          close,
-          changePct: prev > 0 ? (change / prev) * 100 : 0,
-        };
-      })
-      .filter((q) => q.code && q.close > 0),
-  };
+  const quotes: QuoteRow[] = [];
+  for (const row of table.data) {
+    const code = String(row[Math.max(iCode, 0)] ?? "").trim();
+    if (!/^\d{4}/.test(code)) continue;
+    const close = parseNumber(row[iClose]);
+    if (close <= 0) continue;
+    const change = parseNumber(row[iChange]);
+    const prev = close - change;
+    quotes.push({
+      code,
+      name: String(row[Math.max(iName, 1)] ?? "").trim(),
+      close,
+      changePct: prev > 0 ? (change / prev) * 100 : 0,
+      turnover: iAmt >= 0 ? parseNumber(row[iAmt]) : 0,
+    });
+  }
+  return { quotes };
 }
 
+/** 以證交所每日收盤行情判斷交易日（不再依賴法人買賣超） */
 export async function listRecentTradingDays(
   need: number,
   lookbackCalendar = 50,
@@ -245,8 +199,8 @@ export async function listRecentTradingDays(
 
   for (let i = 0; i < lookbackCalendar && days.length < need; i++) {
     const ymd = toYmd(cursor);
-    const rows = await fetchTwseT86(ymd);
-    if (rows && rows.length > 0) days.push(ymd);
+    const bundle = await fetchTwseQuotes(ymd);
+    if (bundle && bundle.quotes.length > 0) days.push(ymd);
     cursor.setDate(cursor.getDate() - 1);
     await sleep(260);
   }

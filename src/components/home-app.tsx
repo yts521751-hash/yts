@@ -57,9 +57,7 @@ export function HomeApp() {
         cache: "no-store",
       });
       const data = await res.json();
-      if (!data.sectors?.length) {
-        throw new Error(data.error || "沒有板塊資料");
-      }
+      if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
       setSectors(data.sectors as SectorFlow[]);
       setBrief(data.brief as MarketBrief);
       setSource(String(data.source ?? ""));
@@ -68,9 +66,7 @@ export function HomeApp() {
       if (!data.ok && data.error) setError(String(data.error));
       setSelected((prev) => {
         if (!prev) return prev;
-        return (
-          (data.sectors as SectorFlow[]).find((s) => s.id === prev.id) ?? null
-        );
+        return (data.sectors as SectorFlow[]).find((s) => s.id === prev.id) ?? null;
       });
     } catch (e) {
       setLoadState((s) => (s === "ready" ? "ready" : "error"));
@@ -109,11 +105,8 @@ export function HomeApp() {
 
   const counts = useMemo(() => countByStatus(sectors), [sectors]);
   const cp = useMemo(() => getCpRanking(sectors), [sectors]);
-  const contrarian = useMemo(
-    () => getContrarianSectors(sectors),
-    [sectors],
-  );
-  const topBuys = useMemo(() => getTopBuySectors(sectors), [sectors]);
+  const volumeSpikes = useMemo(() => getContrarianSectors(sectors), [sectors]);
+  const topTurnover = useMemo(() => getTopBuySectors(sectors), [sectors]);
   const isDemo = brief?.isDemo === true || source.includes("demo");
 
   return (
@@ -136,16 +129,14 @@ export function HomeApp() {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
-                板塊排行榜
+                成交金額排行榜
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                依近 5 日、近 20 日淨額、加速度或 CP 值排序，點列看成分股法人分項
+                依板塊成分股成交金額合計排序，並用近 5／20 日均量比看熱度——與法人買賣超無關
                 {!isDemo && source ? ` · ${source}` : ""}
               </p>
               {scheduleHint ? (
-                <p className="mt-1 text-xs text-muted-foreground/80">
-                  自動同步：{scheduleHint}
-                </p>
+                <p className="mt-1 text-xs text-muted-foreground/80">自動同步：{scheduleHint}</p>
               ) : null}
             </div>
             <button
@@ -154,43 +145,30 @@ export function HomeApp() {
               disabled={refreshing || loadState === "loading"}
               className="rounded-xl border border-border/60 bg-[var(--panel)]/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
             >
-              {refreshing || loadState === "loading"
-                ? "同步證交所中…"
-                : "強制更新"}
+              {refreshing || loadState === "loading" ? "同步行情中…" : "強制更新"}
             </button>
           </div>
 
           {error && (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              {isDemo
-                ? `真實資料暫不可用，已改顯示示範資料：${error}`
-                : `提醒：${error}`}
+              {isDemo ? `真實資料暫不可用，已改顯示示範資料：${error}` : `提醒：${error}`}
             </p>
           )}
 
           {loadState === "loading" && !sectors.length ? (
             <div className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 px-4 py-10 text-center text-sm text-muted-foreground">
-              正在向證交所／櫃買抓取近 20 個交易日三大法人買賣超，首次約需 1～2
-              分鐘…
+              正在向證交所／櫃買抓取近 20 個交易日成交金額，首次約需 1～2 分鐘…
             </div>
           ) : loadState === "error" && !sectors.length ? (
             <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
-              <p className="font-medium">無法載入金流資料</p>
+              <p className="font-medium">無法載入成交資料</p>
               <p className="mt-1 text-muted-foreground">{error}</p>
-              <button
-                type="button"
-                className="mt-3 rounded-lg border px-3 py-1.5 text-xs"
-                onClick={() => void loadFlow(true)}
-              >
+              <button type="button" className="mt-3 rounded-lg border px-3 py-1.5 text-xs" onClick={() => void loadFlow(true)}>
                 再試一次
               </button>
             </div>
           ) : (
-            <StatusCards
-              counts={counts}
-              active={filter}
-              onChange={setFilter}
-            />
+            <StatusCards counts={counts} active={filter} onChange={setFilter} />
           )}
         </section>
 
@@ -205,17 +183,14 @@ export function HomeApp() {
                   filter={filter}
                 />
               </div>
-              <SectorDetail
-                sector={selected}
-                onClose={() => setSelected(null)}
-              />
+              <SectorDetail sector={selected} onClose={() => setSelected(null)} />
             </section>
 
             {brief && (
               <FocusPanel
                 market={brief}
-                contrarian={contrarian}
-                topBuys={topBuys}
+                volumeSpikes={volumeSpikes}
+                topTurnover={topTurnover}
                 onSelect={setSelected}
               />
             )}
@@ -227,34 +202,23 @@ export function HomeApp() {
                   <TabsTrigger value="how">怎麼看排行榜</TabsTrigger>
                 </TabsList>
                 <TabsContent value="cp" className="mt-4">
-                  <CpRanking
-                    items={cp}
-                    onSelect={setSelected}
-                    selectedId={selected?.id}
-                  />
+                  <CpRanking items={cp} onSelect={setSelected} selectedId={selected?.id} />
                 </TabsContent>
-                <TabsContent
-                  value="how"
-                  className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
-                >
+                <TabsContent value="how" className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
                   <p>
-                    排行榜預設依<strong className="text-foreground">近 5 日</strong>
-                    買賣超排序；也可改依加速度、近 20 日淨額、規模、漲幅或 CP
-                    值。點欄位標題可切換升／降序。
+                    排行榜預設依<strong className="text-foreground">當日成交金額</strong>
+                    排序；也可改依近 5 日、熱度、加速度、近 20 日成交、漲幅或 CP 值。
                   </p>
                   <p>
-                    <strong className="text-foreground">漲潮</strong>
-                    ＝資金流入且在加速；
-                    <strong className="text-foreground">輪動</strong>
-                    ＝還在流入但力道放緩；
-                    <strong className="text-foreground">觀望</strong>
-                    ＝流出但放緩；
-                    <strong className="text-foreground">退潮</strong>
-                    ＝資金加速流出。
+                    <strong className="text-foreground">放量</strong>＝近 5 日成交明顯高於近 20 日均量；
+                    <strong className="text-foreground">偏熱</strong>＝仍高於均量；
+                    <strong className="text-foreground">偏冷</strong>＝略低於均量；
+                    <strong className="text-foreground">縮量</strong>＝明顯低於均量。
                   </p>
                   <p>
-                    金額由證交所／櫃買「三大法人買賣超股數 ×
-                    當日收盤價」換算為億元；題材板塊成分為編輯定義。僅供研究參考，不構成投資建議。
+                    金額直接取證交所／櫃買「每日收盤行情」成交金額加總為億元，
+                    <strong className="text-foreground">不含三大法人買賣超</strong>
+                    。僅供研究參考，不構成投資建議。
                   </p>
                 </TabsContent>
               </Tabs>
@@ -264,7 +228,7 @@ export function HomeApp() {
       </main>
 
       <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮 JinChao · 法人金流來自證交所 T86／櫃買日報
+        金潮 JinChao · 成交金額來自證交所／櫃買每日收盤行情
         {isDemo ? " · 目前為示範後備資料" : " · 真實盤後資料"}
       </footer>
     </div>

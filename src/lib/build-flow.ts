@@ -1,14 +1,16 @@
-import type { MarketBrief, SectorFlow, StockFlow, TideStatus } from "@/lib/types";
+import type {
+  MarketBrief,
+  SectorFlow,
+  StockFlow,
+  TideStatus,
+} from "@/lib/types";
 import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
 import {
-  fetchTpexInsti,
   fetchTpexQuotes,
   fetchTwseQuotes,
-  fetchTwseT86,
   listRecentTradingDays,
   readCacheFile,
   writeCacheFile,
-  type InstiRow,
   type QuoteRow,
 } from "@/lib/tw-market";
 
@@ -16,8 +18,7 @@ const YI = 1e8;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
-const yi = (shares: number, price: number) =>
-  !shares || !price ? 0 : (shares * price) / YI;
+const toYi = (ntd: number) => ntd / YI;
 
 export type FlowPayload = {
   brief: MarketBrief;
@@ -27,15 +28,16 @@ export type FlowPayload = {
   builtAt: string;
 };
 
-type DayInsti = {
+type DayQuotes = {
   ymd: string;
-  insti: Map<string, InstiRow>;
+  quotes: Map<string, QuoteRow>;
+  indexChangePct: number | null;
 };
 
-function statusOf(d5: number, accel: number): TideStatus {
-  if (d5 >= 0 && accel >= 0) return "surge";
-  if (d5 >= 0 && accel < 0) return "rotate";
-  if (d5 < 0 && accel >= 0) return "watch";
+function statusOf(heat: number): TideStatus {
+  if (heat >= 1.15) return "surge";
+  if (heat >= 1.0) return "rotate";
+  if (heat >= 0.85) return "watch";
   return "ebb";
 }
 
@@ -48,45 +50,32 @@ function fearFromIndex(changePct: number): { label: string; score: number } {
   return { label: "偏熱絡", score: 22 };
 }
 
-async function loadInstiDay(ymd: string): Promise<DayInsti | null> {
-  const [twse, tpex] = await Promise.all([
-    fetchTwseT86(ymd),
-    fetchTpexInsti(ymd),
-  ]);
-  if (!twse && !tpex) return null;
-  const insti = new Map<string, InstiRow>();
-  for (const row of twse ?? []) insti.set(row.code, row);
-  for (const row of tpex ?? []) {
-    if (!insti.has(row.code)) insti.set(row.code, row);
-  }
-  return { ymd, insti };
-}
-
-async function loadQuotes(ymd: string): Promise<{
-  quotes: Map<string, QuoteRow>;
-  indexChangePct: number | null;
-}> {
+async function loadQuotesDay(ymd: string): Promise<DayQuotes | null> {
   const quotes = new Map<string, QuoteRow>();
   let indexChangePct: number | null = null;
-  const twseQ = await fetchTwseQuotes(ymd);
-  if (twseQ) {
-    indexChangePct = twseQ.indexChangePct;
-    for (const q of twseQ.quotes) quotes.set(q.code, q);
+
+  const twse = await fetchTwseQuotes(ymd);
+  if (twse) {
+    indexChangePct = twse.indexChangePct;
+    for (const q of twse.quotes) quotes.set(q.code, q);
   }
-  const tpexQ = await fetchTpexQuotes(ymd);
-  if (tpexQ) {
-    for (const q of tpexQ.quotes) {
+  await sleep(200);
+  const tpex = await fetchTpexQuotes(ymd);
+  if (tpex) {
+    for (const q of tpex.quotes) {
       if (!quotes.has(q.code)) quotes.set(q.code, q);
     }
   }
-  return { quotes, indexChangePct };
+
+  if (quotes.size === 0) return null;
+  return { ymd, quotes, indexChangePct };
 }
 
 export async function buildFlowPayload(options?: {
   force?: boolean;
   days?: number;
 }): Promise<FlowPayload> {
-  const cacheName = "flow-latest.json";
+  const cacheName = "flow-turnover-latest.json";
   if (!options?.force) {
     const cached = await readCacheFile<FlowPayload & { expiresAt?: number }>(
       cacheName,
@@ -106,81 +95,59 @@ export async function buildFlowPayload(options?: {
     throw new Error("無法取得足夠交易日（證交所可能維護中或尚未收盤）");
   }
 
-  const dayData: DayInsti[] = [];
+  const dayData: DayQuotes[] = [];
   for (const ymd of tradingDays) {
-    const bundle = await loadInstiDay(ymd);
+    const bundle = await loadQuotesDay(ymd);
     if (bundle) dayData.push(bundle);
     await sleep(280);
   }
   if (dayData.length < 5) {
-    throw new Error("法人日資料不足，請稍後再試");
+    throw new Error("成交金額日資料不足，請稍後再試");
   }
 
-  const latestYmd = dayData[0].ymd;
-  const oldestYmd = dayData[dayData.length - 1].ymd;
-  const latestQuotes = await loadQuotes(latestYmd);
-  await sleep(280);
-  const oldestQuotes =
-    oldestYmd === latestYmd ? latestQuotes : await loadQuotes(oldestYmd);
-
-  const priceNow = (code: string) => latestQuotes.quotes.get(code)?.close ?? 0;
-  const priceOld = (code: string) => oldestQuotes.quotes.get(code)?.close ?? 0;
-
+  const latest = dayData[0];
+  const oldest = dayData[dayData.length - 1];
   const d5Days = dayData.slice(0, Math.min(5, dayData.length));
   const d20Days = dayData.slice(0, Math.min(20, dayData.length));
+  const n5 = d5Days.length;
   const n20 = d20Days.length;
-  const latest = dayData[0];
 
   const sectors: SectorFlow[] = SECTOR_UNIVERSE.map((def) => {
     type Rich = StockFlow & { pxNow: number; pxOld: number };
     const stocksRich = def.members
       .map((m) => {
         const code = m.code;
-        const px = priceNow(code);
-        const latestInsti = latest.insti.get(code);
+        const latestQ = latest.quotes.get(code);
+        const oldestQ = oldest.quotes.get(code);
 
-        let dayNet = 0;
-        let foreign = 0;
-        let trust = 0;
-        let dealer = 0;
-        if (latestInsti && px) {
-          dayNet = yi(latestInsti.total, px);
-          foreign = yi(latestInsti.foreign, px);
-          trust = yi(latestInsti.trust, px);
-          dealer = yi(latestInsti.dealer, px);
-        }
+        let dayAmt = 0;
+        if (latestQ) dayAmt = toYi(latestQ.turnover);
 
         let d5 = 0;
         for (const day of d5Days) {
-          const row = day.insti.get(code);
-          if (row && px) d5 += yi(row.total, px);
+          const q = day.quotes.get(code);
+          if (q) d5 += toYi(q.turnover);
         }
 
         let d20 = 0;
         for (const day of d20Days) {
-          const row = day.insti.get(code);
-          if (row && px) d20 += yi(row.total, px);
+          const q = day.quotes.get(code);
+          if (q) d20 += toYi(q.turnover);
         }
 
-        const pxNow = px;
-        const pxOld = priceOld(code);
-        const changePct = latestQuotes.quotes.get(code)?.changePct ?? 0;
+        const pxNow = latestQ?.close ?? 0;
+        const pxOld = oldestQ?.close ?? 0;
+        const changePct = latestQ?.changePct ?? 0;
 
-        if (!latestInsti && d5 === 0 && d20 === 0 && !pxNow) return null;
+        if (dayAmt === 0 && d5 === 0 && d20 === 0 && !pxNow) return null;
 
         return {
           code,
-          name:
-            latest.insti.get(code)?.name ||
-            latestQuotes.quotes.get(code)?.name ||
-            m.name,
-          dayNet: round1(dayNet),
+          name: latestQ?.name || oldestQ?.name || m.name,
+          dayAmt: round1(dayAmt),
           d5: round1(d5),
           d20: round1(d20),
           changePct: round2(changePct),
-          foreign: round1(foreign),
-          trust: round1(trust),
-          dealer: round1(dealer),
           pxNow,
           pxOld,
         } satisfies Rich;
@@ -189,14 +156,15 @@ export async function buildFlowPayload(options?: {
 
     const stocks: StockFlow[] = stocksRich
       .map(({ pxNow: _a, pxOld: _b, ...rest }) => rest)
-      .sort((a, b) => b.dayNet - a.dayNet);
+      .sort((a, b) => b.dayAmt - a.dayAmt);
 
+    const dayAmt = stocks.reduce((s, x) => s + x.dayAmt, 0);
     const d5 = stocks.reduce((s, x) => s + x.d5, 0);
-    const d20Net = stocks.reduce((s, x) => s + x.d20, 0);
-    const d20Abs = stocks.reduce((s, x) => s + Math.abs(x.d20), 0);
-    const avg20 = d20Net / Math.max(n20, 1);
-    const avg5 = d5 / Math.max(Math.min(5, n20), 1);
+    const d20 = stocks.reduce((s, x) => s + x.d20, 0);
+    const avg5 = d5 / Math.max(n5, 1);
+    const avg20 = d20 / Math.max(n20, 1);
     const accel = avg5 - avg20;
+    const heat = avg20 > 0 ? avg5 / avg20 : avg5 > 0 ? 2 : 1;
 
     const priced = stocksRich.filter((s) => s.pxNow > 0 && s.pxOld > 0);
     const priceChange20d =
@@ -211,31 +179,30 @@ export async function buildFlowPayload(options?: {
       stocks.length > 0
         ? stocks.reduce((s, x) => s + x.changePct, 0) / stocks.length
         : 0;
-    const sectorDayNet = stocks.reduce((s, x) => s + x.dayNet, 0);
-    const indexChg = latestQuotes.indexChangePct ?? 0;
-    const contrarian =
+    const indexChg = latest.indexChangePct ?? 0;
+    const volumeSpike =
       indexChg <= -1 &&
       sectorDayChange <= -0.5 &&
-      sectorDayNet > 0 &&
-      Math.abs(sectorDayNet) >= Math.max(0.3, Math.abs(avg20) * 1.5);
+      dayAmt >= Math.max(0.5, avg20 * 1.5);
 
     return {
       id: def.id,
       name: def.name,
+      dayAmt: round1(dayAmt),
       d5: round1(d5),
       accel: round1(accel),
-      d20Abs: round1(d20Abs),
-      d20Net: round1(d20Net),
+      heat: round2(heat),
+      d20: round1(d20),
       priceChange20d: round2(priceChange20d),
-      status: statusOf(d5, accel),
-      contrarian,
+      status: statusOf(heat),
+      volumeSpike,
       stocks,
     };
   }).filter((s) => s.stocks.length > 0);
 
-  const indexChangePct = latestQuotes.indexChangePct ?? 0;
+  const indexChangePct = latest.indexChangePct ?? 0;
   const fear = fearFromIndex(indexChangePct);
-  const dateIso = `${latestYmd.slice(0, 4)}-${latestYmd.slice(4, 6)}-${latestYmd.slice(6, 8)}`;
+  const dateIso = `${latest.ymd.slice(0, 4)}-${latest.ymd.slice(4, 6)}-${latest.ymd.slice(6, 8)}`;
 
   const payload: FlowPayload = {
     brief: {
