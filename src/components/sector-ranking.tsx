@@ -59,18 +59,42 @@ function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
   return s[key];
 }
 
-/** 「全部」時產業大板塊會淹沒題材；採配額制讓矽光子等概念股進前 20 */
+/** 「全部」時產業大板塊會淹沒題材；配額＋關鍵概念保底，讓矽光子等進前 20 */
+const PIN_THEME_IDS = new Set([
+  "optical",
+  "ai-server",
+  "liquid-cooling",
+  "hbm-memory",
+  "advanced-packaging",
+]);
+
 function takeTopMixed(sorted: SectorFlow[], limit = 20): SectorFlow[] {
   const themes = sorted.filter((s) => (s.kind ?? "theme") !== "industry");
   const industries = sorted.filter((s) => s.kind === "industry");
   const picked = new Map<string, SectorFlow>();
+
+  for (const s of sorted) {
+    if (PIN_THEME_IDS.has(s.id)) picked.set(s.id, s);
+  }
   for (const s of themes.slice(0, 12)) picked.set(s.id, s);
   for (const s of industries.slice(0, 8)) picked.set(s.id, s);
   for (const s of sorted) {
     if (picked.size >= limit) break;
     picked.set(s.id, s);
   }
-  return sorted.filter((s) => picked.has(s.id)).slice(0, limit);
+
+  if (picked.size <= limit) {
+    return sorted.filter((s) => picked.has(s.id)).slice(0, limit);
+  }
+
+  // 超額時：保底題材優先保留，其餘依原排序截斷
+  const ordered = sorted.filter((s) => picked.has(s.id));
+  const pinned = ordered.filter((s) => PIN_THEME_IDS.has(s.id));
+  const rest = ordered.filter((s) => !PIN_THEME_IDS.has(s.id));
+  const keepIds = new Set(
+    [...pinned, ...rest].slice(0, limit).map((s) => s.id),
+  );
+  return sorted.filter((s) => keepIds.has(s.id)).slice(0, limit);
 }
 
 export function SectorRanking({
