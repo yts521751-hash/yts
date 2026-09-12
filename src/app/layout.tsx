@@ -21,9 +21,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "金潮｜台股板塊金流・法人資金流向",
-  description:
-    "台股板塊金流排行榜：依近 5／20 日法人買賣超與加速度排序，漲潮、輪動、觀望、退潮一眼看懂，並附 CP 值與大跌日逆勢買超。",
+  title: "金潮｜台股板塊成交金額排行榜",
+  description: "台股板塊成交金額排行榜：依近 5／20 日成交與熱度排序，放量、偏熱、偏冷、縮量一眼看懂。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
