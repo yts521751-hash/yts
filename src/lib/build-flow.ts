@@ -22,6 +22,7 @@ import {
   type QuoteRow,
 } from "@/lib/tw-market";
 import { warmSectorKlineCaches } from "@/lib/sector-kline";
+import { computeFearGauge } from "@/lib/fear-gauge";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -49,14 +50,6 @@ type DayBundle = {
   indexChangePct: number | null;
 };
 
-function fearFromIndex(changePct: number): { label: string; score: number } {
-  if (changePct <= -2) return { label: "恐慌", score: 88 };
-  if (changePct <= -1) return { label: "偏恐慌", score: 72 };
-  if (changePct < -0.3) return { label: "偏謹慎", score: 58 };
-  if (changePct < 0.5) return { label: "中性", score: 48 };
-  if (changePct < 1.5) return { label: "偏樂觀", score: 35 };
-  return { label: "偏熱絡", score: 22 };
-}
 
 type RebuildBag = typeof globalThis & {
   __jinchaoRebuild?: { running: boolean };
@@ -248,7 +241,11 @@ export async function rebuildFlowPayload(options?: {
     const latest = dayData[0];
     const sectors = computeSectors(dayData);
     const indexChangePct = latest.indexChangePct ?? 0;
-    const fear = fearFromIndex(indexChangePct);
+    const fear = await computeFearGauge(
+      dayData
+        .map((d) => d.indexChangePct)
+        .filter((x): x is number => x != null && Number.isFinite(x)),
+    );
 
     const payload: FlowPayload = {
       brief: {

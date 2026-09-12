@@ -48,7 +48,7 @@ export function SectorDetail({ sector, onClose }: Props) {
               {meta.label}
             </span>
             {sector.volumeSpike && (
-              <span className="rounded-md bg-[var(--tide-anchor-bg)] px-2 py-0.5 text-xs font-medium text-[var(--tide-anchor)]">
+              <span className="rounded-md bg-[var(--mk-anchor-bg)] px-2 py-0.5 text-xs font-medium text-[var(--mk-anchor)]">
                 大跌日放量
               </span>
             )}

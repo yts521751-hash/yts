@@ -43,6 +43,10 @@ const FEEDS = [
     source: "Google 新聞·AI伺服器",
     url: "https://news.google.com/rss/search?q=%E5%8F%B0%E8%82%A1%20AI%20%E4%BC%BA%E6%9C%8D%E5%99%A8&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
   },
+  {
+    source: "Google 新聞·熱門族群",
+    url: "https://news.google.com/rss/search?q=%E7%86%B1%E9%96%80%E6%97%8F%E7%BE%A4%20%E5%8F%B0%E8%82%A1&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+  },
 ];
 
 function decodeXml(s: string) {
@@ -94,7 +98,7 @@ async function fetchFeed(url: string): Promise<string | null> {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "JinChao/1.0 (news-radar; research)",
+        "User-Agent": "JinMai/1.0 (news-radar; research)",
         Accept: "application/rss+xml, application/xml, text/xml, */*",
       },
       cache: "no-store",
@@ -190,6 +194,7 @@ export async function rebuildNewsPayload(): Promise<NewsPayload> {
     }
 
     const matched = collected.filter((n) => {
+      if (n.title.includes("熱門族群")) return true;
       const hay = `${n.title} ${n.summary}`;
       return tokenSet.some((tok) => tok.length >= 2 && hay.includes(tok));
     });
@@ -203,6 +208,9 @@ export async function rebuildNewsPayload(): Promise<NewsPayload> {
         return true;
       })
       .sort((a, b) => {
+        const hot = (t: string) => (t.includes("熱門族群") ? 1 : 0);
+        const hb = hot(b.title) - hot(a.title);
+        if (hb !== 0) return hb;
         const ta = a.publishedAt ? Date.parse(a.publishedAt) : 0;
         const tb = b.publishedAt ? Date.parse(b.publishedAt) : 0;
         return tb - ta;

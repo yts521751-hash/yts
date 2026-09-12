@@ -136,7 +136,7 @@ export function SectorKlineChart({ candles }: Props) {
           {candles.map((c, i) => {
             const x = xs[i];
             const up = c.close >= c.open;
-            const color = up ? "var(--tide-up)" : "var(--tide-down)";
+            const color = up ? "var(--mk-up)" : "var(--mk-down)";
             const yO = yK(c.open);
             const yC = yK(c.close);
             const yH = yK(c.high);
@@ -208,7 +208,7 @@ export function SectorKlineChart({ candles }: Props) {
                   y={mid - hIn}
                   width={bodyW}
                   height={Math.max(0, hIn)}
-                  fill="var(--tide-up)"
+                  fill="var(--mk-up)"
                   opacity={0.85}
                 />
                 <rect
@@ -216,7 +216,7 @@ export function SectorKlineChart({ candles }: Props) {
                   y={mid}
                   width={bodyW}
                   height={Math.max(0, hOut)}
-                  fill="var(--tide-down)"
+                  fill="var(--mk-down)"
                   opacity={0.85}
                 />
               </g>

@@ -49,56 +49,56 @@
 }
 
 :root {
-  /* Coastal daylight — soft sea mist, not cream/terracotta or purple */
-  --background: #e7f0f2;
-  --foreground: #0c2430;
-  --card: #f5fafb;
-  --card-foreground: #0c2430;
-  --popover: #f5fafb;
-  --popover-foreground: #0c2430;
-  --primary: #0d6e7a;
-  --primary-foreground: #f4fcfd;
-  --secondary: #d5e6ea;
-  --secondary-foreground: #0c2430;
-  --muted: #dce9ed;
-  --muted-foreground: #4d6874;
-  --accent: #cfe6ea;
-  --accent-foreground: #0c2430;
-  --destructive: #c2410c;
-  --border: #b7cfd6;
-  --input: #b7cfd6;
-  --ring: #0d6e7a;
-  --radius: 0.75rem;
-  --panel: #f4fafb;
+  /* Ledger daylight — cool paper gray + ink, gold signal (not coastal / cream / purple) */
+  --background: #eef1f4;
+  --foreground: #1a1f27;
+  --card: #f8f9fb;
+  --card-foreground: #1a1f27;
+  --popover: #f8f9fb;
+  --popover-foreground: #1a1f27;
+  --primary: #1f3a5f;
+  --primary-foreground: #f5f7fa;
+  --secondary: #e3e7ee;
+  --secondary-foreground: #1a1f27;
+  --muted: #e6eaf0;
+  --muted-foreground: #5b6573;
+  --accent: #ebe4d4;
+  --accent-foreground: #1a1f27;
+  --destructive: #b42318;
+  --border: #c9d0da;
+  --input: #c9d0da;
+  --ring: #1f3a5f;
+  --radius: 0.55rem;
+  --panel: #f7f8fa;
 
-  /* TW market convention: up red / down green for price; tide states use ocean hues */
-  --tide-up: #c23b3b;
-  --tide-down: #1b8a6b;
-  --tide-surge: #c44536;
-  --tide-surge-bg: color-mix(in oklab, #c44536 14%, white);
-  --tide-rotate: #c47a1a;
-  --tide-rotate-bg: color-mix(in oklab, #c47a1a 14%, white);
-  --tide-watch: #5b6b78;
-  --tide-watch-bg: color-mix(in oklab, #5b6b78 12%, white);
-  --tide-ebb: #1b8a6b;
-  --tide-ebb-bg: color-mix(in oklab, #1b8a6b 12%, white);
-  --tide-anchor: #0d6e7a;
-  --tide-anchor-bg: color-mix(in oklab, #0d6e7a 12%, white);
-  --tide-ink: #0c2430;
+  /* TW market: up red / down green; flow states use ink/gold/slate */
+  --mk-up: #c23b3b;
+  --mk-down: #1b8a6b;
+  --mk-surge: #b42318;
+  --mk-surge-bg: color-mix(in oklab, #b42318 12%, white);
+  --mk-rotate: #a16207;
+  --mk-rotate-bg: color-mix(in oklab, #a16207 12%, white);
+  --mk-watch: #64748b;
+  --mk-watch-bg: color-mix(in oklab, #64748b 12%, white);
+  --mk-ebb: #0f766e;
+  --mk-ebb-bg: color-mix(in oklab, #0f766e 12%, white);
+  --mk-anchor: #b45309;
+  --mk-anchor-bg: color-mix(in oklab, #b45309 12%, white);
+  --mk-ink: #1a1f27;
 
-  --chart-1: #c44536;
-  --chart-2: #c47a1a;
-  --chart-3: #5b6b78;
-  --chart-4: #1b8a6b;
-  --chart-5: #0d6e7a;
-  --sidebar: #f5fafb;
-  --sidebar-foreground: #0c2430;
-  --sidebar-primary: #0d6e7a;
-  --sidebar-primary-foreground: #f4fcfd;
-  --sidebar-accent: #d5e6ea;
-  --sidebar-accent-foreground: #0c2430;
-  --sidebar-border: #b7cfd6;
-  --sidebar-ring: #0d6e7a;
+  --chart-1: #b42318;
+  --chart-2: #a16207;
+  --chart-3: #64748b;
+  --chart-4: #0f766e;
+  --chart-5: #1f3a5f;
+  --sidebar: #f8f9fb;
+  --sidebar-foreground: #1a1f27;
+  --sidebar-primary: #1f3a5f;
+  --sidebar-primary-foreground: #f5f7fa;
+  --sidebar-accent: #e3e7ee;
+  --sidebar-accent-foreground: #1a1f27;
+  --sidebar-border: #c9d0da;
+  --sidebar-ring: #1f3a5f;
 }
 
 .dark {
@@ -108,8 +108,8 @@
   --card-foreground: #e6f2f5;
   --popover: #0f1f29;
   --popover-foreground: #e6f2f5;
-  --primary: #5ec8d4;
-  --primary-foreground: #062028;
+  --primary: #d4a017;
+  --primary-foreground: #1a1f27;
   --secondary: #152833;
   --secondary-foreground: #e6f2f5;
   --muted: #152833;
@@ -119,36 +119,36 @@
   --destructive: #f07167;
   --border: rgb(255 255 255 / 10%);
   --input: rgb(255 255 255 / 14%);
-  --ring: #5ec8d4;
+  --ring: #d4a017;
   --panel: #0d1c26;
 
-  --tide-up: #f07167;
-  --tide-down: #3ecf9a;
-  --tide-surge: #f07167;
-  --tide-surge-bg: color-mix(in oklab, #f07167 18%, #0d1c26);
-  --tide-rotate: #e8b84a;
-  --tide-rotate-bg: color-mix(in oklab, #e8b84a 16%, #0d1c26);
-  --tide-watch: #8aa3ae;
-  --tide-watch-bg: color-mix(in oklab, #8aa3ae 14%, #0d1c26);
-  --tide-ebb: #3ecf9a;
-  --tide-ebb-bg: color-mix(in oklab, #3ecf9a 14%, #0d1c26);
-  --tide-anchor: #5ec8d4;
-  --tide-anchor-bg: color-mix(in oklab, #5ec8d4 16%, #0d1c26);
-  --tide-ink: #e6f2f5;
+  --mk-up: #f07167;
+  --mk-down: #3ecf9a;
+  --mk-surge: #f07167;
+  --mk-surge-bg: color-mix(in oklab, #f07167 18%, #0d1c26);
+  --mk-rotate: #e8b84a;
+  --mk-rotate-bg: color-mix(in oklab, #e8b84a 16%, #0d1c26);
+  --mk-watch: #8aa3ae;
+  --mk-watch-bg: color-mix(in oklab, #8aa3ae 14%, #0d1c26);
+  --mk-ebb: #3ecf9a;
+  --mk-ebb-bg: color-mix(in oklab, #3ecf9a 14%, #0d1c26);
+  --mk-anchor: #d4a017;
+  --mk-anchor-bg: color-mix(in oklab, #d4a017 16%, #0d1c26);
+  --mk-ink: #e6f2f5;
 
   --chart-1: #f07167;
   --chart-2: #e8b84a;
   --chart-3: #8aa3ae;
   --chart-4: #3ecf9a;
-  --chart-5: #5ec8d4;
+  --chart-5: #d4a017;
   --sidebar: #0f1f29;
   --sidebar-foreground: #e6f2f5;
-  --sidebar-primary: #5ec8d4;
-  --sidebar-primary-foreground: #062028;
+  --sidebar-primary: #d4a017;
+  --sidebar-primary-foreground: #1a1f27;
   --sidebar-accent: #152833;
   --sidebar-accent-foreground: #e6f2f5;
   --sidebar-border: rgb(255 255 255 / 10%);
-  --sidebar-ring: #5ec8d4;
+  --sidebar-ring: #d4a017;
 }
 
 @layer base {
@@ -174,16 +174,18 @@ html[data-textsize="lg"] {
   font-size: 20px;
 }
 
-.tide-atmosphere {
-  background:
-    radial-gradient(1200px 500px at 10% -10%, color-mix(in oklab, var(--tide-surge) 16%, transparent), transparent 60%),
-    radial-gradient(900px 420px at 90% 0%, color-mix(in oklab, var(--primary) 18%, transparent), transparent 55%),
-    radial-gradient(700px 380px at 50% 110%, color-mix(in oklab, var(--tide-ebb) 12%, transparent), transparent 50%),
-    linear-gradient(180deg, transparent, color-mix(in oklab, var(--background) 40%, transparent));
-  animation: tide-drift 18s ease-in-out infinite alternate;
+.ledger-atmosphere {
+  background-color: transparent;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--mk-ink) 4.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--mk-ink) 4.5%, transparent) 1px, transparent 1px),
+    radial-gradient(900px 420px at 0% 0%, color-mix(in oklab, var(--mk-anchor) 10%, transparent), transparent 55%),
+    radial-gradient(700px 380px at 100% 0%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 50%);
+  background-size: 48px 48px, 48px 48px, auto, auto;
+  animation: ledger-drift 22s ease-in-out infinite alternate;
 }
 
-@keyframes tide-drift {
+@keyframes ledger-drift {
   from {
     transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.9;

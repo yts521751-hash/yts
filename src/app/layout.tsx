@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans_TC, Noto_Serif_TC, Geist_Mono } from "next/font/google";
+import { Noto_Sans_TC, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./globals.css";
 
@@ -9,7 +9,7 @@ const notoSans = Noto_Sans_TC({
   weight: ["400", "500", "600", "700"],
 });
 
-const notoSerif = Noto_Serif_TC({
+const notoDisplay = Noto_Sans_TC({
   variable: "--font-display",
   subsets: ["latin"],
   weight: ["600", "700"],
@@ -21,8 +21,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "金潮｜台股板塊成交金額排行榜",
-  description: "台股板塊成交金額排行榜：依近 5／20 日成交與熱度排序，放量、偏熱、偏冷、縮量一眼看懂。",
+  title: "金脈｜台股板塊資金流",
+  description:
+    "台股板塊資金流與成交排行：湧入／輪動／觀望／撤離四態、產業日線、成交 Top50 與熱議新聞。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -30,10 +31,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="zh-Hant"
       data-textsize="sm"
-      className={`${notoSans.variable} ${notoSerif.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${notoSans.variable} ${notoDisplay.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col font-sans">
+      <body className="flex min-h-full flex-col font-sans">
         <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>

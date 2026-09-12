@@ -156,7 +156,7 @@ export function SectorRanking({
                   className={cn(
                     "cursor-pointer border-t border-border/30 transition",
                     selectedId === s.id
-                      ? "bg-[var(--tide-surge-bg)]"
+                      ? "bg-[var(--mk-surge-bg)]"
                       : "hover:bg-muted/40",
                   )}
                 >
@@ -221,7 +221,7 @@ export function SectorRanking({
                   >
                     {formatPct(s.priceChange20d)}
                   </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-[var(--tide-surge)] sm:px-3">
+                  <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-[var(--mk-surge)] sm:px-3">
                     {Number.isFinite(score) ? score.toFixed(0) : "—"}
                   </td>
                 </tr>

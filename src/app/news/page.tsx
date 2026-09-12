@@ -67,7 +67,7 @@ export default function NewsPage() {
 
   return (
     <div className="relative min-h-full flex-1">
-      <div className="tide-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -90,6 +90,7 @@ export default function NewsPage() {
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
           熱議新聞
         </h1>
+        <p className="mt-2 text-[11px] text-muted-foreground">資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
         {builtAt ? (
           <p className="mt-2 text-xs text-muted-foreground">
             {formatTime(builtAt)}

@@ -5,12 +5,12 @@ const TERMS = [
   {
     id: "sectors",
     title: "板塊是怎麼分類的？為什麼個股看起來偏少？",
-    body: "金潮的板塊不是證交所官方產業分類代碼，而是「題材／供應鏈角色」人工清單：把同一催化事件或同一產業鏈常一起被點名的股票放在一組（例如 AI 伺服器組裝、液冷、先進封裝）。成分以流動性與代表性為主，一檔股票也可跨多個相關板塊。目標是可讀的核心觀察名單，不是把該產業全部上市櫃公司列完；因此單板塊通常約 8～12 檔，而不是上百檔。",
+    body: "金脈的板塊不是證交所官方產業分類代碼，而是「題材／供應鏈角色」人工清單：把同一催化事件或同一產業鏈常一起被點名的股票放在一組（例如 AI 伺服器組裝、液冷、先進封裝）。成分以流動性與代表性為主，一檔股票也可跨多個相關板塊。目標是可讀的核心觀察名單，不是把該產業全部上市櫃公司列完；因此單板塊通常約 8～12 檔，而不是上百檔。",
   },
   {
     id: "fear",
-    title: "情緒／恐慌指標怎麼算？",
-    body: "目前是簡化版「大盤溫度計」，只看加權指數當日漲跌幅分檔：≤−2%＝恐慌（88）、≤−1%＝偏恐慌（72）、＜−0.3%＝偏謹慎（58）、＜0.5%＝中性（48）、＜1.5%＝偏樂觀（35）、再以上＝偏熱絡（22）。它不是 VIX、也不是選擇權 put/call，分數愈高代表當日盤面愈偏恐慌。後續若要加成交量或波動率，會另開欄位，避免把不同概念混在同一個分數裡。",
+    title: "波動情緒指標怎麼算？",
+    body: "參考 VIX 類波動，而不是當天漲跌。優先讀取 CBOE VIX，並輔以台股加權近約 20 日實現波動（年化）；兩者皆有時以約 0.55／0.45 混合。分數愈高代表市場預期波動／恐慌愈高（例如低波動約 22、常態約 48、偏恐慌約 72、極度恐慌約 85+）。",
   },
   {
     id: "flow",
@@ -24,8 +24,8 @@ const TERMS = [
   },
   {
     id: "states",
-    title: "漲潮／輪動／觀望／退潮",
-    body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。漲潮＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；退潮＝流出加速。",
+    title: "湧入／輪動／觀望／撤離",
+    body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。湧入＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；撤離＝流出加速。",
   },
   {
     id: "kline",
@@ -40,7 +40,7 @@ const TERMS = [
   {
     id: "news",
     title: "熱議新聞怎麼更新？",
-    body: "伺服器每 10 分鐘抓一次 Google 新聞 RSS（台股／半導體／AI 伺服器等關鍵字），先寫入 staging 再切到 active，屬於新聞專用的灰度部署。你開新聞頁永遠讀 active，不會卡在抓 RSS。",
+    body: "伺服器每 10 分鐘抓一次 Google 新聞 RSS，聚焦成交 Top50 相關個股，並優先排入標題含「熱門族群」的稿件；先寫 staging 再切 active。你開新聞頁永遠讀 active。",
   },
   {
     id: "gray",
@@ -57,7 +57,7 @@ const TERMS = [
 export default function GlossaryPage() {
   return (
     <div className="relative min-h-full flex-1">
-      <div className="tide-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <Link
           href="/"
@@ -67,10 +67,10 @@ export default function GlossaryPage() {
           回排行榜
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          金潮名詞白話小百科
+          金脈名詞白話小百科
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          專有名詞用白話講一次。金潮不預測行情，只把成交、漲跌與法人攤開成資金流給你看。
+          專有名詞用白話講一次。金脈不預測行情，只把成交、漲跌與法人攤開成資金流給你看。資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料。
         </p>
         <div className="mt-8 space-y-4">
           {TERMS.map((t) => (

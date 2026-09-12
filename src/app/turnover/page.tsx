@@ -57,7 +57,7 @@ export default function TurnoverPage() {
 
   return (
     <div className="relative min-h-full flex-1">
-      <div className="tide-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
         <Link
           href="/"
@@ -70,6 +70,7 @@ export default function TurnoverPage() {
           <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
             成交金額排行 Top 50
           </h1>
+        <p className="mt-2 text-[11px] text-muted-foreground">資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
           <p className="text-xs text-muted-foreground">
             {date ? `${date}` : ""}
             {source === "live-refresh" ? " · 盤中刷新" : ""}

@@ -79,31 +79,31 @@ export const STATUS_META: Record<
   { label: string; short: string; hint: string; color: string; bg: string }
 > = {
   surge: {
-    label: "漲潮",
+    label: "湧入",
     short: "流入加速",
     hint: "近 5 日淨流入為正，且日均流高於近 20 日——資金加速進場",
-    color: "var(--tide-surge)",
-    bg: "var(--tide-surge-bg)",
+    color: "var(--mk-surge)",
+    bg: "var(--mk-surge-bg)",
   },
   rotate: {
     label: "輪動",
     short: "流入減速",
     hint: "仍有淨流入，但加速度轉弱——熱錢可能輪動中",
-    color: "var(--tide-rotate)",
-    bg: "var(--tide-rotate-bg)",
+    color: "var(--mk-rotate)",
+    bg: "var(--mk-rotate-bg)",
   },
   watch: {
     label: "觀望",
     short: "流出減速",
     hint: "近 5 日偏流出，但流出力道放緩——觀望是否止跌回補",
-    color: "var(--tide-watch)",
-    bg: "var(--tide-watch-bg)",
+    color: "var(--mk-watch)",
+    bg: "var(--mk-watch-bg)",
   },
   ebb: {
-    label: "退潮",
+    label: "撤離",
     short: "流出加速",
     hint: "淨流出且加速度為負——資金加速撤離",
-    color: "var(--tide-ebb)",
-    bg: "var(--tide-ebb-bg)",
+    color: "var(--mk-ebb)",
+    bg: "var(--mk-ebb-bg)",
   },
 };

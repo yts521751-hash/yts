@@ -27,7 +27,7 @@ export function CpRanking({ items, onSelect, selectedId }: Props) {
                 className={cn(
                   "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
                   selectedId === s.id
-                    ? "border-transparent bg-[var(--tide-surge-bg)] ring-1 ring-[var(--tide-surge)]"
+                    ? "border-transparent bg-[var(--mk-surge-bg)] ring-1 ring-[var(--mk-surge)]"
                     : "border-border/50 bg-[var(--panel)]/60 hover:bg-muted/50",
                 )}
               >
@@ -49,7 +49,7 @@ export function CpRanking({ items, onSelect, selectedId }: Props) {
                 </div>
                 <div className="text-right">
                   <p className="text-[11px] text-muted-foreground">CP</p>
-                  <p className="font-semibold tabular-nums text-[var(--tide-surge)]">
+                  <p className="font-semibold tabular-nums text-[var(--mk-surge)]">
                     {score.toFixed(0)}
                   </p>
                 </div>

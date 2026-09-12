@@ -120,7 +120,7 @@ export function HomeApp() {
 
   return (
     <div className="relative flex min-h-full flex-1 flex-col">
-      <div className="tide-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="ledger-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <AppHeader
         dateLabel={brief?.date ?? "載入中"}
         updatedAt={brief?.updatedAt ?? "—"}
@@ -221,8 +221,9 @@ export function HomeApp() {
         )}
       </main>
 
-      <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮
+      <footer className="relative z-10 space-y-1 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
+        <p>金脈</p>
+        <p>資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
       </footer>
     </div>
   );

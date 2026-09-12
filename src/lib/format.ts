@@ -22,7 +22,7 @@ export function formatHeat(n: number): string {
 }
 
 export function signedClass(n: number): string {
-  if (n > 0) return "text-[var(--tide-up)]";
-  if (n < 0) return "text-[var(--tide-down)]";
+  if (n > 0) return "text-[var(--mk-up)]";
+  if (n < 0) return "text-[var(--mk-down)]";
   return "text-muted-foreground";
 }

@@ -32,8 +32,8 @@ export function FocusPanel({
             className={cn(
               "font-semibold tabular-nums",
               market.indexChangePct < 0
-                ? "text-[var(--tide-down)]"
-                : "text-[var(--tide-up)]",
+                ? "text-[var(--mk-down)]"
+                : "text-[var(--mk-up)]",
             )}
           >
             {market.indexChangePct > 0 ? "+" : ""}
