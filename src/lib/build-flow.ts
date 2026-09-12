@@ -279,7 +279,9 @@ export async function rebuildFlowPayload(options?: {
 
     // 預熱產業 K 線快取，避免點進頁面才重算
     try {
-      await warmSectorKlineCaches(40);
+      const { ensureQuoteHistory } = await import("@/lib/turnover");
+      await ensureQuoteHistory(80);
+      await warmSectorKlineCaches(80);
     } catch (err) {
       console.warn("[rebuild] kline warm failed:", err);
     }

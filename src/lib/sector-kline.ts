@@ -43,13 +43,14 @@ export type SectorKlinePayload = {
  */
 export async function buildSectorKline(
   sectorId: string,
-  days = 40,
+  days = 80,
   options?: { force?: boolean },
 ): Promise<SectorKlinePayload | null> {
   const def = SECTOR_UNIVERSE.find((s) => s.id === sectorId);
   if (!def) return null;
 
-  const tradingDays = await listCachedTradingDays(days, 120);
+  // 日線 + MA60 需要足夠交易日；只掃本機快取，不在請求路徑打證交所
+  const tradingDays = await listCachedTradingDays(days, 180);
   if (tradingDays.length < 5) return null;
 
   const cacheName = klineCacheName(sectorId);
@@ -176,7 +177,7 @@ export async function buildSectorKline(
   return payload;
 }
 
-export async function warmSectorKlineCaches(days = 40) {
+export async function warmSectorKlineCaches(days = 80) {
   for (const def of SECTOR_UNIVERSE) {
     try {
       await buildSectorKline(def.id, days, { force: true });

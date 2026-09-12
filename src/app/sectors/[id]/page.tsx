@@ -26,9 +26,14 @@ export default async function SectorPage({ params }: Props) {
           {def.name}
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          產業合成 K 線：以成分股當日成交金額為權重，融合個股開高低收報酬（類似三竹族群圖）。
-          下方對照每日流入／流出——80% 成交×漲跌＋20% 法人買賣超。
+          產業日線：以成分股當日成交金額為權重，融合個股開高低收報酬（類似三竹族群圖），並疊
+          MA5／10／20／60。下方對照每日流入／流出——80% 成交×漲跌＋20% 法人買賣超。
         </p>
+        {def.basis ? (
+          <p className="mt-1 max-w-2xl text-xs text-muted-foreground/80">
+            分類依據：{def.basis}
+          </p>
+        ) : null}
         <div className="mt-6 rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 backdrop-blur-sm">
           <SectorKlinePanel sectorId={def.id} />
         </div>

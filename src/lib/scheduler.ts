@@ -141,8 +141,29 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = describe(expressions);
+  state.description = `${describe(expressions)}；新聞每 10 分鐘灰度更新`;
   console.log(`[scheduler] started: ${state.description}`);
+
+  // 新聞：每 10 分鐘灰度抓取（staging→active）
+  const newsExpr = process.env.NEWS_CRON?.trim() || "*/10 * * * *";
+  if (cron.validate(newsExpr)) {
+    const newsTask = cron.schedule(
+      newsExpr,
+      () => {
+        void (async () => {
+          try {
+            const { requestNewsRebuild } = await import("@/lib/news");
+            requestNewsRebuild(`cron:${newsExpr}`);
+          } catch (e) {
+            console.error("[scheduler] news trigger failed", e);
+          }
+        })();
+      },
+      { timezone: TZ },
+    );
+    b.tasks.push(newsTask);
+    console.log(`[scheduler] news cron: ${newsExpr} (${TZ})`);
+  }
 
   // 啟動時若沒有 active，背景暖機（不阻塞 HTTP）
   void (async () => {
@@ -157,6 +178,17 @@ export function startScheduler() {
       }
     } catch (e) {
       console.error("[scheduler] warmup check failed", e);
+    }
+    try {
+      const { getActiveNewsPayload, requestNewsRebuild } = await import(
+        "@/lib/news"
+      );
+      const news = await getActiveNewsPayload();
+      if (news.source === "demo") {
+        requestNewsRebuild("boot-news");
+      }
+    } catch (e) {
+      console.error("[scheduler] news warmup failed", e);
     }
   })();
 }

@@ -98,6 +98,18 @@ export function AppHeader({
           </button>
 
           <Link
+            href="/turnover"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
+          >
+            成交排行
+          </Link>
+          <Link
+            href="/news"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
+          >
+            熱議新聞
+          </Link>
+          <Link
             href="/glossary"
             className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
           >

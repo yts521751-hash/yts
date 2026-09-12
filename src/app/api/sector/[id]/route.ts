@@ -15,7 +15,7 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const { searchParams } = new URL(req.url);
-  const days = Math.min(60, Math.max(10, Number(searchParams.get("days") || 40)));
+  const days = Math.min(120, Math.max(20, Number(searchParams.get("days") || 80)));
   const force = searchParams.get("force") === "1";
 
   try {
