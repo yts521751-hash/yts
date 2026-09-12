@@ -224,5 +224,11 @@ export function startScheduler() {
     } catch (e) {
       console.error("[scheduler] news warmup failed", e);
     }
+    try {
+      const { requestWindRebuild } = await import("@/lib/wind-gauge");
+      requestWindRebuild("boot-wind");
+    } catch (e) {
+      console.error("[scheduler] wind warmup failed", e);
+    }
   })();
 }
