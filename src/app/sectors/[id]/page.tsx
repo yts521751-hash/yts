@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { SectorKlineChart } from "@/components/sector-kline-chart";
 import { buildSectorKline } from "@/lib/sector-kline";
-import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
+import { lookupSectorDef } from "@/lib/resolve-universe";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 
 export default async function SectorPage({ params }: Props) {
   const { id } = await params;
-  const def = SECTOR_UNIVERSE.find((s) => s.id === id);
+  const def = await lookupSectorDef(id);
   if (!def) notFound();
 
-  const data = await buildSectorKline(id, 80).catch(() => null);
+  const data = await buildSectorKline(id, 80, { def }).catch(() => null);
   const candles = data?.candles ?? [];
 
   return (

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildSectorKline } from "@/lib/sector-kline";
-import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
+import { lookupSectorDef } from "@/lib/resolve-universe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -9,7 +9,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
   const { id } = await ctx.params;
-  const def = SECTOR_UNIVERSE.find((s) => s.id === id);
+  const def = await lookupSectorDef(id);
   if (!def) {
     return NextResponse.json({ ok: false, error: "找不到此產業" }, { status: 404 });
   }
@@ -19,7 +19,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const force = searchParams.get("force") === "1";
 
   try {
-    const data = await buildSectorKline(id, days, { force });
+    const data = await buildSectorKline(id, days, { force, def });
     if (!data?.candles?.length) {
       return NextResponse.json(
         {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SectorFlow, TideStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { cpScore } from "@/lib/mock-data";
@@ -14,10 +14,11 @@ import {
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
+export type RankPeriod = "day" | "d5";
+
 type SortKey =
-  | "dayFlow"
-  | "dayAmt"
-  | "d5Flow"
+  | "amt"
+  | "flow"
   | "accel"
   | "d20Flow"
   | "heat"
@@ -34,28 +35,23 @@ type Props = {
   kindFilter?: KindFilter;
 };
 
-const COLUMNS: {
-  key: SortKey;
-  label: string;
-  hideSm?: boolean;
-}[] = [
-  { key: "dayFlow", label: "當日淨流" },
-  { key: "dayAmt", label: "成交額" },
-  { key: "d5Flow", label: "近 5 日流" },
-  { key: "accel", label: "加速度", hideSm: true },
-  { key: "d20Flow", label: "近 20 日流", hideSm: true },
-  { key: "heat", label: "量能", hideSm: true },
-  { key: "priceChange20d", label: "20 日漲幅", hideSm: true },
-  { key: "cp", label: "CP" },
-];
-
 const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
   industry: "產業",
   theme: "題材",
   auto: "新興",
 };
 
-function sortValue(s: SectorFlow, key: SortKey): number {
+function periodAmt(s: SectorFlow, period: RankPeriod): number {
+  return period === "day" ? s.dayAmt : s.d5;
+}
+
+function periodFlow(s: SectorFlow, period: RankPeriod): number {
+  return period === "day" ? s.dayFlow : s.d5Flow;
+}
+
+function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
+  if (key === "amt") return periodAmt(s, period);
+  if (key === "flow") return periodFlow(s, period);
   if (key === "cp") {
     const v = cpScore(s);
     return Number.isFinite(v) ? v : -1e12;
@@ -70,8 +66,33 @@ export function SectorRanking({
   filter = "all",
   kindFilter = "all",
 }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>("dayFlow");
+  const [period, setPeriod] = useState<RankPeriod>("day");
+  const [sortKey, setSortKey] = useState<SortKey>("amt");
   const [asc, setAsc] = useState(false);
+
+  useEffect(() => {
+    setSortKey("amt");
+    setAsc(false);
+  }, [period]);
+
+  const columns = useMemo(
+    () => [
+      {
+        key: "amt" as const,
+        label: period === "day" ? "成交額" : "5 日成交",
+      },
+      {
+        key: "flow" as const,
+        label: period === "day" ? "當日淨流" : "近 5 日流",
+      },
+      { key: "accel" as const, label: "加速度", hideSm: true },
+      { key: "d20Flow" as const, label: "近 20 日流", hideSm: true },
+      { key: "heat" as const, label: "量能", hideSm: true },
+      { key: "priceChange20d" as const, label: "20 日漲幅", hideSm: true },
+      { key: "cp" as const, label: "CP" },
+    ],
+    [period],
+  );
 
   const rows = useMemo(() => {
     const list = sectors.filter((s) => {
@@ -80,20 +101,52 @@ export function SectorRanking({
       return true;
     });
     return [...list].sort((a, b) => {
-      const diff = sortValue(a, sortKey) - sortValue(b, sortKey);
-      return asc ? diff : -diff;
+      const primary =
+        sortValue(a, sortKey, period) - sortValue(b, sortKey, period);
+      if (primary !== 0) return asc ? primary : -primary;
+      // 第二順位：淨流；若主排序已是淨流，改以成交額決勝負
+      if (sortKey === "flow") {
+        const byAmt = periodAmt(a, period) - periodAmt(b, period);
+        return asc ? byAmt : -byAmt;
+      }
+      const secondary = periodFlow(a, period) - periodFlow(b, period);
+      return asc ? secondary : -secondary;
     });
-  }, [sectors, filter, kindFilter, sortKey, asc]);
+  }, [sectors, filter, kindFilter, sortKey, asc, period]);
 
   return (
     <div className="flex h-full min-h-[320px] flex-col sm:min-h-[480px]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-2 pb-2 sm:px-3">
-        <p className="text-xs text-muted-foreground">
-          {kindFilter !== "all" ? KIND_LABEL[kindFilter] : "全部"}
-          {filter !== "all" ? ` · ${STATUS_META[filter].label}` : ""}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border/50 bg-muted/30 p-0.5">
+            {(
+              [
+                ["day", "當日"],
+                ["d5", "5 日"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPeriod(key)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs transition",
+                  period === key
+                    ? "bg-background font-semibold text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {kindFilter !== "all" ? KIND_LABEL[kindFilter] : "全部"}
+            {filter !== "all" ? ` · ${STATUS_META[filter].label}` : ""}
+          </p>
+        </div>
         <p className="text-[11px] tabular-nums text-muted-foreground">
-          共 {rows.length} 板塊
+          共 {rows.length} 板塊 · 預設成交額→淨流
         </p>
       </div>
 
@@ -101,6 +154,8 @@ export function SectorRanking({
         {rows.map((s, i) => {
           const meta = STATUS_META[s.status];
           const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
+          const amt = periodAmt(s, period);
+          const flow = periodFlow(s, period);
           return (
             <button
               key={s.id}
@@ -130,9 +185,11 @@ export function SectorRanking({
                   </span>
                 </div>
                 <div className="mt-0.5 flex gap-3 text-[11px] text-muted-foreground">
-                  <span>成交 {formatYi(s.dayAmt)}</span>
-                  <span className={signedClass(s.dayFlow)}>
-                    淨流 {formatYiSigned(s.dayFlow)}
+                  <span>
+                    {period === "day" ? "成交" : "5日成交"} {formatYi(amt)}
+                  </span>
+                  <span className={signedClass(flow)}>
+                    {period === "day" ? "淨流" : "5日流"} {formatYiSigned(flow)}
                   </span>
                 </div>
               </div>
@@ -142,19 +199,19 @@ export function SectorRanking({
       </div>
 
       <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--panel)]/95 backdrop-blur-sm">
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="w-10 px-2 py-2.5 font-medium sm:px-3">#</th>
               <th className="px-2 py-2.5 font-medium sm:px-3">板塊</th>
-              {COLUMNS.map((col) => {
+              {columns.map((col) => {
                 const active = sortKey === col.key;
                 return (
                   <th
                     key={col.key}
                     className={cn(
                       "px-2 py-2.5 font-medium sm:px-3",
-                      col.hideSm && "hidden lg:table-cell",
+                      "hideSm" in col && col.hideSm && "hidden lg:table-cell",
                     )}
                   >
                     <button
@@ -192,6 +249,8 @@ export function SectorRanking({
               const meta = STATUS_META[s.status];
               const score = cpScore(s);
               const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
+              const amt = periodAmt(s, period);
+              const flow = periodFlow(s, period);
               return (
                 <tr
                   key={s.id}
@@ -223,24 +282,16 @@ export function SectorRanking({
                       </div>
                     </div>
                   </td>
+                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">
+                    {formatYi(amt)}
+                  </td>
                   <td
                     className={cn(
                       "px-2 py-2.5 text-right font-medium tabular-nums sm:px-3",
-                      signedClass(s.dayFlow),
+                      signedClass(flow),
                     )}
                   >
-                    {formatYiSigned(s.dayFlow)}
-                  </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">
-                    {formatYi(s.dayAmt)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-2 py-2.5 text-right tabular-nums sm:px-3",
-                      signedClass(s.d5Flow),
-                    )}
-                  >
-                    {formatYiSigned(s.d5Flow)}
+                    {formatYiSigned(flow)}
                   </td>
                   <td
                     className={cn(

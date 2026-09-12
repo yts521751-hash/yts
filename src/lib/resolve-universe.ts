@@ -9,7 +9,11 @@ import {
   type SectorMember,
 } from "@/lib/sector-universe";
 import { discoverAutoThemes, loadAutoThemes } from "@/lib/theme-discovery";
-import type { QuoteRow } from "@/lib/tw-market";
+import {
+  ACTIVE_FLOW_CACHE,
+  readCacheFile,
+  type QuoteRow,
+} from "@/lib/tw-market";
 
 const THEME_WITH_KIND: SectorDef[] = SECTOR_UNIVERSE.map((s) => ({
   ...s,
@@ -118,4 +122,67 @@ export async function resolveActiveUniverse(input: {
 
 export function watchCodesFromUniverse(sectors: SectorDef[]): Set<string> {
   return new Set(sectors.flatMap((s) => s.members.map((m) => m.code)));
+}
+
+/**
+ * 解析任一板塊定義（題材／新興自動／官方產業）。
+ * 產業 K 線與 API 必須用這支，不能只查靜態 SECTOR_UNIVERSE。
+ */
+export async function lookupSectorDef(id: string): Promise<SectorDef | null> {
+  const decoded = decodeURIComponent(id);
+  const staticDef = THEME_WITH_KIND.find(
+    (s) => s.id === decoded || s.id === id,
+  );
+  if (staticDef) return staticDef;
+
+  const autos = await loadAutoThemes();
+  const auto = autos.find((s) => s.id === decoded || s.id === id);
+  if (auto) return auto;
+
+  type FlowSnap = {
+    sectors?: {
+      id: string;
+      name: string;
+      kind?: SectorDef["kind"];
+      stocks?: { code: string; name: string }[];
+    }[];
+  };
+  const flow = await readCacheFile<FlowSnap>(ACTIVE_FLOW_CACHE);
+  const hit = flow?.sectors?.find((s) => s.id === decoded || s.id === id);
+  if (hit?.stocks?.length) {
+    return {
+      id: hit.id,
+      name: hit.name,
+      basis:
+        hit.kind === "industry"
+          ? "官方產業"
+          : hit.kind === "auto"
+            ? "新興自動"
+            : "題材",
+      kind: hit.kind ?? "theme",
+      members: hit.stocks.map((s) => ({ code: s.code, name: s.name })),
+    };
+  }
+
+  if (decoded.startsWith("ind-")) {
+    const industry = decoded.slice(4);
+    const map = await loadIndustryMap().catch(() => null);
+    if (map?.stocks?.length) {
+      const members = map.stocks
+        .filter((s) => s.industry === industry)
+        .slice(0, 12)
+        .map((s) => ({ code: s.code, name: s.name }));
+      if (members.length >= 3) {
+        return {
+          id: decoded,
+          name: industry,
+          basis: "官方產業",
+          kind: "industry",
+          members,
+        };
+      }
+    }
+  }
+
+  return null;
 }

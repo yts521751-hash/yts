@@ -1,5 +1,6 @@
 import type { SectorCandle } from "@/lib/types";
-import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
+import type { SectorDef } from "@/lib/sector-universe";
+import { lookupSectorDef } from "@/lib/resolve-universe";
 import {
   blendFlow,
   instiSharesToYi,
@@ -44,9 +45,9 @@ export type SectorKlinePayload = {
 export async function buildSectorKline(
   sectorId: string,
   days = 80,
-  options?: { force?: boolean },
+  options?: { force?: boolean; def?: SectorDef },
 ): Promise<SectorKlinePayload | null> {
-  const def = SECTOR_UNIVERSE.find((s) => s.id === sectorId);
+  const def = options?.def ?? (await lookupSectorDef(sectorId));
   if (!def) return null;
 
   // 日線 + MA60 需要足夠交易日；只掃本機快取，不在請求路徑打證交所
@@ -177,10 +178,14 @@ export async function buildSectorKline(
   return payload;
 }
 
-export async function warmSectorKlineCaches(days = 80) {
-  for (const def of SECTOR_UNIVERSE) {
+export async function warmSectorKlineCaches(
+  days = 80,
+  defs?: SectorDef[],
+) {
+  const list = defs?.length ? defs : [];
+  for (const def of list) {
     try {
-      await buildSectorKline(def.id, days, { force: true });
+      await buildSectorKline(def.id, days, { force: true, def });
     } catch (err) {
       console.warn(`[kline] warm ${def.id} failed:`, err);
     }

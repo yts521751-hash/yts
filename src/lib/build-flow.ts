@@ -291,7 +291,7 @@ export async function rebuildFlowPayload(options?: {
     try {
       const { ensureQuoteHistory } = await import("@/lib/turnover");
       await ensureQuoteHistory(80);
-      await warmSectorKlineCaches(80);
+      await warmSectorKlineCaches(80, universe);
     } catch (err) {
       console.warn("[rebuild] kline warm failed:", err);
     }
