@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { BubbleChart } from "@/components/bubble-chart";
 import { CpRanking } from "@/components/cp-ranking";
@@ -9,24 +9,29 @@ import { SectorDetail } from "@/components/sector-detail";
 import { StatusCards } from "@/components/status-cards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  MARKET_BRIEF,
-  SECTORS,
   countByStatus,
   getContrarianSectors,
   getCpRanking,
   getTopBuySectors,
 } from "@/lib/mock-data";
-import type { SectorFlow, TideStatus } from "@/lib/types";
+import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
+type LoadState = "loading" | "ready" | "error";
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
+  const [sectors, setSectors] = useState<SectorFlow[]>([]);
+  const [brief, setBrief] = useState<MarketBrief | null>(null);
+  const [source, setSource] = useState("");
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     try {
@@ -34,7 +39,8 @@ export function HomeApp() {
       const theme = localStorage.getItem("jinchao_theme");
       const preferDark =
         theme === "dark" ||
-        (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        (theme !== "light" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches);
       setTextSize(ts);
       setDark(preferDark);
       document.documentElement.dataset.textsize = ts;
@@ -43,6 +49,40 @@ export function HomeApp() {
       /* ignore */
     }
   }, []);
+
+  const loadFlow = useCallback(async (force = false) => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/flow${force ? "?force=1" : ""}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!data.sectors?.length) {
+        throw new Error(data.error || "沒有板塊資料");
+      }
+      setSectors(data.sectors as SectorFlow[]);
+      setBrief(data.brief as MarketBrief);
+      setSource(String(data.source ?? ""));
+      setLoadState("ready");
+      if (!data.ok && data.error) setError(String(data.error));
+      setSelected((prev) => {
+        if (!prev) return prev;
+        return (
+          (data.sectors as SectorFlow[]).find((s) => s.id === prev.id) ?? null
+        );
+      });
+    } catch (e) {
+      setLoadState((s) => (s === "ready" ? "ready" : "error"));
+      setError(e instanceof Error ? e.message : "載入失敗");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadFlow(false);
+  }, [loadFlow]);
 
   const onTextSize = (s: TextSize) => {
     setTextSize(s);
@@ -67,22 +107,24 @@ export function HomeApp() {
     });
   };
 
-  const counts = useMemo(() => countByStatus(SECTORS), []);
-  const cp = useMemo(() => getCpRanking(SECTORS), []);
-  const contrarian = useMemo(() => getContrarianSectors(SECTORS), []);
-  const topBuys = useMemo(() => getTopBuySectors(SECTORS), []);
-
-  const onSelect = (s: SectorFlow) => setSelected(s);
+  const counts = useMemo(() => countByStatus(sectors), [sectors]);
+  const cp = useMemo(() => getCpRanking(sectors), [sectors]);
+  const contrarian = useMemo(
+    () => getContrarianSectors(sectors),
+    [sectors],
+  );
+  const topBuys = useMemo(() => getTopBuySectors(sectors), [sectors]);
+  const isDemo = brief?.isDemo === true || source.includes("demo");
 
   return (
     <div className="relative flex min-h-full flex-1 flex-col">
       <div className="tide-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <AppHeader
-        dateLabel={MARKET_BRIEF.date}
-        updatedAt={MARKET_BRIEF.updatedAt}
-        isDemo={MARKET_BRIEF.isDemo}
-        fearLabel={MARKET_BRIEF.fearLabel}
-        fearScore={MARKET_BRIEF.fearScore}
+        dateLabel={brief?.date ?? "載入中"}
+        updatedAt={brief?.updatedAt ?? "—"}
+        isDemo={isDemo}
+        fearLabel={brief?.fearLabel ?? "—"}
+        fearScore={brief?.fearScore ?? 0}
         textSize={textSize}
         onTextSize={onTextSize}
         dark={dark}
@@ -97,93 +139,153 @@ export function HomeApp() {
                 板塊輪動泡泡圖
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                越右＝近 5 日買越多 · 越上＝比近 20 日平均更偏買 · 圈越大＝近 20 日金額越大
+                越右＝近 5 日買越多 · 越上＝比近 20 日平均更偏買 · 圈越大＝近 20
+                日金額越大
+                {!isDemo && source ? ` · ${source}` : ""}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => void loadFlow(true)}
+              disabled={refreshing || loadState === "loading"}
+              className="rounded-xl border border-border/60 bg-[var(--panel)]/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+            >
+              {refreshing || loadState === "loading"
+                ? "同步證交所中…"
+                : "強制更新"}
+            </button>
           </div>
-          <StatusCards counts={counts} active={filter} onChange={setFilter} />
-        </section>
 
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-          <div className="min-h-[480px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:p-3">
-            <BubbleChart
-              sectors={SECTORS}
-              selectedId={selected?.id}
-              onSelect={onSelect}
-              filter={filter}
+          {error && (
+            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              {isDemo
+                ? `真實資料暫不可用，已改顯示示範資料：${error}`
+                : `提醒：${error}`}
+            </p>
+          )}
+
+          {loadState === "loading" && !sectors.length ? (
+            <div className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 px-4 py-10 text-center text-sm text-muted-foreground">
+              正在向證交所／櫃買抓取近 20 個交易日三大法人買賣超，首次約需 1～2
+              分鐘…
+            </div>
+          ) : loadState === "error" && !sectors.length ? (
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
+              <p className="font-medium">無法載入金流資料</p>
+              <p className="mt-1 text-muted-foreground">{error}</p>
+              <button
+                type="button"
+                className="mt-3 rounded-lg border px-3 py-1.5 text-xs"
+                onClick={() => void loadFlow(true)}
+              >
+                再試一次
+              </button>
+            </div>
+          ) : (
+            <StatusCards
+              counts={counts}
+              active={filter}
+              onChange={setFilter}
             />
-            <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
-              {SECTORS.filter((s) => filter === "all" || s.status === filter)
-                .slice()
-                .sort((a, b) => b.d5 - a.d5)
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSelect(s)}
-                    className={cn(
-                      "rounded-lg border px-2 py-1 text-[11px] transition",
-                      selected?.id === s.id
-                        ? "border-transparent font-semibold text-foreground"
-                        : "border-border/50 text-muted-foreground hover:text-foreground",
-                    )}
-                    style={
-                      selected?.id === s.id
-                        ? { background: STATUS_META[s.status].bg, color: STATUS_META[s.status].color }
-                        : undefined
-                    }
-                  >
-                    {s.name}
-                  </button>
-                ))}
-            </div>
-          </div>
-          <SectorDetail sector={selected} onClose={() => setSelected(null)} />
+          )}
         </section>
 
-        <FocusPanel
-          market={MARKET_BRIEF}
-          contrarian={contrarian}
-          topBuys={topBuys}
-          onSelect={onSelect}
-        />
+        {sectors.length > 0 && (
+          <>
+            <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
+              <div className="min-h-[480px] rounded-2xl border border-border/60 bg-[var(--panel)]/65 p-2 shadow-sm backdrop-blur-sm sm:p-3">
+                <BubbleChart
+                  sectors={sectors}
+                  selectedId={selected?.id}
+                  onSelect={setSelected}
+                  filter={filter}
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5 px-1 pb-1">
+                  {sectors
+                    .filter((s) => filter === "all" || s.status === filter)
+                    .slice()
+                    .sort((a, b) => b.d5 - a.d5)
+                    .map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelected(s)}
+                        className={cn(
+                          "rounded-lg border px-2 py-1 text-[11px] transition",
+                          selected?.id === s.id
+                            ? "border-transparent font-semibold"
+                            : "border-border/50 text-muted-foreground hover:text-foreground",
+                        )}
+                        style={
+                          selected?.id === s.id
+                            ? {
+                                background: STATUS_META[s.status].bg,
+                                color: STATUS_META[s.status].color,
+                              }
+                            : undefined
+                        }
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                </div>
+              </div>
+              <SectorDetail
+                sector={selected}
+                onClose={() => setSelected(null)}
+              />
+            </section>
 
-        <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
-          <Tabs defaultValue="cp">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <TabsList>
-                <TabsTrigger value="cp">CP 值排行</TabsTrigger>
-                <TabsTrigger value="how">怎麼看這張圖</TabsTrigger>
-              </TabsList>
-            </div>
-            <TabsContent value="cp" className="mt-4">
-              <CpRanking items={cp} onSelect={onSelect} selectedId={selected?.id} />
-            </TabsContent>
-            <TabsContent value="how" className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
-              <p>
-                <strong className="text-foreground">漲潮</strong>
-                ＝資金流入且在加速；
-                <strong className="text-foreground">輪動</strong>
-                ＝還在流入但力道放緩；
-                <strong className="text-foreground">觀望</strong>
-                ＝流出但放緩；
-                <strong className="text-foreground">退潮</strong>
-                ＝資金加速流出。
-              </p>
-              <p>
-                右上角是「流入而且還在加速」的那一區。泡泡大小只代表近 20 日金額規模，不代表好壞。
-                同板塊裡可能有人買、有人賣——一定要點進去看成分股。
-              </p>
-              <p>
-                本版先以示範資料呈現完整操作流程；之後可接上真實盤後法人資料源。僅供研究參考，不構成投資建議。
-              </p>
-            </TabsContent>
-          </Tabs>
-        </section>
+            {brief && (
+              <FocusPanel
+                market={brief}
+                contrarian={contrarian}
+                topBuys={topBuys}
+                onSelect={setSelected}
+              />
+            )}
+
+            <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
+              <Tabs defaultValue="cp">
+                <TabsList>
+                  <TabsTrigger value="cp">CP 值排行</TabsTrigger>
+                  <TabsTrigger value="how">怎麼看這張圖</TabsTrigger>
+                </TabsList>
+                <TabsContent value="cp" className="mt-4">
+                  <CpRanking
+                    items={cp}
+                    onSelect={setSelected}
+                    selectedId={selected?.id}
+                  />
+                </TabsContent>
+                <TabsContent
+                  value="how"
+                  className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
+                >
+                  <p>
+                    <strong className="text-foreground">漲潮</strong>
+                    ＝資金流入且在加速；
+                    <strong className="text-foreground">輪動</strong>
+                    ＝還在流入但力道放緩；
+                    <strong className="text-foreground">觀望</strong>
+                    ＝流出但放緩；
+                    <strong className="text-foreground">退潮</strong>
+                    ＝資金加速流出。
+                  </p>
+                  <p>
+                    金額由證交所／櫃買「三大法人買賣超股數 ×
+                    當日收盤價」換算為億元；題材板塊成分為編輯定義。僅供研究參考，不構成投資建議。
+                  </p>
+                </TabsContent>
+              </Tabs>
+            </section>
+          </>
+        )}
       </main>
 
       <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮 JinChao · 靈感來自潮汐式板塊金流解讀 · 示範資料非即時行情
+        金潮 JinChao · 法人金流來自證交所 T86／櫃買日報
+        {isDemo ? " · 目前為示範後備資料" : " · 真實盤後資料"}
       </footer>
     </div>
   );
