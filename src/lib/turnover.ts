@@ -24,6 +24,9 @@ export type TurnoverPayload = {
   builtAt: string;
   source: "cache" | "live-refresh";
   total: number;
+  /** 台北時間是否在盤中（09:00–13:35） */
+  inSession: boolean;
+  sessionNote: string;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -59,6 +62,7 @@ function rankFromQuotes(
   ymd: string,
   want: number,
   source: TurnoverPayload["source"],
+  inSession: boolean,
 ): TurnoverPayload {
   const rows = [...map.values()]
     .filter((q) => isCommonStock(q.code) && q.turnover > 0)
@@ -80,6 +84,10 @@ function rankFromQuotes(
     builtAt: new Date().toISOString(),
     source,
     total: rows.length,
+    inSession,
+    sessionNote: inSession
+      ? "盤中即時：約每 5 秒重抓證交所／櫃買公開行情並刷新表格"
+      : "休市／週末：每 5 秒讀快取並刷新畫面時間戳；數值通常不變，週一開盤後會自動改為即時",
   };
 }
 
@@ -108,7 +116,7 @@ export async function buildTurnoverRanking(
         ymd = today;
         source = "live-refresh";
         const map = new Map(fresh.quotes.map((q) => [q.code, q]));
-        const payload = rankFromQuotes(map, ymd, want, source);
+        const payload = rankFromQuotes(map, ymd, want, source, inSession);
         liveMemo = { at: Date.now(), payload };
         return payload;
       }
@@ -126,7 +134,7 @@ export async function buildTurnoverRanking(
   const map = await getCachedDayQuotes(ymd);
   if (!map?.size) return null;
 
-  const payload = rankFromQuotes(map, ymd, want, source);
+  const payload = rankFromQuotes(map, ymd, want, source, inSession);
   if (options?.live && inSession) {
     liveMemo = { at: Date.now(), payload };
   }

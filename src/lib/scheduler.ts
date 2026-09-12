@@ -141,8 +141,42 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = `${describe(expressions)}；新聞每 10 分鐘灰度更新`;
+  state.description = `${describe(expressions)}；開盤前暖機 08:50；新聞每 10 分鐘灰度更新`;
   console.log(`[scheduler] started: ${state.description}`);
+
+  // 週一至週五 08:50：開盤前暖機（行情／風度），讓 09:00 後頁面有最新快取
+  const morningExpr = process.env.MORNING_CRON?.trim() || "50 8 * * 1-5";
+  if (cron.validate(morningExpr)) {
+    const morningTask = cron.schedule(
+      morningExpr,
+      () => {
+        void (async () => {
+          console.log(`[scheduler] morning warm (${morningExpr})`);
+          try {
+            const { requestBackgroundRebuild } = await import("@/lib/build-flow");
+            requestBackgroundRebuild(`morning:${morningExpr}`);
+          } catch (e) {
+            console.error("[scheduler] morning flow warm failed", e);
+          }
+          try {
+            const { requestWindRebuild } = await import("@/lib/wind-gauge");
+            requestWindRebuild(`morning:${morningExpr}`);
+          } catch (e) {
+            console.error("[scheduler] morning wind warm failed", e);
+          }
+          try {
+            const { buildTurnoverRanking } = await import("@/lib/turnover");
+            await buildTurnoverRanking(50, { live: false });
+          } catch (e) {
+            console.error("[scheduler] morning turnover warm failed", e);
+          }
+        })();
+      },
+      { timezone: TZ },
+    );
+    b.tasks.push(morningTask);
+    console.log(`[scheduler] morning cron: ${morningExpr} (${TZ})`);
+  }
 
   // 新聞：每 10 分鐘灰度抓取（staging→active）
   const newsExpr = process.env.NEWS_CRON?.trim() || "*/10 * * * *";

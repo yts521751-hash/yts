@@ -19,8 +19,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 /**
- * 灰度讀取：永遠回 active（或示範）。
- * force=1 只觸發背景重建，不讓使用者等幾分鐘。
+ * 灰度讀取：永遠回 active。
+ * 僅在完全沒有真實快取時才用示範資料，並明確標示 isDemo／source。
+ * force=1 只觸發背景重建，不阻塞回應。
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -56,11 +57,13 @@ export async function GET(req: Request) {
       }
       return NextResponse.json({
         ok: false,
-        error: "尚無真實快取，背景灰度同步中；先顯示示範資料",
-        brief: MARKET_BRIEF,
+        error: "尚無真實快取，背景灰度同步中；暫顯示示範資料（非證交所即時）",
+        brief: { ...MARKET_BRIEF, isDemo: true },
         sectors: SECTORS,
         tradingDays: [],
         source: "demo-fallback",
+        isDemo: true,
+        dataProvenance: "demo-not-exchange",
         builtAt: new Date().toISOString(),
         syncing: true,
         rebuild,
@@ -81,6 +84,8 @@ export async function GET(req: Request) {
       ok: true,
       ...payload,
       sectors,
+      isDemo: false,
+      dataProvenance: "twse+tpex-public",
       syncing:
         deploy.syncing ||
         deploy.rebuildRunning ||
@@ -107,10 +112,12 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: false,
       error: message,
-      brief: MARKET_BRIEF,
+      brief: { ...MARKET_BRIEF, isDemo: true },
       sectors: SECTORS,
       tradingDays: [],
       source: "demo-fallback",
+      isDemo: true,
+      dataProvenance: "demo-not-exchange",
       builtAt: new Date().toISOString(),
       schedule,
       meta: {

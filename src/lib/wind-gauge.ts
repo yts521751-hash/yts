@@ -46,32 +46,55 @@ function classify(input: {
   ma20: number;
   ma60: number;
   vol20: number;
+  sampleDays: number;
+  /** 櫃買波動本來較大，門檻略提高，避免常態被判成破錶 */
+  market: "twse" | "tpex";
 }): { level: WindLevel; score: number } {
-  const { close, ma5, ma20, ma60, vol20 } = input;
+  const { close, ma5, ma20, ma60, vol20, sampleDays, market } = input;
   const bias5 = ((close - ma5) / ma5) * 100;
   const bias20 = ((close - ma20) / ma20) * 100;
   const bull = close > ma5 && ma5 > ma20 && ma20 > ma60;
   const bear = close < ma5 && ma5 < ma20 && ma20 < ma60;
   const aligned = bull || bear;
   const absBias = Math.max(Math.abs(bias5), Math.abs(bias20));
+  // vol20 已是日報酬標準差（%）；年化後上市常態約 12–25%，櫃買常偏高
   const annualVol = vol20 * Math.sqrt(252);
+  // 樣本不足時避免誤判「強風／亂流破錶」
+  const shortHist = sampleDays < 45;
+  const turbVol = market === "tpex" ? 42 : 32;
+  const galeBias = market === "tpex" ? 3.2 : 2.2;
+  const calmVol = market === "tpex" ? 22 : 18;
 
-  if (annualVol >= 22 && !aligned) {
-    return { level: "turbulence", score: Math.min(92, 60 + annualVol) };
-  }
-  if (absBias <= 1.2 && annualVol <= 12) {
-    return { level: "calm", score: Math.max(8, 28 - absBias * 4) };
-  }
-  if (aligned && Math.abs(bias20) >= 1.5) {
+  if (
+    annualVol >= turbVol &&
+    absBias >= 3.2 &&
+    !aligned &&
+    !shortHist
+  ) {
     return {
-      level: "gale",
-      score: Math.min(96, 58 + Math.abs(bias20) * 4 + (annualVol > 18 ? 6 : 0)),
+      level: "turbulence",
+      score: Math.min(market === "tpex" ? 78 : 88, 52 + annualVol * 0.45),
     };
   }
-  return {
-    level: "gust",
-    score: Math.min(78, 40 + absBias * 3 + annualVol * 0.4),
-  };
+  if (absBias <= 1.2 && annualVol <= calmVol) {
+    return { level: "calm", score: Math.max(8, 26 - absBias * 4) };
+  }
+  if (aligned && Math.abs(bias20) >= galeBias && !shortHist) {
+    return {
+      level: "gale",
+      score: Math.min(
+        market === "tpex" ? 82 : 90,
+        50 + Math.abs(bias20) * 2.6 + (annualVol > 24 ? 3 : 0),
+      ),
+    };
+  }
+  // 短歷史或中等波動 → 陣風，分數收斂，避免儀表破錶
+  const gustCap = shortHist ? (market === "tpex" ? 52 : 58) : 72;
+  const gustScore = Math.min(
+    gustCap,
+    34 + absBias * 1.8 + annualVol * 0.28,
+  );
+  return { level: "gust", score: gustScore };
 }
 
 async function fetchYahooCloses(symbol: string): Promise<{
@@ -195,6 +218,8 @@ function weightedDayChange(
 
 async function buildTpexSyntheticCloses(options?: {
   force?: boolean;
+  /** 請求路徑預設 false：只吃本機快取，避免一次打 40+ 日櫃買卡住 API */
+  allowNetwork?: boolean;
 }): Promise<{
   closes: number[];
   asOf: string;
@@ -208,14 +233,14 @@ async function buildTpexSyntheticCloses(options?: {
       updatedAt: "",
     };
   // 點數不足或強制更新時整段重算，避免殘留少數壞點永遠補不齊
-  if (options?.force || series.points.length < 20) {
+  if (options?.force || series.points.length < 15) {
     series = { points: [], updatedAt: "" };
   }
   const known = new Set(series.points.map((p) => p.ymd));
   const otcCodes = await loadOtcCodeSet();
 
-  const need = Math.max(80, 20 - series.points.length + 5);
-  const cachedDays = await listCachedTradingDays(need, 160);
+  const need = Math.max(100, 20 - series.points.length + 5);
+  const cachedDays = await listCachedTradingDays(need, 180);
   // 由舊到新累乘，才不會把指數基準弄亂
   const missingCached = cachedDays
     .filter((d) => !known.has(d))
@@ -226,6 +251,7 @@ async function buildTpexSyntheticCloses(options?: {
       ? series.points[series.points.length - 1].close
       : 100;
 
+  // Pass 1：只吃本機已含櫃買的合併快取（不打網路）
   for (const ymd of missingCached) {
     const map = await getCachedDayQuotes(ymd);
     if (!map?.size) continue;
@@ -236,12 +262,20 @@ async function buildTpexSyntheticCloses(options?: {
     known.add(ymd);
   }
 
-  // 若仍不足，補抓最近交易日櫃買行情（限制次數避免打爆）
-  if (series.points.length < 20) {
-    const days = await listRecentTradingDays(40, 90);
-    const missing = days.filter((d) => !known.has(d)).reverse().slice(0, 25);
+  // Pass 2：背景／強制暖機才補抓；請求熱路徑跳過，避免週末卡住風度頁
+  const allowNetwork = options?.allowNetwork === true;
+  if (allowNetwork && series.points.length < 50) {
+    const days = await listRecentTradingDays(70, 140);
+    const missing = days
+      .filter((d) => !known.has(d))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(-35);
+    let fetched = 0;
+    const OTC_FETCH_CAP = 28;
     for (const ymd of missing) {
+      if (fetched >= OTC_FETCH_CAP) break;
       try {
+        fetched += 1;
         const bundle = await fetchTpexQuotes(ymd);
         const quotes = bundle?.quotes ?? [];
         if (!quotes.length) continue;
@@ -254,8 +288,8 @@ async function buildTpexSyntheticCloses(options?: {
           new Set(quotes.map((q) => q.code)),
         );
         if (chg == null) continue;
-        level *= 1 + chg / 100;
-        series.points.push({ ymd, close: level, changePct: chg });
+        // 網路補點後若序列已亂序，稍後統一重算 level
+        series.points.push({ ymd, close: 0, changePct: chg });
         known.add(ymd);
       } catch {
         /* skip day */
@@ -267,13 +301,21 @@ async function buildTpexSyntheticCloses(options?: {
   const byYmd = new Map<string, (typeof series.points)[0]>();
   for (const p of series.points) byYmd.set(p.ymd, p);
   series.points = [...byYmd.values()].sort((a, b) => a.ymd.localeCompare(b.ymd));
+
+  // 用 changePct 重算指數水準，避免插入舊日後 close 基準錯亂
+  level = 100;
+  for (const p of series.points) {
+    level *= 1 + p.changePct / 100;
+    p.close = level;
+  }
+
   if (series.points.length > 120) {
     series.points = series.points.slice(series.points.length - 120);
   }
   series.updatedAt = new Date().toISOString();
   await writeCacheFile(TPEX_SERIES, series);
 
-  if (series.points.length < 20) return null;
+  if (series.points.length < 15) return null;
   const last = series.points[series.points.length - 1];
   return {
     closes: series.points.map((p) => p.close),
@@ -300,7 +342,15 @@ function readingFromCloses(
     rets.push(((closes[i] - closes[i - 1]) / closes[i - 1]) * 100);
   }
   const vol20 = stdev(rets);
-  const { level, score } = classify({ close, ma5, ma20, ma60, vol20 });
+  const { level, score } = classify({
+    close,
+    ma5,
+    ma20,
+    ma60,
+    vol20,
+    sampleDays: closes.length,
+    market,
+  });
   const bias = (c: number, m: number) => ((c - m) / m) * 100;
   return {
     market,
@@ -351,9 +401,21 @@ function fallbackReading(
   };
 }
 
+type WindGlobal = {
+  rebuilding?: boolean;
+};
+
+function windBag(): WindGlobal {
+  const g = globalThis as typeof globalThis & { __jinchaoWind?: WindGlobal };
+  if (!g.__jinchaoWind) g.__jinchaoWind = {};
+  return g.__jinchaoWind;
+}
+
 export async function computeWindPayload(options?: {
   force?: boolean;
   twseDayChangePct?: number;
+  /** 允許櫃買歷史補抓網路；背景暖機用 */
+  allowNetwork?: boolean;
 }): Promise<WindPayload> {
   if (!options?.force) {
     const cached = await readCacheFile<WindPayload>(CACHE);
@@ -378,7 +440,10 @@ export async function computeWindPayload(options?: {
   // 櫃買：優先本機上櫃股成交加權合成。Yahoo ^TWOII 圖表近期失真（單日可達 -7%），不當作主來源。
   let tpex: WindReading;
   try {
-    const syn = await buildTpexSyntheticCloses({ force: options?.force });
+    const syn = await buildTpexSyntheticCloses({
+      force: options?.force,
+      allowNetwork: options?.allowNetwork === true,
+    });
     if (syn) {
       tpex = readingFromCloses(
         "tpex",
@@ -418,6 +483,42 @@ export async function computeWindPayload(options?: {
   return payload;
 }
 
+/** 背景重建風度（含櫃買歷史補齊）；不阻塞 HTTP */
+export function requestWindRebuild(reason: string) {
+  const bag = windBag();
+  if (bag.rebuilding) {
+    return { started: false, alreadyRunning: true };
+  }
+  bag.rebuilding = true;
+  console.log(`[wind] background rebuild (${reason})`);
+  void (async () => {
+    try {
+      await computeWindPayload({ force: true, allowNetwork: true });
+      console.log(`[wind] background rebuild ok (${reason})`);
+    } catch (e) {
+      console.error(`[wind] background rebuild failed (${reason})`, e);
+    } finally {
+      bag.rebuilding = false;
+    }
+  })();
+  return { started: true, alreadyRunning: false };
+}
+
 export async function getWindPayload(): Promise<WindPayload> {
-  return computeWindPayload();
+  const cached = await readCacheFile<WindPayload>(CACHE);
+  if (cached?.twse && cached?.tpex && cached.builtAt) {
+    const age = Date.now() - Date.parse(cached.builtAt);
+    // 超過 30 分鐘觸發背景刷新，但仍先回舊快取，避免請求掛住
+    if (!Number.isFinite(age) || age >= 1000 * 60 * 30) {
+      requestWindRebuild("stale-cache");
+    }
+    return cached;
+  }
+  // 無快取：先用本機行情快速算一版，再背景補齊歷史
+  const quick = await computeWindPayload({
+    force: true,
+    allowNetwork: false,
+  });
+  requestWindRebuild("cold-fill");
+  return quick;
 }

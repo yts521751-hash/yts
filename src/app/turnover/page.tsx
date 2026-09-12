@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { formatPct, formatYi, signedClass } from "@/lib/format";
@@ -21,8 +21,13 @@ export default function TurnoverPage() {
   const [date, setDate] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
   const [source, setSource] = useState("");
+  const [inSession, setInSession] = useState(false);
+  const [sessionNote, setSessionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+  const [flashCodes, setFlashCodes] = useState<Set<string>>(new Set());
+  const prevRef = useRef<Map<string, number>>(new Map());
 
   const load = useCallback(async (live = false) => {
     try {
@@ -34,10 +39,24 @@ export default function TurnoverPage() {
         setError(data.error || "無法載入成交排行");
         return;
       }
-      setRows(data.rows);
+      const next = data.rows as Row[];
+      const changed = new Set<string>();
+      for (const r of next) {
+        const prev = prevRef.current.get(r.code);
+        if (prev != null && prev !== r.turnoverYi) changed.add(r.code);
+      }
+      prevRef.current = new Map(next.map((r) => [r.code, r.turnoverYi]));
+      setRows(next);
       setDate(data.date || "");
       setUpdatedAt(data.builtAt || "");
       setSource(String(data.source || ""));
+      setInSession(Boolean(data.inSession));
+      setSessionNote(String(data.sessionNote || ""));
+      setTick((n) => n + 1);
+      if (changed.size) {
+        setFlashCodes(changed);
+        window.setTimeout(() => setFlashCodes(new Set()), 900);
+      }
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "載入失敗");
@@ -50,7 +69,7 @@ export default function TurnoverPage() {
     void load(false);
   }, [load]);
 
-  // 盤中每 5 秒刷新；盤後仍 15 秒讀快取（排名通常不變）
+  // 固定每 5 秒輪詢：盤中 live=1 重抓公開行情；休市仍刷新時間戳，週一開盤自動切即時
   useEffect(() => {
     const t = setInterval(() => void load(true), 5000);
     return () => clearInterval(t);
@@ -58,7 +77,10 @@ export default function TurnoverPage() {
 
   return (
     <div className="relative min-h-full flex-1">
-      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div
+        className="studio-atmosphere pointer-events-none absolute inset-0"
+        aria-hidden
+      />
       <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
         <Link
           href="/"
@@ -68,24 +90,47 @@ export default function TurnoverPage() {
           回排行榜
         </Link>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
-          <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-            成交金額排行 Top 50
-          </h1>
-        <p className="mt-2 text-[11px] text-muted-foreground">資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
-          <p className="text-xs text-muted-foreground">
-            {date ? `${date}` : ""}
-            {source === "live-refresh" ? " · 盤中約 5 秒刷新" : " · 約 5 秒更新"}
-            {updatedAt
-              ? ` · ${new Date(updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`
-              : ""}
-          </p>
+          <div>
+            <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
+              成交金額排行 Top 50
+            </h1>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料（非寫死）
+            </p>
+          </div>
+          <div className="text-right text-xs text-muted-foreground">
+            <p>
+              {date ? `${date}` : ""}
+              {inSession
+                ? source === "live-refresh"
+                  ? " · 盤中即時"
+                  : " · 盤中讀取中"
+                : " · 休市快取"}
+              {updatedAt
+                ? ` · ${new Date(updatedAt).toLocaleTimeString("zh-TW", {
+                    hour12: false,
+                  })}`
+                : ""}
+              <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-[var(--mk-up)] align-middle" />
+              <span className="ml-1 tabular-nums opacity-70">#{tick}</span>
+            </p>
+            {sessionNote ? (
+              <p className="mt-1 max-w-sm text-[11px] leading-relaxed">
+                {sessionNote}
+              </p>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-border/60 bg-[var(--panel)]/80 backdrop-blur-sm">
           {loading ? (
-            <p className="p-8 text-center text-sm text-muted-foreground">載入中…</p>
+            <p className="p-8 text-center text-sm text-muted-foreground">
+              載入中…
+            </p>
           ) : error ? (
-            <p className="p-8 text-center text-sm text-amber-800 dark:text-amber-100">{error}</p>
+            <p className="p-8 text-center text-sm text-amber-800 dark:text-amber-100">
+              {error}
+            </p>
           ) : (
             <table className="w-full min-w-[640px] text-left text-sm">
               <thead className="border-b border-border/50 text-xs text-muted-foreground">
@@ -108,14 +153,19 @@ export default function TurnoverPage() {
                 {rows.map((r) => (
                   <tr
                     key={r.code}
-                    className="border-b border-border/30 transition hover:bg-muted/30"
+                    className={cn(
+                      "border-b border-border/30 transition hover:bg-muted/30",
+                      flashCodes.has(r.code) && "bg-[var(--mk-up)]/10",
+                    )}
                   >
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                       {r.rank}
                     </td>
-                    <td className="px-3 py-2.5 font-medium tabular-nums">{r.code}</td>
+                    <td className="px-3 py-2.5 font-medium tabular-nums">
+                      {r.code}
+                    </td>
                     <td className="px-3 py-2.5">{r.name}</td>
-                    <td className="px-3 py-2.5 text-right tabular-nums font-medium transition-all duration-300">
+                    <td className="px-3 py-2.5 text-right font-medium tabular-nums transition-all duration-300">
                       {formatYi(r.turnoverYi)}
                     </td>
                     <td

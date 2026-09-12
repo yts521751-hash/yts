@@ -1,5 +1,6 @@
 /**
  * 金流公布欄：用當日／3 日／5 日淨流關係，快速標出流入／流出前三名。
+ * 四組固定輸出（可為空），避免使用者以為功能壞掉。
  */
 
 export type BulletinRow = {
@@ -29,7 +30,7 @@ function topN(
   return [...rows].filter(pred).sort(compare).slice(0, n);
 }
 
-/** 依當日／3日／5日關係組出公布欄各組前三 */
+/** 依當日／3日／5日關係組出公布欄；四組固定回傳 */
 export function buildFlowBulletin(rows: BulletinRow[]): BulletinSection[] {
   const list = rows.filter(
     (r) =>
@@ -38,7 +39,7 @@ export function buildFlowBulletin(rows: BulletinRow[]): BulletinSection[] {
       Number.isFinite(r.d5Flow),
   );
 
-  const sections: BulletinSection[] = [
+  return [
     {
       key: "steady-in",
       title: "持續流入",
@@ -84,6 +85,4 @@ export function buildFlowBulletin(rows: BulletinRow[]): BulletinSection[] {
       ),
     },
   ];
-
-  return sections.filter((s) => s.items.length > 0);
 }

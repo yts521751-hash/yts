@@ -288,12 +288,11 @@ export function HomeApp() {
           ) : null}
         </section>
 
-        {boardMode === "sector" && sectors.length > 0 ? (
+        {boardMode === "sector" ? (
           <FlowBulletin title="板塊金流公布欄" rows={sectorBulletinRows} />
-        ) : null}
-        {boardMode === "stock" && stocks.length > 0 ? (
+        ) : (
           <FlowBulletin title="個股金流公布欄" rows={stockBulletinRows} />
-        ) : null}
+        )}
 
         {boardMode === "sector" && sectors.length > 0 && (
           <>
