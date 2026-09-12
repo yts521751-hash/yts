@@ -15,12 +15,17 @@ import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 
 export type StockRankPeriod = "day" | "d3" | "d5";
 
-type SortKey = "changePct" | "amt" | "flow" | "accel" | "heat";
+type SortKey = "changePct" | "amt" | "flow" | "accel" | "heat" | "revenueYoy" | "epsGrowth";
 
 export type StockFlowRankRow = StockFlow & {
   accel?: number;
   heat?: number;
   close?: number;
+  revenueYoy?: number | null;
+  revenueMonth?: string | null;
+  epsGrowth?: number | null;
+  nextYearEps?: number | null;
+  baseEps?: number | null;
 };
 
 type Props = {
@@ -56,6 +61,8 @@ function sortValue(
   if (key === "flow") return periodFlow(s, period);
   if (key === "accel") return s.accel ?? 0;
   if (key === "heat") return s.heat ?? 0;
+  if (key === "revenueYoy") return s.revenueYoy ?? Number.NEGATIVE_INFINITY;
+  if (key === "epsGrowth") return s.epsGrowth ?? Number.NEGATIVE_INFINITY;
   return s.changePct;
 }
 
@@ -110,6 +117,16 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
         label: "量能",
         tip: COLUMN_TIPS.heat,
         hideLg: true,
+      },
+      {
+        key: "revenueYoy",
+        label: "營收YoY",
+        tip: COLUMN_TIPS.revenueYoy,
+      },
+      {
+        key: "epsGrowth",
+        label: "EPS成長",
+        tip: COLUMN_TIPS.epsGrowth,
       },
     ],
     [period],
@@ -221,6 +238,26 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                 >
                   {formatYiSigned(flow)}
                 </p>
+                <p className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
+                  營收YoY{" "}
+                  <span
+                    className={cn(
+                      s.revenueYoy == null
+                        ? ""
+                        : signedClass(s.revenueYoy),
+                    )}
+                  >
+                    {s.revenueYoy == null ? "—" : formatPct(s.revenueYoy)}
+                  </span>
+                  {" · "}EPS{" "}
+                  <span
+                    className={cn(
+                      s.epsGrowth == null ? "" : signedClass(s.epsGrowth),
+                    )}
+                  >
+                    {s.epsGrowth == null ? "—" : formatPct(s.epsGrowth)}
+                  </span>
+                </p>
               </div>
             </div>
           );
@@ -228,15 +265,17 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
       </div>
 
       <div className="hidden min-h-0 flex-1 overflow-x-auto md:block">
-        <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
+        <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
           <colgroup>
             <col className="w-10" />
-            <col className="w-[28%]" />
-            <col className="w-[12%]" />
-            <col className="w-[14%]" />
-            <col className="w-[14%]" />
-            <col className="w-[14%]" />
-            <col className="w-[12%]" />
+            <col className="w-[22%]" />
+            <col className="w-[10%]" />
+            <col className="w-[11%]" />
+            <col className="w-[11%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
+            <col className="w-[10%]" />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-[var(--panel)]">
             <tr className="text-[11px] text-muted-foreground">
@@ -319,6 +358,31 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                   </td>
                   <td className="hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3">
                     {formatHeat(s.heat ?? 1)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
+                      s.revenueYoy == null
+                        ? "text-muted-foreground"
+                        : signedClass(s.revenueYoy),
+                    )}
+                  >
+                    {s.revenueYoy == null ? "—" : formatPct(s.revenueYoy)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
+                      s.epsGrowth == null
+                        ? "text-muted-foreground"
+                        : signedClass(s.epsGrowth),
+                    )}
+                    title={
+                      s.nextYearEps != null && s.baseEps != null
+                        ? `共識EPS ${s.nextYearEps} / 基準 ${s.baseEps}`
+                        : undefined
+                    }
+                  >
+                    {s.epsGrowth == null ? "—" : formatPct(s.epsGrowth)}
                   </td>
                 </tr>
               );

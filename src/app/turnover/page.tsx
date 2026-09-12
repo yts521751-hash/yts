@@ -69,9 +69,9 @@ export default function TurnoverPage() {
     void load(false);
   }, [load]);
 
-  // 固定每 5 秒輪詢：盤中 live=1 重抓公開行情；休市仍刷新時間戳，週一開盤自動切即時
+  // 固定每 3 秒輪詢：盤中 live=1 重抓公開行情；休市仍刷新時間戳，週一開盤自動切即時
   useEffect(() => {
-    const t = setInterval(() => void load(true), 5000);
+    const t = setInterval(() => void load(true), 3000);
     return () => clearInterval(t);
   }, [load]);
 

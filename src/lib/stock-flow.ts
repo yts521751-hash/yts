@@ -4,6 +4,7 @@
  */
 
 import type { StockFlow } from "@/lib/types";
+import { enrichStockFundamentals } from "@/lib/fundamentals";
 import {
   blendFlow,
   instiSharesToYi,
@@ -27,6 +28,11 @@ export type StockFlowRow = StockFlow & {
   heat: number;
   /** 最新收盤／成交價 */
   close: number;
+  revenueYoy?: number | null;
+  revenueMonth?: string | null;
+  epsGrowth?: number | null;
+  nextYearEps?: number | null;
+  baseEps?: number | null;
 };
 
 export type StockFlowPayload = {
@@ -68,7 +74,26 @@ export async function buildStockFlowRanking(
     if (cached?.rows?.length) {
       const age = Date.now() - Date.parse(cached.builtAt || "");
       if (Number.isFinite(age) && age >= 0 && age < 10 * 60 * 1000) {
-        return { ...cached, source: "cache" };
+        const rows = cached.rows;
+        const needFund = rows.some((r) => r.revenueYoy == null && r.epsGrowth == null);
+        if (needFund) {
+          try {
+            const fund = await enrichStockFundamentals(rows.map((r) => r.code));
+            for (const row of rows) {
+              const f = fund.get(row.code);
+              if (!f) continue;
+              row.revenueYoy = f.revenueYoy;
+              row.revenueMonth = f.revenueMonth;
+              row.epsGrowth = f.epsGrowth;
+              row.nextYearEps = f.nextYearEps;
+              row.baseEps = f.baseEps;
+            }
+            await writeCacheFile(CACHE, { ...cached, rows });
+          } catch (err) {
+            console.error("[stock-flow] fundamentals enrich on cache failed", err);
+          }
+        }
+        return { ...cached, rows, source: "cache" };
       }
     }
   }
@@ -180,6 +205,24 @@ export async function buildStockFlowRanking(
 
   rows.sort((a, b) => b.dayAmt - a.dayAmt);
   const top = rows.slice(0, want);
+
+  try {
+    const fund = await enrichStockFundamentals(
+      top.map((r) => r.code),
+      { force: Boolean(options?.force) },
+    );
+    for (const row of top) {
+      const f = fund.get(row.code);
+      if (!f) continue;
+      row.revenueYoy = f.revenueYoy;
+      row.revenueMonth = f.revenueMonth;
+      row.epsGrowth = f.epsGrowth;
+      row.nextYearEps = f.nextYearEps;
+      row.baseEps = f.baseEps;
+    }
+  } catch (err) {
+    console.error("[stock-flow] fundamentals enrich failed", err);
+  }
 
   const payload: StockFlowPayload = {
     date: ymdToIso(days[0]),

@@ -31,8 +31,8 @@ export type TurnoverPayload = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** 盤中 live 結果短快取，避免前端 5 秒輪詢打爆交易所 */
-const LIVE_TTL_MS = 5_000;
+/** 盤中 live 結果短快取，避免前端 3 秒輪詢打爆交易所 */
+const LIVE_TTL_MS = 3_000;
 let liveMemo: { at: number; payload: TurnoverPayload } | null = null;
 
 function isCommonStock(code: string) {
@@ -86,8 +86,8 @@ function rankFromQuotes(
     total: rows.length,
     inSession,
     sessionNote: inSession
-      ? "盤中即時：約每 5 秒重抓證交所／櫃買公開行情並刷新表格"
-      : "休市／週末：每 5 秒讀快取並刷新畫面時間戳；數值通常不變，週一開盤後會自動改為即時",
+      ? "盤中即時：約每 3 秒重抓證交所／櫃買公開行情並刷新表格"
+      : "休市／週末：每 3 秒讀快取並刷新畫面時間戳；數值通常不變，週一開盤後會自動改為即時",
   };
 }
 

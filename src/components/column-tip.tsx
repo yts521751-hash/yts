@@ -22,6 +22,8 @@ export const COLUMN_TIPS = {
   priceChange20d: "近 20 個交易日股價漲幅（%）。",
   cp: "綜合資金流與漲幅的相對效率參考分數，愈高表示單位漲幅帶進的資金效益愈好。",
   close: "最近一筆成交價／收盤價。",
+  revenueYoy: "最近月份營收較去年同月增減（%），來源：證交所／櫃買公開月營收。",
+  epsGrowth: "優先用 Yahoo 分析師共識「下一年平均 EPS」相對本年度／近四季 EPS 推算成長率；若共識暫不可用，則改以公開財報近四季 EPS 年增率推估。",
 } as const;
 
 export function ColumnTip({

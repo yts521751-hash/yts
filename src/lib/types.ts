@@ -25,6 +25,16 @@ export interface StockFlow {
   d20: number;
   /** 當日漲跌幅 % */
   changePct: number;
+  /** 最近月營收年增率 %（證交所／櫃買公開月營收） */
+  revenueYoy?: number | null;
+  /** 營收資料年月 */
+  revenueMonth?: string | null;
+  /** 市場共識 EPS 成長率 % */
+  epsGrowth?: number | null;
+  /** 共識下一年平均 EPS */
+  nextYearEps?: number | null;
+  /** 基準 EPS */
+  baseEps?: number | null;
 }
 
 export interface SectorFlow {
