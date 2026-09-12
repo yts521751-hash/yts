@@ -49,105 +49,105 @@
 }
 
 :root {
-  /* Pulse terminal — graphite paper + vermillion signal (not coastal teal / cream ledger) */
-  --background: #ebe9e6;
-  --foreground: #1c1917;
-  --card: #f7f5f2;
-  --card-foreground: #1c1917;
-  --popover: #f7f5f2;
-  --popover-foreground: #1c1917;
-  --primary: #9f1239;
-  --primary-foreground: #fff7f8;
-  --secondary: #e4e0db;
-  --secondary-foreground: #1c1917;
-  --muted: #e8e4df;
-  --muted-foreground: #57534e;
-  --accent: #f0ebe3;
-  --accent-foreground: #1c1917;
+  /* Studio board — cool steel paper + ink navy chrome (no warm ledger, no coastal teal) */
+  --background: #e6ebf0;
+  --foreground: #0f172a;
+  --card: #f4f7fa;
+  --card-foreground: #0f172a;
+  --popover: #f4f7fa;
+  --popover-foreground: #0f172a;
+  --primary: #1e3a5f;
+  --primary-foreground: #f8fafc;
+  --secondary: #d8e0e8;
+  --secondary-foreground: #0f172a;
+  --muted: #dce3ea;
+  --muted-foreground: #475569;
+  --accent: #e8eef4;
+  --accent-foreground: #0f172a;
   --destructive: #b91c1c;
-  --border: #d6d0c8;
-  --input: #d6d0c8;
-  --ring: #9f1239;
-  --radius: 0.35rem;
-  --panel: #f4f1ec;
+  --border: #c5d0db;
+  --input: #c5d0db;
+  --ring: #1e3a5f;
+  --radius: 0.2rem;
+  --panel: #eef2f6;
 
-  --mk-up: #b91c1c;
-  --mk-down: #047857;
-  --mk-surge: #9f1239;
-  --mk-surge-bg: color-mix(in oklab, #9f1239 11%, white);
-  --mk-rotate: #c2410c;
-  --mk-rotate-bg: color-mix(in oklab, #c2410c 11%, white);
-  --mk-watch: #57534e;
-  --mk-watch-bg: color-mix(in oklab, #57534e 10%, white);
-  --mk-ebb: #0f766e;
-  --mk-ebb-bg: color-mix(in oklab, #0f766e 10%, white);
-  --mk-anchor: #9f1239;
-  --mk-anchor-bg: color-mix(in oklab, #9f1239 11%, white);
-  --mk-ink: #1c1917;
+  --mk-up: #c41e3a;
+  --mk-down: #0d7a5f;
+  --mk-surge: #c41e3a;
+  --mk-surge-bg: color-mix(in oklab, #c41e3a 10%, white);
+  --mk-rotate: #b45309;
+  --mk-rotate-bg: color-mix(in oklab, #b45309 10%, white);
+  --mk-watch: #64748b;
+  --mk-watch-bg: color-mix(in oklab, #64748b 10%, white);
+  --mk-ebb: #312e81;
+  --mk-ebb-bg: color-mix(in oklab, #312e81 10%, white);
+  --mk-anchor: #1e3a5f;
+  --mk-anchor-bg: color-mix(in oklab, #1e3a5f 10%, white);
+  --mk-ink: #0f172a;
 
-  --chart-1: #9f1239;
-  --chart-2: #c2410c;
-  --chart-3: #57534e;
-  --chart-4: #047857;
-  --chart-5: #44403c;
-  --sidebar: #f7f5f2;
-  --sidebar-foreground: #1c1917;
-  --sidebar-primary: #9f1239;
-  --sidebar-primary-foreground: #fff7f8;
-  --sidebar-accent: #e4e0db;
-  --sidebar-accent-foreground: #1c1917;
-  --sidebar-border: #d6d0c8;
-  --sidebar-ring: #9f1239;
+  --chart-1: #c41e3a;
+  --chart-2: #b45309;
+  --chart-3: #64748b;
+  --chart-4: #0d7a5f;
+  --chart-5: #1e3a5f;
+  --sidebar: #f4f7fa;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #1e3a5f;
+  --sidebar-primary-foreground: #f8fafc;
+  --sidebar-accent: #d8e0e8;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #c5d0db;
+  --sidebar-ring: #1e3a5f;
 }
 
 .dark {
-  --background: #0c0b0a;
-  --foreground: #f5f2eb;
-  --card: #171513;
-  --card-foreground: #f5f2eb;
-  --popover: #171513;
-  --popover-foreground: #f5f2eb;
-  --primary: #fb7185;
-  --primary-foreground: #1c1917;
-  --secondary: #221f1c;
-  --secondary-foreground: #f5f2eb;
-  --muted: #221f1c;
-  --muted-foreground: #a8a29e;
-  --accent: #2a2622;
-  --accent-foreground: #f5f2eb;
-  --destructive: #fb7185;
-  --border: rgb(255 255 255 / 9%);
-  --input: rgb(255 255 255 / 12%);
-  --ring: #fb7185;
-  --panel: #12100e;
+  --background: #0a0e14;
+  --foreground: #e8eef4;
+  --card: #121820;
+  --card-foreground: #e8eef4;
+  --popover: #121820;
+  --popover-foreground: #e8eef4;
+  --primary: #93c5fd;
+  --primary-foreground: #0a0e14;
+  --secondary: #1a222d;
+  --secondary-foreground: #e8eef4;
+  --muted: #1a222d;
+  --muted-foreground: #94a3b8;
+  --accent: #1e2937;
+  --accent-foreground: #e8eef4;
+  --destructive: #f87171;
+  --border: rgb(148 163 184 / 14%);
+  --input: rgb(148 163 184 / 18%);
+  --ring: #93c5fd;
+  --panel: #0e141c;
 
-  --mk-up: #fb7185;
+  --mk-up: #f87171;
   --mk-down: #34d399;
-  --mk-surge: #fb7185;
-  --mk-surge-bg: color-mix(in oklab, #fb7185 16%, #12100e);
-  --mk-rotate: #fdba74;
-  --mk-rotate-bg: color-mix(in oklab, #fdba74 14%, #12100e);
-  --mk-watch: #a8a29e;
-  --mk-watch-bg: color-mix(in oklab, #a8a29e 12%, #12100e);
-  --mk-ebb: #34d399;
-  --mk-ebb-bg: color-mix(in oklab, #34d399 12%, #12100e);
-  --mk-anchor: #fb7185;
-  --mk-anchor-bg: color-mix(in oklab, #fb7185 14%, #12100e);
-  --mk-ink: #f5f2eb;
+  --mk-surge: #f87171;
+  --mk-surge-bg: color-mix(in oklab, #f87171 14%, #0e141c);
+  --mk-rotate: #fbbf24;
+  --mk-rotate-bg: color-mix(in oklab, #fbbf24 12%, #0e141c);
+  --mk-watch: #94a3b8;
+  --mk-watch-bg: color-mix(in oklab, #94a3b8 12%, #0e141c);
+  --mk-ebb: #a5b4fc;
+  --mk-ebb-bg: color-mix(in oklab, #a5b4fc 12%, #0e141c);
+  --mk-anchor: #93c5fd;
+  --mk-anchor-bg: color-mix(in oklab, #93c5fd 12%, #0e141c);
+  --mk-ink: #e8eef4;
 
-  --chart-1: #fb7185;
-  --chart-2: #fdba74;
-  --chart-3: #a8a29e;
+  --chart-1: #f87171;
+  --chart-2: #fbbf24;
+  --chart-3: #94a3b8;
   --chart-4: #34d399;
-  --chart-5: #e7e5e4;
-  --sidebar: #171513;
-  --sidebar-foreground: #f5f2eb;
-  --sidebar-primary: #fb7185;
-  --sidebar-primary-foreground: #1c1917;
-  --sidebar-accent: #221f1c;
-  --sidebar-accent-foreground: #f5f2eb;
-  --sidebar-border: rgb(255 255 255 / 9%);
-  --sidebar-ring: #fb7185;
+  --chart-5: #93c5fd;
+  --sidebar: #121820;
+  --sidebar-foreground: #e8eef4;
+  --sidebar-primary: #93c5fd;
+  --sidebar-primary-foreground: #0a0e14;
+  --sidebar-accent: #1a222d;
+  --sidebar-accent-foreground: #e8eef4;
+  --sidebar-border: rgb(148 163 184 / 14%);
+  --sidebar-ring: #93c5fd;
 }
 
 @layer base {
@@ -172,78 +172,54 @@ html[data-textsize="lg"] {
   font-size: 20px;
 }
 
-/* Pulse atmosphere — diagonal hatch + vermillion wash (not ledger grid / tide drift) */
-.pulse-atmosphere {
-  background-color: transparent;
-  background-image:
-    repeating-linear-gradient(
-      -18deg,
-      transparent,
-      transparent 11px,
-      color-mix(in oklab, var(--mk-ink) 3.5%, transparent) 11px,
-      color-mix(in oklab, var(--mk-ink) 3.5%, transparent) 12px
-    ),
-    radial-gradient(
-      780px 360px at 8% -10%,
-      color-mix(in oklab, var(--mk-anchor) 14%, transparent),
-      transparent 58%
+/* Studio atmosphere — soft cool wash only (no hatch, no tide drift) */
+.studio-atmosphere {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--mk-anchor) 8%, transparent) 0%,
+      transparent 28%
     ),
     linear-gradient(
-      165deg,
-      color-mix(in oklab, var(--foreground) 3%, transparent),
-      transparent 42%
+      90deg,
+      color-mix(in oklab, var(--mk-ink) 2.5%, transparent) 0 1px,
+      transparent 1px
     );
-  animation: pulse-wash 18s ease-in-out infinite alternate;
-}
-
-@keyframes pulse-wash {
-  from {
-    opacity: 0.82;
-    filter: saturate(0.92);
-  }
-  to {
-    opacity: 1;
-    filter: saturate(1.05);
-  }
+  background-size: auto, 72px 100%;
+  background-repeat: no-repeat, repeat;
+  opacity: 0.9;
 }
 
 .status-card {
-  animation: snap-in 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: board-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  border-left-width: 3px;
+  border-left-style: solid;
+  border-radius: 0;
 }
 
-@keyframes snap-in {
+@keyframes board-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
 .logo-mark {
-  animation: mark-glow 4s ease-in-out infinite;
-}
-
-@keyframes mark-glow {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--mk-anchor) 0%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in oklab, var(--mk-anchor) 18%, transparent);
-  }
+  border-radius: 0;
 }
 
 .rank-row-enter {
-  animation: row-fade 0.35s ease both;
+  animation: row-slide 0.28s ease both;
 }
 
-@keyframes row-fade {
+@keyframes row-slide {
   from {
     opacity: 0;
-    transform: translateX(-6px);
+    transform: translateX(-4px);
   }
   to {
     opacity: 1;

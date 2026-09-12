@@ -59,7 +59,7 @@ function sortValue(s: SectorFlow, key: SortKey, period: RankPeriod): number {
   return s[key];
 }
 
-/** 「全部」時產業大板塊會淹沒題材；配額＋關鍵概念保底，讓矽光子等進前 20 */
+/** 「全部」時產業大板塊會淹沒題材；配額＋關鍵概念保底，讓矽光子等進前 30 */
 const PIN_THEME_IDS = new Set([
   "optical",
   "ai-server",
@@ -68,7 +68,9 @@ const PIN_THEME_IDS = new Set([
   "advanced-packaging",
 ]);
 
-function takeTopMixed(sorted: SectorFlow[], limit = 20): SectorFlow[] {
+const RANK_LIMIT = 30;
+
+function takeTopMixed(sorted: SectorFlow[], limit = RANK_LIMIT): SectorFlow[] {
   const themes = sorted.filter((s) => (s.kind ?? "theme") !== "industry");
   const industries = sorted.filter((s) => s.kind === "industry");
   const picked = new Map<string, SectorFlow>();
@@ -76,8 +78,8 @@ function takeTopMixed(sorted: SectorFlow[], limit = 20): SectorFlow[] {
   for (const s of sorted) {
     if (PIN_THEME_IDS.has(s.id)) picked.set(s.id, s);
   }
-  for (const s of themes.slice(0, 12)) picked.set(s.id, s);
-  for (const s of industries.slice(0, 8)) picked.set(s.id, s);
+  for (const s of themes.slice(0, 18)) picked.set(s.id, s);
+  for (const s of industries.slice(0, 12)) picked.set(s.id, s);
   for (const s of sorted) {
     if (picked.size >= limit) break;
     picked.set(s.id, s);
@@ -151,7 +153,9 @@ export function SectorRanking({
       return asc ? secondary : -secondary;
     });
     const rows =
-      kindFilter === "all" ? takeTopMixed(sorted, 20) : sorted.slice(0, 20);
+      kindFilter === "all"
+        ? takeTopMixed(sorted, RANK_LIMIT)
+        : sorted.slice(0, RANK_LIMIT);
     return { rows, totalMatched: sorted.length };
   }, [sectors, filter, kindFilter, sortKey, asc, period]);
 

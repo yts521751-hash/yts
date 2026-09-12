@@ -57,7 +57,7 @@ export default function TurnoverPage() {
 
   return (
     <div className="relative min-h-full flex-1">
-      <div className="pulse-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
         <Link
           href="/"

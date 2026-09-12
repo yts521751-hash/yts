@@ -123,7 +123,7 @@ export function HomeApp() {
 
   return (
     <div className="relative flex min-h-full flex-1 flex-col">
-      <div className="pulse-atmosphere pointer-events-none absolute inset-0" aria-hidden />
+      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <AppHeader
         dateLabel={brief?.date ?? "載入中"}
         updatedAt={brief?.updatedAt ?? "—"}
@@ -148,7 +148,7 @@ export function HomeApp() {
               type="button"
               onClick={() => void loadFlow(true)}
               disabled={refreshing || loadState === "loading"}
-              className="rounded-xl border border-border/60 bg-[var(--panel)]/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
+              className="border border-border bg-[var(--panel)] px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-[var(--mk-anchor)] hover:text-foreground disabled:opacity-50"
             >
               {refreshing || loadState === "loading"
                 ? "讀取中…"
@@ -167,11 +167,11 @@ export function HomeApp() {
           )}
 
           {loadState === "loading" && !sectors.length ? (
-            <div className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 px-4 py-10 text-center text-sm text-muted-foreground">
+            <div className="border border-border bg-[var(--panel)] px-4 py-10 text-center text-sm text-muted-foreground">
               載入中…
             </div>
           ) : loadState === "error" && !sectors.length ? (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
+            <div className="border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
               <p className="font-medium">無法載入資料</p>
               <p className="mt-1 text-muted-foreground">{error}</p>
               <button
@@ -198,10 +198,10 @@ export function HomeApp() {
                     type="button"
                     onClick={() => setKindFilter(k)}
                     className={cn(
-                      "rounded-lg border px-2.5 py-1 text-xs transition",
+                      "border px-2.5 py-1 text-xs transition",
                       kindFilter === k
-                        ? "border-transparent bg-foreground text-background"
-                        : "border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground",
+                        ? "border-[var(--mk-anchor)] bg-[var(--mk-anchor)] text-white"
+                        : "border-border bg-muted/30 text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {label}
@@ -216,7 +216,7 @@ export function HomeApp() {
         {sectors.length > 0 && (
           <>
             <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-              <div className="min-h-[320px] rounded-md border border-border/70 bg-[var(--panel)]/80 p-2 shadow-sm sm:min-h-[480px] sm:p-3">
+              <div className="min-h-[320px] border border-border bg-[var(--panel)] p-2 sm:min-h-[480px] sm:p-3">
                 <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
@@ -252,7 +252,7 @@ export function HomeApp() {
               />
             )}
 
-            <section className="rounded-md border border-border/70 bg-[var(--panel)]/85 p-4">
+            <section className="border border-border bg-[var(--panel)] p-4">
               <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
                 CP 值精選
               </h2>

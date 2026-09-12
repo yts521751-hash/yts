@@ -16,7 +16,7 @@ const ORDER: TideStatus[] = ["surge", "rotate", "watch", "ebb"];
 
 export function StatusCards({ counts, active, onChange }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
+    <div className="grid grid-cols-2 gap-px md:grid-cols-4 bg-border/70 border border-border/70">
       {ORDER.map((key, i) => {
         const meta = STATUS_META[key];
         const selected = active === key;
@@ -26,32 +26,36 @@ export function StatusCards({ counts, active, onChange }: Props) {
             type="button"
             onClick={() => onChange(selected ? "all" : key)}
             className={cn(
-              "status-card group relative overflow-hidden rounded-md border px-3 py-3 text-left transition-all duration-300",
-              "hover:translate-x-0.5",
+              "status-card group relative px-3 py-3 text-left transition-colors",
               selected
-                ? "border-transparent shadow-sm ring-2 ring-[color:var(--ring-color)]"
-                : "border-border/60 bg-[var(--panel)]/80 hover:border-border",
+                ? "bg-[var(--panel)]"
+                : "bg-[var(--panel)]/90 hover:bg-[var(--panel)]",
             )}
             style={
               {
-                "--ring-color": meta.color,
-                animationDelay: `${i * 70}ms`,
+                borderLeftColor: meta.color,
+                animationDelay: `${i * 60}ms`,
+                boxShadow: selected
+                  ? `inset 0 0 0 1px ${meta.color}`
+                  : undefined,
                 background: selected ? meta.bg : undefined,
               } as React.CSSProperties
             }
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-muted-foreground">{meta.short}</span>
+              <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+                {meta.short}
+              </span>
               <span
-                className="size-2 rounded-full"
+                className="h-3 w-0.5"
                 style={{ background: meta.color }}
                 aria-hidden
               />
             </div>
-            <p className="mt-1 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight tabular-nums md:text-3xl">
+            <p className="mt-2 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight tabular-nums">
               {counts[key]}
             </p>
-            <p className="mt-0.5 text-sm font-semibold" style={{ color: meta.color }}>
+            <p className="mt-1 text-sm font-semibold" style={{ color: meta.color }}>
               {meta.label}
             </p>
           </button>
