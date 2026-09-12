@@ -3,34 +3,34 @@ import { ArrowLeft } from "lucide-react";
 
 const TERMS = [
   {
-    id: "turnover",
-    title: "成交金額是什麼？",
-    body: "當日所有成交的總金額（股數 × 成交價加總）。金潮把題材板塊內成分股的成交金額加總，用來排「哪個板塊最熱」。這跟法人買賣超是兩件事。",
+    id: "flow",
+    title: "資金流＝成交金額 × 漲跌幅？",
+    body: "成交金額告訴你「有多大關注」，漲跌幅告訴你「偏多還偏空」。金潮用 softSign（近似 tanh）把漲跌幅壓到 −1～+1，再乘上當日成交金額（億元）：上漲日成交偏流入、下跌日偏流出。小波動權重較低，避免平盤附近的假訊號。",
   },
   {
-    id: "heat",
-    title: "熱度／加速度",
-    body: "熱度＝近 5 日日均成交 ÷ 近 20 日日均成交。大於 1 代表最近比過去更熱鬧。加速度＝近 5 日日均 − 近 20 日日均，看熱度是在往上還是往下。",
+    id: "in-out",
+    title: "流入／流出怎麼拆？",
+    body: "同一公式拆成兩側：權重為正的部分叫流入，為負的絕對值叫流出；淨流＝流入 − 流出。板塊數字是成分股加總。",
   },
   {
     id: "states",
-    title: "放量／偏熱／偏冷／縮量",
-    body: "放量＝近 5 日成交明顯高於近 20 日均量；偏熱＝仍高於均量但未大幅放大；偏冷＝略低於均量；縮量＝明顯低於均量。用來快速分組成交熱度，不是漲跌預測。",
+    title: "漲潮／輪動／觀望／退潮",
+    body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。漲潮＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；退潮＝流出加速。",
   },
   {
-    id: "ranking",
-    title: "成交金額排行榜怎麼看？",
-    body: "每一列＝一個題材板塊。可依當日成交、近 5／20 日成交、熱度、加速度、漲幅或 CP 值排序。點列可展開成分股成交明細。",
+    id: "kline",
+    title: "產業 K 線是什麼？",
+    body: "把板塊成分股當日的開高低收，依成交金額加權合成報酬，再串成指數型 K 線（基準 100），概念接近三竹股市的族群／類股圖。同一畫面下方還有每日流入／流出柱，方便對照量價與資金方向。",
+  },
+  {
+    id: "gray",
+    title: "灰度同步是什麼？",
+    body: "每日排程先把新資料寫進 staging，驗證完成後再原子切換成 active。你開網頁永遠讀 active，不會卡在「等證交所抓完才出畫面」。按「觸發背景更新」也只是叫醒背景任務。",
   },
   {
     id: "cp",
-    title: "CP 值",
-    body: "近 20 日成交金額大、但股價漲幅仍相對溫和的板塊。解讀成「換手熱絡、價格尚未完全反應」的觀察清單，不是保證上漲。",
-  },
-  {
-    id: "spike",
-    title: "大跌日異常放量",
-    body: "大盤跌逾 1%、板塊自己也跌、但當日成交遠高於近 20 日均量。用來回答「恐慌日市場注意力落在哪裡」，幫你縮小注意範圍。",
+    title: "CP 值排行",
+    body: "近 20 日成交金額大、股價漲幅仍相對溫和，並略偏好淨流入的板塊。解讀成「換手熱絡、價格尚未完全反應」的觀察清單，不是保證上漲。",
   },
 ];
 
@@ -47,10 +47,10 @@ export default function GlossaryPage() {
           回排行榜
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          籌碼名詞白話小百科
+          金潮名詞白話小百科
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          專有名詞用白話講一次。金潮不預測行情，只幫你把板塊成交熱度攤開看清楚。
+          專有名詞用白話講一次。金潮不預測行情，只把成交與漲跌攤開成資金流給你看。
         </p>
         <div className="mt-8 space-y-4">
           {TERMS.map((t) => (
@@ -59,7 +59,9 @@ export default function GlossaryPage() {
               id={t.id}
               className="rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 backdrop-blur-sm"
             >
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">{t.title}</h2>
+              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
+                {t.title}
+              </h2>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t.body}</p>
             </article>
           ))}

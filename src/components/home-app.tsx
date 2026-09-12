@@ -13,6 +13,7 @@ import {
   getContrarianSectors,
   getCpRanking,
   getTopBuySectors,
+  migrateSectorIfNeeded,
 } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 
@@ -28,6 +29,7 @@ export function HomeApp() {
   const [brief, setBrief] = useState<MarketBrief | null>(null);
   const [source, setSource] = useState("");
   const [scheduleHint, setScheduleHint] = useState("");
+  const [syncing, setSyncing] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,15 +60,17 @@ export function HomeApp() {
       });
       const data = await res.json();
       if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
-      setSectors(data.sectors as SectorFlow[]);
+      const next = (data.sectors as SectorFlow[]).map(migrateSectorIfNeeded);
+      setSectors(next);
       setBrief(data.brief as MarketBrief);
       setSource(String(data.source ?? ""));
       setScheduleHint(String(data.schedule?.description ?? ""));
+      setSyncing(Boolean(data.syncing));
       setLoadState("ready");
       if (!data.ok && data.error) setError(String(data.error));
       setSelected((prev) => {
         if (!prev) return prev;
-        return (data.sectors as SectorFlow[]).find((s) => s.id === prev.id) ?? null;
+        return next.find((s) => s.id === prev.id) ?? null;
       });
     } catch (e) {
       setLoadState((s) => (s === "ready" ? "ready" : "error"));
@@ -79,6 +83,12 @@ export function HomeApp() {
   useEffect(() => {
     void loadFlow(false);
   }, [loadFlow]);
+
+  useEffect(() => {
+    if (!syncing) return;
+    const t = setInterval(() => void loadFlow(false), 8000);
+    return () => clearInterval(t);
+  }, [syncing, loadFlow]);
 
   const onTextSize = (s: TextSize) => {
     setTextSize(s);
@@ -129,14 +139,21 @@ export function HomeApp() {
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
-                成交金額排行榜
+                板塊資金流排行榜
               </h1>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                依板塊成分股成交金額合計排序，並用近 5／20 日均量比看熱度——與法人買賣超無關
+                資金流＝成交金額 × softSign(股價漲跌幅)：上漲日成交偏流入、下跌日偏流出，再看近 5／20 日加速度分成四態
                 {!isDemo && source ? ` · ${source}` : ""}
               </p>
               {scheduleHint ? (
-                <p className="mt-1 text-xs text-muted-foreground/80">自動同步：{scheduleHint}</p>
+                <p className="mt-1 text-xs text-muted-foreground/80">
+                  自動同步：{scheduleHint}
+                </p>
+              ) : null}
+              {syncing ? (
+                <p className="mt-1 text-xs text-[var(--tide-rotate)]">
+                  背景灰度同步中（staging→active），畫面先讀現行版本，完成後自動更新
+                </p>
               ) : null}
             </div>
             <button
@@ -145,25 +162,35 @@ export function HomeApp() {
               disabled={refreshing || loadState === "loading"}
               className="rounded-xl border border-border/60 bg-[var(--panel)]/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground disabled:opacity-50"
             >
-              {refreshing || loadState === "loading" ? "同步行情中…" : "強制更新"}
+              {refreshing || loadState === "loading"
+                ? "讀取中…"
+                : syncing
+                  ? "背景同步中…"
+                  : "觸發背景更新"}
             </button>
           </div>
 
           {error && (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              {isDemo ? `真實資料暫不可用，已改顯示示範資料：${error}` : `提醒：${error}`}
+              {isDemo
+                ? `真實資料暫不可用，已改顯示示範資料：${error}`
+                : `提醒：${error}`}
             </p>
           )}
 
           {loadState === "loading" && !sectors.length ? (
             <div className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 px-4 py-10 text-center text-sm text-muted-foreground">
-              正在向證交所／櫃買抓取近 20 個交易日成交金額，首次約需 1～2 分鐘…
+              讀取 active 快取中（不會卡住等證交所）…
             </div>
           ) : loadState === "error" && !sectors.length ? (
             <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
-              <p className="font-medium">無法載入成交資料</p>
+              <p className="font-medium">無法載入資料</p>
               <p className="mt-1 text-muted-foreground">{error}</p>
-              <button type="button" className="mt-3 rounded-lg border px-3 py-1.5 text-xs" onClick={() => void loadFlow(true)}>
+              <button
+                type="button"
+                className="mt-3 rounded-lg border px-3 py-1.5 text-xs"
+                onClick={() => void loadFlow(false)}
+              >
                 再試一次
               </button>
             </div>
@@ -199,26 +226,34 @@ export function HomeApp() {
               <Tabs defaultValue="cp">
                 <TabsList>
                   <TabsTrigger value="cp">CP 值精選</TabsTrigger>
-                  <TabsTrigger value="how">怎麼看排行榜</TabsTrigger>
+                  <TabsTrigger value="how">怎麼看資金流</TabsTrigger>
                 </TabsList>
                 <TabsContent value="cp" className="mt-4">
-                  <CpRanking items={cp} onSelect={setSelected} selectedId={selected?.id} />
+                  <CpRanking
+                    items={cp}
+                    onSelect={setSelected}
+                    selectedId={selected?.id}
+                  />
                 </TabsContent>
-                <TabsContent value="how" className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground">
+                <TabsContent
+                  value="how"
+                  className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
+                >
                   <p>
-                    排行榜預設依<strong className="text-foreground">當日成交金額</strong>
-                    排序；也可改依近 5 日、熱度、加速度、近 20 日成交、漲幅或 CP 值。
+                    單日資金流＝該股<strong className="text-foreground">成交金額</strong>×
+                    <strong className="text-foreground">softSign(漲跌幅)</strong>
+                    。上漲日成交計入流入、下跌日計入流出；小波動權重較低。
                   </p>
                   <p>
-                    <strong className="text-foreground">放量</strong>＝近 5 日成交明顯高於近 20 日均量；
-                    <strong className="text-foreground">偏熱</strong>＝仍高於均量；
-                    <strong className="text-foreground">偏冷</strong>＝略低於均量；
-                    <strong className="text-foreground">縮量</strong>＝明顯低於均量。
+                    <strong className="text-foreground">漲潮</strong>＝近 5 日淨流入且加速；
+                    <strong className="text-foreground">輪動</strong>＝仍流入但減速；
+                    <strong className="text-foreground">觀望</strong>＝偏流出但減速；
+                    <strong className="text-foreground">退潮</strong>＝流出加速。
                   </p>
                   <p>
-                    金額直接取證交所／櫃買「每日收盤行情」成交金額加總為億元，
-                    <strong className="text-foreground">不含三大法人買賣超</strong>
-                    。僅供研究參考，不構成投資建議。
+                    點板塊可進<strong className="text-foreground">產業合成 K 線</strong>
+                    （成分股成交加權，類似三竹族群圖），並對照每日流入／流出。每日盤後以灰度寫入
+                    staging，再原子切換 active——開網頁不會等幾分鐘。
                   </p>
                 </TabsContent>
               </Tabs>
@@ -228,7 +263,7 @@ export function HomeApp() {
       </main>
 
       <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮 JinChao · 成交金額來自證交所／櫃買每日收盤行情
+        金潮 JinChao · 成交金額×漲跌幅資金流 · 證交所／櫃買每日收盤行情
         {isDemo ? " · 目前為示範後備資料" : " · 真實盤後資料"}
       </footer>
     </div>

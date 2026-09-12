@@ -1,12 +1,6 @@
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
-
-function statusOf(heat: number): TideStatus {
-  if (heat >= 1.15) return "surge";
-  if (heat >= 1.0) return "rotate";
-  if (heat >= 0.85) return "watch";
-  return "ebb";
-}
+import { statusFromFlow } from "@/lib/money-flow";
 
 export const MARKET_BRIEF: MarketBrief = {
   date: "2026-09-11",
@@ -19,37 +13,89 @@ export const MARKET_BRIEF: MarketBrief = {
 
 export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
   const dayAmt = 80 - i * 3.2 + (i % 3) * 5;
-  const heat = 1.35 - i * 0.04;
+  const dayFlow = (i % 2 === 0 ? 1 : -1) * (12 - i * 0.45);
+  const dayIn = Math.max(0, dayFlow) + dayAmt * 0.12;
+  const dayOut = Math.max(0, -dayFlow) + dayAmt * 0.08;
+  const d5Flow = dayFlow * 4.2;
+  const d20Flow = dayFlow * 14;
+  const accel = d5Flow / 5 - d20Flow / 20;
   const d5 = dayAmt * 4.2;
   const d20 = dayAmt * 16;
-  const avg5 = d5 / 5;
-  const avg20 = d20 / 20;
-  const stocks = def.members.slice(0, 6).map((m, j) => ({
-    code: m.code,
-    name: m.name,
-    dayAmt: Math.max(0.2, dayAmt / def.members.length + (3 - j)),
-    d5: Math.max(1, (dayAmt / def.members.length) * 4),
-    d20: Math.max(3, (dayAmt / def.members.length) * 15),
-    changePct: ((j % 5) - 2) * 0.8,
-  }));
+  const heat = 1.25 - i * 0.035;
+  const stocks = def.members.slice(0, 6).map((m, j) => {
+    const changePct = ((j % 5) - 2) * 0.8;
+    const amt = Math.max(0.2, dayAmt / def.members.length + (3 - j));
+    const flow = amt * Math.tanh(changePct / 2.5);
+    return {
+      code: m.code,
+      name: m.name,
+      dayAmt: Math.round(amt * 10) / 10,
+      dayFlow: Math.round(flow * 10) / 10,
+      dayIn: Math.round(Math.max(0, flow) * 10) / 10,
+      dayOut: Math.round(Math.max(0, -flow) * 10) / 10,
+      d5Flow: Math.round(flow * 4 * 10) / 10,
+      d20Flow: Math.round(flow * 15 * 10) / 10,
+      d5: Math.max(1, amt * 4),
+      d20: Math.max(3, amt * 15),
+      changePct,
+    };
+  });
   return {
     id: def.id,
     name: def.name,
     dayAmt: Math.round(dayAmt * 10) / 10,
+    dayFlow: Math.round(dayFlow * 10) / 10,
+    dayIn: Math.round(dayIn * 10) / 10,
+    dayOut: Math.round(dayOut * 10) / 10,
+    d5Flow: Math.round(d5Flow * 10) / 10,
+    d20Flow: Math.round(d20Flow * 10) / 10,
     d5: Math.round(d5 * 10) / 10,
-    accel: Math.round((avg5 - avg20) * 10) / 10,
-    heat: Math.round(heat * 100) / 100,
     d20: Math.round(d20 * 10) / 10,
+    accel: Math.round(accel * 10) / 10,
+    heat: Math.round(heat * 100) / 100,
     priceChange20d: Math.round(((i % 7) - 3) * 1.4 * 100) / 100,
-    status: statusOf(heat),
+    status: statusFromFlow(d5Flow, accel),
     volumeSpike: i === 2 || i === 5,
     stocks,
   };
 });
 
+/** 舊快取缺欄位時補預設，避免 UI 炸掉 */
+export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
+  const dayFlow = s.dayFlow ?? 0;
+  const d5Flow = s.d5Flow ?? 0;
+  const d20Flow = s.d20Flow ?? 0;
+  const accel = s.accel ?? d5Flow / 5 - d20Flow / 20;
+  return {
+    ...s,
+    dayFlow,
+    dayIn: s.dayIn ?? Math.max(0, dayFlow),
+    dayOut: s.dayOut ?? Math.max(0, -dayFlow),
+    d5Flow,
+    d20Flow,
+    d5: s.d5 ?? 0,
+    d20: s.d20 ?? 0,
+    accel,
+    heat: s.heat ?? 1,
+    status: s.status ?? statusFromFlow(d5Flow, accel),
+    stocks: (s.stocks ?? []).map((st) => ({
+      ...st,
+      dayFlow: st.dayFlow ?? 0,
+      dayIn: st.dayIn ?? Math.max(0, st.dayFlow ?? 0),
+      dayOut: st.dayOut ?? Math.max(0, -(st.dayFlow ?? 0)),
+      d5Flow: st.d5Flow ?? 0,
+      d20Flow: st.d20Flow ?? 0,
+      d5: st.d5 ?? 0,
+      d20: st.d20 ?? 0,
+    })),
+  };
+}
+
+/** CP：成交大、漲幅溫和，並略偏好淨流入 */
 export function cpScore(s: SectorFlow): number {
   if (s.d20 <= 0) return -Infinity;
-  return s.d20 / Math.max(Math.abs(s.priceChange20d), 0.5);
+  const bonus = s.d20Flow > 0 ? 1.15 : 0.85;
+  return (s.d20 / Math.max(Math.abs(s.priceChange20d), 0.5)) * bonus;
 }
 
 export function getCpRanking(sectors: SectorFlow[], limit = 8): SectorFlow[] {
@@ -66,7 +112,7 @@ export function getContrarianSectors(sectors: SectorFlow[]): SectorFlow[] {
 }
 
 export function getTopBuySectors(sectors: SectorFlow[], limit = 5): SectorFlow[] {
-  return [...sectors].sort((a, b) => b.dayAmt - a.dayAmt).slice(0, limit);
+  return [...sectors].sort((a, b) => b.dayFlow - a.dayFlow).slice(0, limit);
 }
 
 export function countByStatus(sectors: SectorFlow[]) {
@@ -77,3 +123,5 @@ export function countByStatus(sectors: SectorFlow[]) {
     ebb: sectors.filter((s) => s.status === "ebb").length,
   };
 }
+
+export type { TideStatus };

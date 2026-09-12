@@ -1,0 +1,38 @@
+import { NextResponse } from "next/server";
+import { buildSectorKline } from "@/lib/sector-kline";
+import { SECTOR_UNIVERSE } from "@/lib/sector-universe";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+type Ctx = { params: Promise<{ id: string }> };
+
+export async function GET(req: Request, ctx: Ctx) {
+  const { id } = await ctx.params;
+  const def = SECTOR_UNIVERSE.find((s) => s.id === id);
+  if (!def) {
+    return NextResponse.json({ ok: false, error: "找不到此產業" }, { status: 404 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const days = Math.min(60, Math.max(10, Number(searchParams.get("days") || 40)));
+
+  try {
+    const data = await buildSectorKline(id, days);
+    if (!data?.candles?.length) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "產業 K 線資料不足（可能尚在背景同步日行情）",
+          sectorId: id,
+          sectorName: def.name,
+        },
+        { status: 503 },
+      );
+    }
+    return NextResponse.json({ ok: true, ...data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "K 線組建失敗";
+    return NextResponse.json({ ok: false, error: message }, { status: 502 });
+  }
+}

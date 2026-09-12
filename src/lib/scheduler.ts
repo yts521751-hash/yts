@@ -52,7 +52,7 @@ function describe(expressions: string[]): string {
     expressions.includes("30 18 * * 1-5") &&
     expressions.includes("0 19 * * 1-5")
   ) {
-    return `週一至週五 ${TZ} 18:00／18:30／19:00 自動同步`;
+    return `週一至週五 ${TZ} 18:00／18:30／19:00 灰度同步（staging→active）`;
   }
   return `排程 ${expressions.join("、")}（時區 ${TZ}）`;
 }
@@ -88,8 +88,8 @@ async function runSync(reason: string) {
   state.lastRunAt = new Date().toISOString();
   console.log(`[scheduler] start sync (${reason}) at ${state.lastRunAt}`);
   try {
-    const { buildFlowPayload } = await import("@/lib/build-flow");
-    const payload = await buildFlowPayload({ force: true });
+    const { rebuildFlowPayload } = await import("@/lib/build-flow");
+    const payload = await rebuildFlowPayload();
     state.lastResult = "ok";
     state.lastError = null;
     console.log(
@@ -143,4 +143,20 @@ export function startScheduler() {
   state.expressions = expressions;
   state.description = describe(expressions);
   console.log(`[scheduler] started: ${state.description}`);
+
+  // 啟動時若沒有 active，背景暖機（不阻塞 HTTP）
+  void (async () => {
+    try {
+      const { getActiveFlowPayload, requestBackgroundRebuild } = await import(
+        "@/lib/build-flow"
+      );
+      const active = await getActiveFlowPayload();
+      if (!active) {
+        console.log("[scheduler] no active cache — warming in background");
+        requestBackgroundRebuild("boot-warmup");
+      }
+    } catch (e) {
+      console.error("[scheduler] warmup check failed", e);
+    }
+  })();
 }

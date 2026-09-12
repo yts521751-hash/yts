@@ -15,11 +15,12 @@ import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
 type SortKey =
+  | "dayFlow"
   | "dayAmt"
-  | "d5"
-  | "heat"
+  | "d5Flow"
   | "accel"
-  | "d20"
+  | "d20Flow"
+  | "heat"
   | "priceChange20d"
   | "cp";
 
@@ -30,14 +31,40 @@ type Props = {
   filter?: TideStatus | "all";
 };
 
-const COLUMNS: { key: SortKey; label: string; hint: string; hideSm?: boolean }[] = [
-  { key: "dayAmt", label: "當日成交", hint: "當日成交金額合計（億）" },
-  { key: "d5", label: "近 5 日", hint: "近 5 日成交金額合計（億）" },
-  { key: "heat", label: "熱度", hint: "近 5 日日均 ÷ 近 20 日日均" },
-  { key: "accel", label: "加速度", hint: "近 5 日日均 − 近 20 日日均", hideSm: true },
-  { key: "d20", label: "近 20 日", hint: "近 20 日成交金額合計（億）", hideSm: true },
-  { key: "priceChange20d", label: "20 日漲幅", hint: "近 20 日平均漲跌幅", hideSm: true },
-  { key: "cp", label: "CP", hint: "成交大、漲幅溫和" },
+const COLUMNS: {
+  key: SortKey;
+  label: string;
+  hint: string;
+  hideSm?: boolean;
+}[] = [
+  { key: "dayFlow", label: "當日淨流", hint: "成交金額 × softSign(漲跌幅)（億）" },
+  { key: "dayAmt", label: "成交額", hint: "當日成交金額合計（億）" },
+  { key: "d5Flow", label: "近 5 日流", hint: "近 5 日淨資金流合計（億）" },
+  {
+    key: "accel",
+    label: "加速度",
+    hint: "近 5 日日均流 − 近 20 日日均流",
+    hideSm: true,
+  },
+  {
+    key: "d20Flow",
+    label: "近 20 日流",
+    hint: "近 20 日淨資金流合計（億）",
+    hideSm: true,
+  },
+  {
+    key: "heat",
+    label: "量能",
+    hint: "近 5 日日均成交 ÷ 近 20 日日均成交",
+    hideSm: true,
+  },
+  {
+    key: "priceChange20d",
+    label: "20 日漲幅",
+    hint: "近 20 日平均漲跌幅",
+    hideSm: true,
+  },
+  { key: "cp", label: "CP", hint: "成交大、漲幅溫和、偏好淨流入" },
 ];
 
 function sortValue(s: SectorFlow, key: SortKey): number {
@@ -54,7 +81,7 @@ export function SectorRanking({
   onSelect,
   filter = "all",
 }: Props) {
-  const [sortKey, setSortKey] = useState<SortKey>("dayAmt");
+  const [sortKey, setSortKey] = useState<SortKey>("dayFlow");
   const [asc, setAsc] = useState(false);
 
   const rows = useMemo(() => {
@@ -69,17 +96,19 @@ export function SectorRanking({
     <div className="flex h-full min-h-[480px] flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-2 pb-2 sm:px-3">
         <p className="text-xs text-muted-foreground">
-          成交金額排行 · 點欄位排序 · 點列看成分股
+          資金流＝成交金額×漲跌方向 · 點欄位排序 · 點列看成分股
           {filter !== "all" ? (
             <span className="ml-1 text-foreground/80">
               · 篩選：{STATUS_META[filter].label}
             </span>
           ) : null}
         </p>
-        <p className="text-[11px] tabular-nums text-muted-foreground">共 {rows.length} 板塊</p>
+        <p className="text-[11px] tabular-nums text-muted-foreground">
+          共 {rows.length} 板塊
+        </p>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[720px] border-collapse text-sm">
+        <table className="w-full min-w-[760px] border-collapse text-sm">
           <thead className="sticky top-0 z-10 bg-[var(--panel)]/95 backdrop-blur-sm">
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="w-10 px-2 py-2.5 font-medium sm:px-3">#</th>
@@ -89,7 +118,10 @@ export function SectorRanking({
                 return (
                   <th
                     key={col.key}
-                    className={cn("px-2 py-2.5 font-medium sm:px-3", col.hideSm && "hidden md:table-cell")}
+                    className={cn(
+                      "px-2 py-2.5 font-medium sm:px-3",
+                      col.hideSm && "hidden md:table-cell",
+                    )}
                   >
                     <button
                       type="button"
@@ -108,7 +140,11 @@ export function SectorRanking({
                     >
                       {col.label}
                       {active ? (
-                        asc ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />
+                        asc ? (
+                          <ArrowUp className="size-3.5" />
+                        ) : (
+                          <ArrowDown className="size-3.5" />
+                        )
                       ) : (
                         <ArrowUpDown className="size-3 opacity-40" />
                       )}
@@ -128,10 +164,14 @@ export function SectorRanking({
                   onClick={() => onSelect(s)}
                   className={cn(
                     "cursor-pointer border-t border-border/30 transition",
-                    selectedId === s.id ? "bg-[var(--tide-surge-bg)]" : "hover:bg-muted/40",
+                    selectedId === s.id
+                      ? "bg-[var(--tide-surge-bg)]"
+                      : "hover:bg-muted/40",
                   )}
                 >
-                  <td className="px-2 py-2.5 tabular-nums text-muted-foreground sm:px-3">{i + 1}</td>
+                  <td className="px-2 py-2.5 tabular-nums text-muted-foreground sm:px-3">
+                    {i + 1}
+                  </td>
                   <td className="px-2 py-2.5 sm:px-3">
                     <div className="flex min-w-0 flex-col gap-0.5">
                       <span className="truncate font-medium">{s.name}</span>
@@ -144,16 +184,50 @@ export function SectorRanking({
                       </span>
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-right tabular-nums font-medium sm:px-3">{formatYi(s.dayAmt)}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">{formatYi(s.d5)}</td>
-                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">{formatHeat(s.heat)}</td>
-                  <td className={cn("hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3", signedClass(s.accel))}>
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right tabular-nums font-medium sm:px-3",
+                      signedClass(s.dayFlow),
+                    )}
+                  >
+                    {formatYiSigned(s.dayFlow)}
+                  </td>
+                  <td className="px-2 py-2.5 text-right tabular-nums sm:px-3">
+                    {formatYi(s.dayAmt)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right tabular-nums sm:px-3",
+                      signedClass(s.d5Flow),
+                    )}
+                  >
+                    {formatYiSigned(s.d5Flow)}
+                  </td>
+                  <td
+                    className={cn(
+                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      signedClass(s.accel),
+                    )}
+                  >
                     {formatYiSigned(s.accel)}
                   </td>
-                  <td className="hidden px-2 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell sm:px-3">
-                    {formatYi(s.d20, 0)}
+                  <td
+                    className={cn(
+                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      signedClass(s.d20Flow),
+                    )}
+                  >
+                    {formatYiSigned(s.d20Flow, 0)}
                   </td>
-                  <td className={cn("hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3", signedClass(s.priceChange20d))}>
+                  <td className="hidden px-2 py-2.5 text-right tabular-nums text-muted-foreground md:table-cell sm:px-3">
+                    {formatHeat(s.heat)}
+                  </td>
+                  <td
+                    className={cn(
+                      "hidden px-2 py-2.5 text-right tabular-nums md:table-cell sm:px-3",
+                      signedClass(s.priceChange20d),
+                    )}
+                  >
                     {formatPct(s.priceChange20d)}
                   </td>
                   <td className="px-2 py-2.5 text-right tabular-nums font-semibold text-[var(--tide-surge)] sm:px-3">

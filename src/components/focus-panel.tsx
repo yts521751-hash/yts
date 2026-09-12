@@ -1,7 +1,7 @@
 "use client";
 
 import type { MarketBrief, SectorFlow } from "@/lib/types";
-import { formatYi } from "@/lib/format";
+import { formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -11,7 +11,12 @@ type Props = {
   onSelect: (s: SectorFlow) => void;
 };
 
-export function FocusPanel({ market, volumeSpikes, topTurnover, onSelect }: Props) {
+export function FocusPanel({
+  market,
+  volumeSpikes,
+  topTurnover,
+  onSelect,
+}: Props) {
   const showSpike = market.indexChangePct <= -1 && volumeSpikes.length > 0;
   const items = showSpike ? volumeSpikes : topTurnover;
 
@@ -20,17 +25,24 @@ export function FocusPanel({ market, volumeSpikes, topTurnover, onSelect }: Prop
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
-            {showSpike ? "大跌日異常放量" : "今日成交最多"}
+            {showSpike ? "大跌日異常放量" : "今日淨流入最多"}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {showSpike
               ? "大盤跌逾 1%，這些板塊自己也跌，但成交遠高於近 20 日均量——用來縮小注意範圍，不是買賣點。"
-              : "依當日板塊成交金額合計排序，看資金關注度落在哪裡。"}
+              : "依當日淨資金流（成交金額 × softSign(漲跌)）排序，看熱錢相對落點。"}
           </p>
         </div>
         <div className="rounded-xl bg-muted/50 px-3 py-1.5 text-right text-xs">
           <p className="text-muted-foreground">加權漲跌</p>
-          <p className={cn("font-semibold tabular-nums", market.indexChangePct < 0 ? "text-[var(--tide-down)]" : "text-[var(--tide-up)]")}>
+          <p
+            className={cn(
+              "font-semibold tabular-nums",
+              market.indexChangePct < 0
+                ? "text-[var(--tide-down)]"
+                : "text-[var(--tide-up)]",
+            )}
+          >
             {market.indexChangePct > 0 ? "+" : ""}
             {market.indexChangePct.toFixed(2)}%
           </p>
@@ -45,7 +57,14 @@ export function FocusPanel({ market, volumeSpikes, topTurnover, onSelect }: Prop
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-border/40 bg-background/50 px-3 py-2.5 text-left transition hover:border-border hover:bg-muted/40"
             >
               <span className="truncate font-medium">{s.name}</span>
-              <span className="shrink-0 tabular-nums text-sm font-semibold">{formatYi(s.dayAmt)}</span>
+              <span
+                className={cn(
+                  "shrink-0 tabular-nums text-sm font-semibold",
+                  showSpike ? undefined : signedClass(s.dayFlow),
+                )}
+              >
+                {showSpike ? formatYi(s.dayAmt) : formatYiSigned(s.dayFlow)}
+              </span>
             </button>
           </li>
         ))}
