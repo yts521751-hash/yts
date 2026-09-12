@@ -15,9 +15,6 @@ type Props = {
 export function CpRanking({ items, onSelect, selectedId }: Props) {
   return (
     <div className="space-y-2">
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        CP 值＝近 20 日成交金額大、股價漲幅相對溫和，並略加權淨流入板塊。解讀成「換手熱絡、價格尚未完全反應」的觀察清單，不是保證上漲。
-      </p>
       <ol className="space-y-2">
         {items.map((s, i) => {
           const meta = STATUS_META[s.status];

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, Moon, Sun, Type } from "lucide-react";
+import { Moon, Sun, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type TextSize = "sm" | "md" | "lg";
@@ -43,9 +43,6 @@ export function AppHeader({
             <div className="min-w-0">
               <p className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight sm:text-2xl">
                 金潮
-              </p>
-              <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-                台股板塊金流 · 80%成交×漲跌＋20%法人
               </p>
             </div>
           </Link>
@@ -109,17 +106,10 @@ export function AppHeader({
           >
             熱議新聞
           </Link>
-          <Link
-            href="/glossary"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
-          >
-            <BookOpen className="size-3.5" />
-            白話小百科
-          </Link>
         </div>
       </div>
       <p className="mx-auto max-w-[1400px] px-4 pb-2 text-[11px] text-muted-foreground sm:px-6">
-        更新於 {updatedAt} · 不預測行情、不喊買賣點，只把成交與漲跌攤成資金流
+        更新於 {updatedAt}
       </p>
     </header>
   );

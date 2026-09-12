@@ -151,20 +151,51 @@ async function writeNewsMeta(patch: Partial<NewsMeta>) {
   await writeCacheFile(NEWS_META_CACHE, { ...prev, ...patch });
 }
 
-/** 抓 RSS → staging → 原子切 active（灰度） */
+/** 抓 RSS（聚焦成交 Top50 個股）→ staging → 原子切 active（灰度） */
 export async function rebuildNewsPayload(): Promise<NewsPayload> {
   await writeNewsMeta({ syncing: true, lastError: null });
   try {
+    const { buildTurnoverRanking } = await import("@/lib/turnover");
+    const turnover = await buildTurnoverRanking(50);
+    const top = turnover?.rows ?? [];
+    if (!top.length) throw new Error("尚無成交排行，無法篩選新聞");
+
+    const tokens = top.flatMap((r) => {
+      const name = r.name.replace(/\s+/g, "").replace(/\*-?KY$/i, "");
+      return [r.code, name].filter(Boolean);
+    });
+    const tokenSet = [...new Set(tokens)];
+
     const collected: NewsItem[] = [];
+
+    // 依 Top50 名稱分批查詢（避免 URL 過長）
+    for (let i = 0; i < Math.min(top.length, 30); i += 5) {
+      const batch = top.slice(i, i + 5);
+      const q = batch
+        .map((r) => `"${r.name.replace(/\s+/g, "")}" OR ${r.code}`)
+        .join(" OR ");
+      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(
+        `(${q}) 台股`,
+      )}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+      const xml = await fetchFeed(url);
+      if (!xml) continue;
+      collected.push(...parseRss(xml, "成交熱門股"));
+    }
+
+    // 再抓一般台股源，之後用 Top50 關鍵字過濾
     for (const feed of FEEDS) {
       const xml = await fetchFeed(feed.url);
       if (!xml) continue;
       collected.push(...parseRss(xml, feed.source));
     }
 
-    // 去重（同標題或同連結）
+    const matched = collected.filter((n) => {
+      const hay = `${n.title} ${n.summary}`;
+      return tokenSet.some((tok) => tok.length >= 2 && hay.includes(tok));
+    });
+
     const seen = new Set<string>();
-    const items = collected
+    const items = matched
       .filter((n) => {
         const key = `${n.title}|${n.link}`;
         if (seen.has(key)) return false;
@@ -178,7 +209,7 @@ export async function rebuildNewsPayload(): Promise<NewsPayload> {
       })
       .slice(0, 40);
 
-    if (!items.length) throw new Error("新聞來源無資料");
+    if (!items.length) throw new Error("成交熱門股相關新聞不足");
 
     const payload: NewsPayload = {
       items,

@@ -54,9 +54,6 @@ export function StatusCards({ counts, active, onChange }: Props) {
             <p className="mt-0.5 text-sm font-semibold" style={{ color: meta.color }}>
               {meta.label}
             </p>
-            <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-              {meta.hint}
-            </p>
           </button>
         );
       })}

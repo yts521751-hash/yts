@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { SectorCandle } from "@/lib/types";
 import { formatPct, formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -96,7 +96,7 @@ export function SectorKlineChart({ candles }: Props) {
       <div className="flex flex-wrap items-end justify-between gap-2 px-1">
         <div>
           <p className="text-xs text-muted-foreground">
-            {active.date} · 產業日線（成交金額加權合成，基準 100）
+            {active.date}
           </p>
           <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl font-semibold tabular-nums">
             {active.close.toFixed(2)}
@@ -225,87 +225,6 @@ export function SectorKlineChart({ candles }: Props) {
         </svg>
       </div>
 
-      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">
-        日線：成分股當日成交金額加權報酬串成指數；均線為收盤價 MA5／10／20／60。
-        下方綠柱流入、紅柱流出（
-        <strong className="font-medium text-foreground/80">80%</strong> 成交×softSign(漲跌)＋
-        <strong className="font-medium text-foreground/80">20%</strong> 法人買賣超）。
-        {candles.length < 60 ? (
-          <span className="ml-1 text-amber-700 dark:text-amber-300">
-            目前快取 {candles.length} 根日K，MA60 需滿 60 根才會完整顯示；背景同步會繼續補齊。
-          </span>
-        ) : null}
-      </p>
-    </div>
-  );
-}
-
-export function SectorKlinePanel({ sectorId }: { sectorId: string }) {
-  const [candles, setCandles] = useState<SectorCandle[]>([]);
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void (async () => {
-      try {
-        const res = await fetch(`/api/sector/${sectorId}?days=80`, {
-          cache: "no-store",
-          signal: AbortSignal.timeout(20000),
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!data.ok || !data.candles?.length) {
-          setError(data.error || "無法載入產業日線");
-          setCandles([]);
-        } else {
-          setCandles(data.candles);
-          setName(data.sectorName || "");
-        }
-      } catch (e) {
-        if (cancelled) return;
-        const msg =
-          e instanceof Error && e.name === "TimeoutError"
-            ? "載入逾時，請重整或回首頁觸發背景更新"
-            : e instanceof Error
-              ? e.message
-              : "載入失敗";
-        setError(msg);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sectorId]);
-
-  if (loading) {
-    return (
-      <div className="flex h-72 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-        <p>讀取產業日線…</p>
-        <p className="text-xs opacity-70">通常不到 1 秒；若超過請重整或回首頁觸發背景更新</p>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-6 text-sm text-amber-900 dark:text-amber-100">
-        {error}
-        <p className="mt-2 text-xs opacity-80">
-          產業日線只讀本機行情快取。請回首頁按「觸發背景更新」後再進來。
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {name ? <p className="mb-2 text-xs text-muted-foreground">產業：{name} · 日線</p> : null}
-      <SectorKlineChart candles={candles} />
     </div>
   );
 }

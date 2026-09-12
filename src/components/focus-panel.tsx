@@ -23,16 +23,9 @@ export function FocusPanel({
   return (
     <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
-            {showSpike ? "大跌日異常放量" : "今日淨流入最多"}
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {showSpike
-              ? "大盤跌逾 1%，這些板塊自己也跌，但成交遠高於近 20 日均量——用來縮小注意範圍，不是買賣點。"
-              : "依當日淨資金流（80%成交×漲跌＋20%法人）排序，看熱錢相對落點。"}
-          </p>
-        </div>
+        <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
+          {showSpike ? "大跌日異常放量" : "今日淨流入最多"}
+        </h2>
         <div className="rounded-xl bg-muted/50 px-3 py-1.5 text-right text-xs">
           <p className="text-muted-foreground">加權漲跌</p>
           <p

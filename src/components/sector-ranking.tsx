@@ -34,37 +34,33 @@ type Props = {
 const COLUMNS: {
   key: SortKey;
   label: string;
-  hint: string;
+  hint?: string;
   hideSm?: boolean;
 }[] = [
-  { key: "dayFlow", label: "當日淨流", hint: "80%成交×漲跌＋20%法人（億）" },
-  { key: "dayAmt", label: "成交額", hint: "當日成交金額合計（億）" },
-  { key: "d5Flow", label: "近 5 日流", hint: "近 5 日淨資金流合計（億）" },
+  { key: "dayFlow", label: "當日淨流" },
+  { key: "dayAmt", label: "成交額" },
+  { key: "d5Flow", label: "近 5 日流" },
   {
     key: "accel",
     label: "加速度",
-    hint: "近 5 日日均流 − 近 20 日日均流",
     hideSm: true,
   },
   {
     key: "d20Flow",
     label: "近 20 日流",
-    hint: "近 20 日淨資金流合計（億）",
     hideSm: true,
   },
   {
     key: "heat",
     label: "量能",
-    hint: "近 5 日日均成交 ÷ 近 20 日日均成交",
     hideSm: true,
   },
   {
     key: "priceChange20d",
     label: "20 日漲幅",
-    hint: "近 20 日平均漲跌幅",
     hideSm: true,
   },
-  { key: "cp", label: "CP", hint: "成交大、漲幅溫和、偏好淨流入" },
+  { key: "cp", label: "CP" },
 ];
 
 function sortValue(s: SectorFlow, key: SortKey): number {
@@ -96,12 +92,7 @@ export function SectorRanking({
     <div className="flex h-full min-h-[480px] flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-2 pb-2 sm:px-3">
         <p className="text-xs text-muted-foreground">
-          資金流＝成交金額×漲跌方向 · 點欄位排序 · 點列看成分股
-          {filter !== "all" ? (
-            <span className="ml-1 text-foreground/80">
-              · 篩選：{STATUS_META[filter].label}
-            </span>
-          ) : null}
+          {filter !== "all" ? `篩選：${STATUS_META[filter].label}` : "全部板塊"}
         </p>
         <p className="text-[11px] tabular-nums text-muted-foreground">
           共 {rows.length} 板塊
@@ -125,7 +116,7 @@ export function SectorRanking({
                   >
                     <button
                       type="button"
-                      title={col.hint}
+                     
                       onClick={() => {
                         if (sortKey === col.key) setAsc((v) => !v);
                         else {

@@ -2,8 +2,8 @@ import {
   listCachedTradingDays,
   listRecentTradingDays,
   getCachedDayQuotes,
-  readCacheFile,
-  writeCacheFile,
+  loadMergedQuotesDay,
+  toYmd,
   ymdToIso,
   type QuoteRow,
 } from "@/lib/tw-market";
@@ -22,35 +22,72 @@ export type TurnoverPayload = {
   ymd: string;
   rows: TurnoverRow[];
   builtAt: string;
-  source: "cache";
+  source: "cache" | "live-refresh";
   total: number;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function isCommonStock(code: string) {
-  // 排除 ETF／債券等：一般股票代號 4 碼數字
   return /^\d{4}$/.test(code);
 }
 
-/** 當日全市場成交金額排行（只讀本機 quotes 快取） */
+function taipeiHour() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    hour: "numeric",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  return { hour, weekday };
+}
+
+/** 盤中嘗試刷新當日行情；盤後／假日只讀快取 */
 export async function buildTurnoverRanking(
-  limit = 100,
+  limit = 50,
+  options?: { live?: boolean },
 ): Promise<TurnoverPayload | null> {
-  const days = await listCachedTradingDays(1, 30);
-  if (!days.length) return null;
-  const ymd = days[0];
+  const want = Math.min(50, Math.max(1, limit));
+  const { hour, weekday } = taipeiHour();
+  const isWeekday = !["Sat", "Sun"].includes(weekday);
+  const inSession = isWeekday && hour >= 9 && hour < 14;
+  let source: TurnoverPayload["source"] = "cache";
+
+  let days = await listCachedTradingDays(1, 30);
+  let ymd = days[0];
+
+  if (options?.live && inSession) {
+    const today = toYmd(new Date());
+    try {
+      const fresh = await loadMergedQuotesDay(today, { force: true });
+      if (fresh?.quotes?.length) {
+        ymd = today;
+        source = "live-refresh";
+      }
+    } catch {
+      /* keep cache */
+    }
+  }
+
+  if (!ymd) {
+    days = await listCachedTradingDays(1, 30);
+    ymd = days[0];
+  }
+  if (!ymd) return null;
+
   const map = await getCachedDayQuotes(ymd);
   if (!map?.size) return null;
 
   const rows = [...map.values()]
     .filter((q) => isCommonStock(q.code) && q.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
-    .slice(0, Math.min(200, Math.max(10, limit)))
+    .slice(0, want)
     .map((q, i) => ({
       rank: i + 1,
       code: q.code,
-      name: q.name,
+      name: q.name.trim(),
       turnoverYi: round2(q.turnover / 1e8),
       changePct: round2(q.changePct),
       close: round2(q.close),
@@ -61,12 +98,11 @@ export async function buildTurnoverRanking(
     ymd,
     rows,
     builtAt: new Date().toISOString(),
-    source: "cache",
+    source,
     total: rows.length,
   };
 }
 
-/** 背景補齊較長行情快取，供 MA60／更長日線使用 */
 export async function ensureQuoteHistory(needDays = 80) {
   const have = await listCachedTradingDays(needDays, 160);
   if (have.length >= needDays) return have;

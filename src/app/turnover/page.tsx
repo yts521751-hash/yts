@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { formatPct, formatYi, signedClass } from "@/lib/format";
@@ -18,33 +18,42 @@ type Row = {
 export default function TurnoverPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [date, setDate] = useState("");
+  const [updatedAt, setUpdatedAt] = useState("");
+  const [source, setSource] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/turnover?limit=100", { cache: "no-store" });
-        const data = await res.json();
-        if (cancelled) return;
-        if (!data.ok || !data.rows?.length) {
-          setError(data.error || "無法載入成交排行");
-          setRows([]);
-        } else {
-          setRows(data.rows);
-          setDate(data.date || "");
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "載入失敗");
-      } finally {
-        if (!cancelled) setLoading(false);
+  const load = useCallback(async (live = false) => {
+    try {
+      const res = await fetch(`/api/turnover?limit=50${live ? "&live=1" : ""}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!data.ok || !data.rows?.length) {
+        setError(data.error || "無法載入成交排行");
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      setRows(data.rows);
+      setDate(data.date || "");
+      setUpdatedAt(data.builtAt || "");
+      setSource(String(data.source || ""));
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "載入失敗");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load(false);
+  }, [load]);
+
+  // 盡量接近即時：每 30 秒刷新；盤中會嘗試重抓當日行情
+  useEffect(() => {
+    const t = setInterval(() => void load(true), 30000);
+    return () => clearInterval(t);
+  }, [load]);
 
   return (
     <div className="relative min-h-full flex-1">
@@ -55,15 +64,20 @@ export default function TurnoverPage() {
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          回資金流排行
+          回排行榜
         </Link>
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          當日成交金額排行
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          單純依上市＋上櫃個股當日成交金額排序（億元），不含資金流方向權重。
-          {date ? ` 資料日 ${date}` : ""}
-        </p>
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
+          <h1 className="font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
+            成交金額排行 Top 50
+          </h1>
+          <p className="text-xs text-muted-foreground">
+            {date ? `${date}` : ""}
+            {source === "live-refresh" ? " · 盤中刷新" : ""}
+            {updatedAt
+              ? ` · ${new Date(updatedAt).toLocaleTimeString("zh-TW", { hour12: false })}`
+              : ""}
+          </p>
+        </div>
 
         <div className="mt-6 overflow-x-auto rounded-2xl border border-border/60 bg-[var(--panel)]/80 backdrop-blur-sm">
           {loading ? (
@@ -88,13 +102,20 @@ export default function TurnoverPage() {
                     key={r.code}
                     className="border-b border-border/30 transition hover:bg-muted/30"
                   >
-                    <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{r.rank}</td>
+                    <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+                      {r.rank}
+                    </td>
                     <td className="px-3 py-2.5 font-medium tabular-nums">{r.code}</td>
                     <td className="px-3 py-2.5">{r.name}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums font-medium">
                       {formatYi(r.turnoverYi)}
                     </td>
-                    <td className={cn("px-3 py-2.5 text-right tabular-nums", signedClass(r.changePct))}>
+                    <td
+                      className={cn(
+                        "px-3 py-2.5 text-right tabular-nums",
+                        signedClass(r.changePct),
+                      )}
+                    >
                       {formatPct(r.changePct)}
                     </td>
                     <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">

@@ -7,7 +7,6 @@ import { FocusPanel } from "@/components/focus-panel";
 import { SectorDetail } from "@/components/sector-detail";
 import { SectorRanking } from "@/components/sector-ranking";
 import { StatusCards } from "@/components/status-cards";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   countByStatus,
   getContrarianSectors,
@@ -141,20 +140,6 @@ export function HomeApp() {
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
                 板塊資金流排行榜
               </h1>
-              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                資金流＝80%（成交金額 × softSign(漲跌)）＋20% 三大法人買賣超，再看近 5／20 日加速度分成四態
-                {!isDemo && source ? ` · ${source}` : ""}
-              </p>
-              {scheduleHint ? (
-                <p className="mt-1 text-xs text-muted-foreground/80">
-                  自動同步：{scheduleHint}
-                </p>
-              ) : null}
-              {syncing ? (
-                <p className="mt-1 text-xs text-[var(--tide-rotate)]">
-                  背景灰度同步中（staging→active），畫面先讀現行版本，完成後自動更新
-                </p>
-              ) : null}
             </div>
             <button
               type="button"
@@ -180,7 +165,7 @@ export function HomeApp() {
 
           {loadState === "loading" && !sectors.length ? (
             <div className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 px-4 py-10 text-center text-sm text-muted-foreground">
-              讀取 active 快取中（不會卡住等證交所）…
+              載入中…
             </div>
           ) : loadState === "error" && !sectors.length ? (
             <div className="rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
@@ -223,50 +208,21 @@ export function HomeApp() {
             )}
 
             <section className="rounded-2xl border border-border/60 bg-[var(--panel)]/70 p-4 backdrop-blur-sm">
-              <Tabs defaultValue="cp">
-                <TabsList>
-                  <TabsTrigger value="cp">CP 值精選</TabsTrigger>
-                  <TabsTrigger value="how">怎麼看資金流</TabsTrigger>
-                </TabsList>
-                <TabsContent value="cp" className="mt-4">
-                  <CpRanking
-                    items={cp}
-                    onSelect={setSelected}
-                    selectedId={selected?.id}
-                  />
-                </TabsContent>
-                <TabsContent
-                  value="how"
-                  className="mt-4 space-y-3 text-sm leading-relaxed text-muted-foreground"
-                >
-                  <p>
-                    單日資金流＝
-                    <strong className="text-foreground">80%</strong>（成交金額 ×
-                    softSign(漲跌幅)）＋
-                    <strong className="text-foreground">20%</strong>
-                    三大法人買賣超（股數×收盤價）。沒有法人日資料時退回純價量流。
-                  </p>
-                  <p>
-                    <strong className="text-foreground">漲潮</strong>＝近 5 日淨流入且加速；
-                    <strong className="text-foreground">輪動</strong>＝仍流入但減速；
-                    <strong className="text-foreground">觀望</strong>＝偏流出但減速；
-                    <strong className="text-foreground">退潮</strong>＝流出加速。
-                  </p>
-                  <p>
-                    點板塊可進<strong className="text-foreground">產業合成 K 線</strong>
-                    （成分股成交加權，類似三竹族群圖），並對照每日流入／流出。每日盤後以灰度寫入
-                    staging，再原子切換 active，並預熱 K 線快取——開網頁不會等幾分鐘。
-                  </p>
-                </TabsContent>
-              </Tabs>
+              <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
+                CP 值精選
+              </h2>
+              <CpRanking
+                items={cp}
+                onSelect={setSelected}
+                selectedId={selected?.id}
+              />
             </section>
           </>
         )}
       </main>
 
       <footer className="relative z-10 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        金潮 JinChao · 80%成交×漲跌＋20%法人 · 證交所／櫃買
-        {isDemo ? " · 目前為示範後備資料" : " · 真實盤後資料"}
+        金潮
       </footer>
     </div>
   );

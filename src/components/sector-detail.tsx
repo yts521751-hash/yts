@@ -26,15 +26,12 @@ export function SectorDetail({ sector, onClose }: Props) {
         <p className="font-[family-name:var(--font-display)] text-lg text-foreground/80">
           點選排行榜看板塊
         </p>
-        <p className="mt-2 max-w-xs text-sm text-muted-foreground">
-          會列出成分股成交金額、資金流（80%成交×漲跌＋20%法人）與漲跌幅，並可進入產業 K 線。
-        </p>
       </div>
     );
   }
 
   const meta = STATUS_META[sector.status];
-  const stocks = [...sector.stocks].sort((a, b) => b.dayFlow - a.dayFlow);
+  const stocks = [...sector.stocks].sort((a, b) => b.dayAmt - a.dayAmt);
 
   return (
     <div className="flex h-full min-h-[280px] flex-col rounded-2xl border border-border/60 bg-[var(--panel)]/80 shadow-sm backdrop-blur-sm animate-in fade-in slide-in-from-right-2 duration-300">
@@ -56,7 +53,6 @@ export function SectorDetail({ sector, onClose }: Props) {
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">{meta.hint}</p>
         </div>
         <button
           type="button"
@@ -86,7 +82,7 @@ export function SectorDetail({ sector, onClose }: Props) {
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium transition hover:bg-muted/70"
         >
           <CandlestickChart className="size-4" />
-          產業 K 線與流入／流出
+          產業 K 線
         </Link>
       </div>
 
@@ -95,10 +91,8 @@ export function SectorDetail({ sector, onClose }: Props) {
           <thead>
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="px-2 py-1.5 font-medium">代號／名稱</th>
+              <th className="px-2 py-1.5 text-right font-medium">成交</th>
               <th className="px-2 py-1.5 text-right font-medium">淨流</th>
-              <th className="hidden px-2 py-1.5 text-right font-medium sm:table-cell">
-                成交
-              </th>
               <th className="px-2 py-1.5 text-right font-medium">漲跌</th>
             </tr>
           </thead>
@@ -114,6 +108,9 @@ export function SectorDetail({ sector, onClose }: Props) {
                     {s.code}
                   </div>
                 </td>
+                <td className="px-2 py-2 text-right tabular-nums">
+                  {formatYi(s.dayAmt)}
+                </td>
                 <td
                   className={cn(
                     "px-2 py-2 text-right tabular-nums font-medium",
@@ -121,9 +118,6 @@ export function SectorDetail({ sector, onClose }: Props) {
                   )}
                 >
                   {formatYiSigned(s.dayFlow)}
-                </td>
-                <td className="hidden px-2 py-2 text-right tabular-nums sm:table-cell">
-                  {formatYi(s.dayAmt)}
                 </td>
                 <td className={cn("px-2 py-2 text-right tabular-nums", signedClass(s.changePct))}>
                   {formatPct(s.changePct)}
