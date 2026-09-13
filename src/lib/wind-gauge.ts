@@ -26,7 +26,7 @@ import {
 export type { MaStance, WindLevel, WindPayload, WindReading } from "@/lib/wind-types";
 export { MA_STANCE_LABEL, WIND_META } from "@/lib/wind-types";
 
-const CACHE = "wind-gauge-v3.json";
+const CACHE = "wind-gauge-v4.json";
 
 function sma(xs: number[], n: number): number | null {
   if (xs.length < n) return null;
@@ -97,32 +97,40 @@ function classify(input: {
   const calmVol = market === "tpex" ? 22 : 18;
   const volNudge = annualVol > 24 ? 2 : annualVol < 14 ? -1 : 0;
 
-  // 亂流：波動高且均線方向打架
+  // 先算結構分數，再依分數分級（避免 47 與 21 都叫陣風）
+  let score: number;
+  if ((bull || bear) && !shortHist) {
+    const cap = market === "tpex" ? 86 : 94;
+    score = Math.min(cap, Math.round(48 + ladder * 0.45 + volNudge));
+  } else {
+    const gustCap = shortHist ? (market === "tpex" ? 54 : 60) : 72;
+    score = Math.min(gustCap, Math.max(12, Math.round(8 + ladder * 0.7 + volNudge)));
+  }
+
+  // 亂流覆寫：波動高且均線方向打架
   if (annualVol >= turbVol && conflicting && alignedLinks <= 1 && !shortHist) {
     return {
       level: "turbulence",
-      score: Math.min(market === "tpex" ? 78 : 88, 52 + annualVol * 0.4),
+      score: Math.min(market === "tpex" ? 78 : 88, Math.round(52 + annualVol * 0.4)),
     };
   }
-  // 無風：結構糾結、波動低
+  // 無風覆寫：結構糾結、波動低
   if (conflicting && alignedLinks <= 1 && annualVol <= calmVol) {
-    return { level: "calm", score: Math.max(8, 18 + ladder * 0.15) };
+    return { level: "calm", score: Math.max(8, Math.round(18 + ladder * 0.15)) };
   }
-  // 強風：多頭或空頭排列完整（等級同為強風，分數仍依階梯區分）
-  if ((bull || bear) && !shortHist) {
-    const cap = market === "tpex" ? 86 : 94;
-    return {
-      level: "gale",
-      score: Math.min(cap, Math.round(48 + ladder * 0.45 + volNudge)),
-    };
+
+  // 分數帶：強風 ≥62、陣風 36–61、其餘無風（弱結構／跌破後力道弱）
+  let level: WindLevel;
+  if (score >= 62 || ((bull || bear) && !shortHist && score >= 55)) {
+    level = "gale";
+  } else if (score >= 36) {
+    level = "gust";
+  } else {
+    level = "calm";
   }
-  // 陣風：半成形結構 — 分數完全跟均線階梯走
-  const gustCap = shortHist ? (market === "tpex" ? 54 : 60) : 72;
-  return {
-    level: "gust",
-    score: Math.min(gustCap, Math.max(12, Math.round(8 + ladder * 0.7 + volNudge))),
-  };
+  return { level, score };
 }
+
 
 async function fetchYahooCloses(symbol: string): Promise<{
   closes: number[];

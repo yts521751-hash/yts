@@ -37,22 +37,39 @@ type StocksClientSnapshot = {
   date: string;
 };
 
-export function HomeApp() {
+export type InitialFlowProps = {
+  sectors: SectorFlow[];
+  brief: MarketBrief;
+  source: string;
+  isDemo?: boolean;
+} | null;
+
+export function HomeApp({
+  initialFlow = null,
+}: {
+  initialFlow?: InitialFlowProps;
+}) {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
   const [boardMode, setBoardMode] = useState<BoardMode>("sector");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
   const [flowPeriod, setFlowPeriod] = useState<RankPeriod>("day");
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
-  const [sectors, setSectors] = useState<SectorFlow[]>([]);
+  const [sectors, setSectors] = useState<SectorFlow[]>(
+    () => initialFlow?.sectors?.map(migrateSectorIfNeeded) ?? [],
+  );
   const [stocks, setStocks] = useState<StockFlowRankRow[]>([]);
   const [stocksDate, setStocksDate] = useState("");
   const [stocksError, setStocksError] = useState<string | null>(null);
   const [stocksLoading, setStocksLoading] = useState(false);
-  const [brief, setBrief] = useState<MarketBrief | null>(null);
-  const [source, setSource] = useState("");
+  const [brief, setBrief] = useState<MarketBrief | null>(
+    () => initialFlow?.brief ?? null,
+  );
+  const [source, setSource] = useState(() => initialFlow?.source ?? "");
   const [syncing, setSyncing] = useState(false);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [loadState, setLoadState] = useState<LoadState>(
+    () => (initialFlow?.sectors?.length ? "ready" : "loading"),
+  );
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [fromClientCache, setFromClientCache] = useState(false);
@@ -70,17 +87,25 @@ export function HomeApp() {
       document.documentElement.dataset.textsize = ts;
       document.documentElement.classList.toggle("dark", preferDark);
 
-      // 先畫本機快取，再開網路同步（stale-while-revalidate）
-      const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
-      // 本機快取需夠完整才先畫，避免舊／半套資料被當成「同步中的正式結果」
-      if (cached?.sectors && cached.sectors.length >= 20) {
-        const next = cached.sectors.map(migrateSectorIfNeeded);
-        setSectors(next);
-        setBrief(cached.brief);
-        setSource(cached.source || "client-cache");
-        setLoadState("ready");
-        setFromClientCache(true);
-        // 不把 syncing 打開：有可用畫面時背景核對不應顯示「資料不完整」
+      // SSR 已帶資料則靜默核對即可；否則才用本機快取先畫
+      if (initialFlow?.sectors?.length && initialFlow.brief) {
+        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, {
+          sectors: initialFlow.sectors,
+          brief: initialFlow.brief,
+          source: initialFlow.source || "ssr",
+        });
+      }
+
+      if (!initialFlow?.sectors?.length) {
+        const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
+        if (cached?.sectors && cached.sectors.length >= 20) {
+          const next = cached.sectors.map(migrateSectorIfNeeded);
+          setSectors(next);
+          setBrief(cached.brief);
+          setSource(cached.source || "client-cache");
+          setLoadState("ready");
+          setFromClientCache(true);
+        }
       }
       const cachedStocks = readClientCache<StocksClientSnapshot>(
         CLIENT_CACHE_KEYS.stocks,
@@ -279,7 +304,7 @@ export function HomeApp() {
                 : refreshing || loadState === "loading"
                   ? "讀取中…"
                   : syncing
-                    ? "灰度更新中…"
+                    ? "背景更新中…"
                     : "觸發背景更新"}
             </button>
           </div>
@@ -307,16 +332,6 @@ export function HomeApp() {
             ))}
           </div>
 
-          {fromClientCache && boardMode === "sector" && (
-            <p className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              已先顯示本機快取，正在核對伺服器最新結果…
-            </p>
-          )}
-          {syncing && !fromClientCache && boardMode === "sector" && (
-            <p className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              尚無正式 active 快取，目前顯示灰度 staging，完成後會自動切換
-            </p>
-          )}
 
           {error && boardMode === "sector" && (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">

@@ -44,12 +44,12 @@ export const WIND_META: Record<
 > = {
   gale: {
     label: "強風",
-    hint: "指數與均線多頭／空頭排列清楚（多空都算強風；分數仍依站上／跌破階梯區分）",
+    hint: "結構分數約 62 以上，或完整多頭／空頭排列（分數仍依站上／跌破階梯）",
     color: "var(--mk-surge)",
   },
   gust: {
     label: "陣風",
-    hint: "站上或跌破月／季線等半成形結構；分數依 MA5／月／季細分，不再對稱打分",
+    hint: "結構分數約 36–61：半成形均線結構；細看右上角站上／跌破標籤",
     color: "var(--mk-rotate)",
   },
   turbulence: {
@@ -59,7 +59,7 @@ export const WIND_META: Record<
   },
   calm: {
     label: "無風",
-    hint: "均線糾結、波動低，盤勢平靜",
+    hint: "結構分數低於 36，或均線糾結且波動低",
     color: "var(--mk-ebb)",
   },
 };

@@ -436,7 +436,21 @@ export async function getActiveFlowPayload(): Promise<FlowPayload | null> {
 
   const staging = await readCacheFile<FlowPayload>(STAGING_FLOW_CACHE);
   if (staging?.sectors?.length) {
-    return { ...staging, source: "staging", deploySlot: "staging" };
+    // 有完整可用資料就立刻升成 active：開頁直接可讀，不再顯示 staging 提示
+    const promoted: FlowPayload = {
+      ...staging,
+      source: "cache",
+      deploySlot: "active",
+    };
+    await writeCacheFile(ACTIVE_FLOW_CACHE, promoted);
+    await writeCacheFile(LAST_CLOSE_FLOW_CACHE, promoted);
+    await writeDeployMeta({
+      syncing: false,
+      lastError: null,
+      lastPromoteAt: new Date().toISOString(),
+      activeBuiltAt: staging.builtAt || new Date().toISOString(),
+    });
+    return promoted;
   }
   return null;
 }
