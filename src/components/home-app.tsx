@@ -510,7 +510,7 @@ export function HomeApp({
                     ? `同步中 ${syncProgress?.percent ?? 0}%`
                     : refreshing && sectors.length === 0
                       ? "讀取中…"
-                      : "觸發背景更新"}
+                      : "補齊／更新歷史資料"}
               </button>
               {syncProgress ? (
                 <div className="min-w-[10rem] rounded border border-[var(--mk-anchor)]/40 bg-[var(--mk-anchor)]/10 px-2 py-1 text-right">

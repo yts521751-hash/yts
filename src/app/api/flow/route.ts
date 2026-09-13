@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import {
   getActiveFlowPayload,
   getDeployStatus,
-  requestBackgroundRebuild,
 } from "@/lib/build-flow";
+import { requestHistoryBackfill } from "@/lib/history-backfill";
 import { getScheduleInfo } from "@/lib/scheduler";
 import {
   MARKET_BRIEF,
@@ -21,7 +21,7 @@ export const maxDuration = 30;
 /**
  * 灰度讀取：永遠回 active。
  * 僅在完全沒有真實快取時才用示範資料，並明確標示 isDemo／source。
- * force=1 只觸發背景重建，不阻塞回應。
+ * force=1 觸發「全量歷史補齊＋日終大包」（背景執行，不阻塞回應）。
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -31,7 +31,8 @@ export async function GET(req: Request) {
 
   let rebuild: { started: boolean; alreadyRunning: boolean } | null = null;
   if (force) {
-    rebuild = requestBackgroundRebuild("api-force");
+    // 手動觸發：先補滿歷史報價，再跑日終大包（產業 K／均線／個股／風度）
+    rebuild = requestHistoryBackfill("api-force");
   }
 
   try {
@@ -40,7 +41,8 @@ export async function GET(req: Request) {
 
     if (!payload?.sectors?.length) {
       if (!rebuild?.alreadyRunning && !deploy.rebuildRunning) {
-        rebuild = requestBackgroundRebuild("api-empty-warmup");
+        // 空快取暖機同樣走全量補齊，避免只建 20 日資金流
+        rebuild = requestHistoryBackfill("api-empty-warmup");
       }
       if (!fallback) {
         return NextResponse.json(

@@ -383,7 +383,17 @@ export async function rebuildFlowPayload(options?: {
         },
       });
       setRebuildProgress({ percent: 75, label: "重算產業 K 線" });
-      await warmSectorKlineCaches(HISTORY_TRADING_DAYS, universe, {
+      let warmDefs = universe;
+      try {
+        const { listIndustryDefs } = await import("@/lib/ma-screener");
+        const industries = await listIndustryDefs();
+        const byId = new Map(universe.map((d) => [d.id, d]));
+        for (const d of industries) byId.set(d.id, d);
+        warmDefs = [...byId.values()];
+      } catch {
+        /* industries optional — still warm flow universe */
+      }
+      await warmSectorKlineCaches(HISTORY_TRADING_DAYS, warmDefs, {
         onProgress: (done, total) => {
           setRebuildProgress({
             percent: progressInRange(75, 98, done, total),
