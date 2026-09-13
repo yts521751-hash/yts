@@ -19,6 +19,7 @@ import {
   readClientCache,
   writeClientCache,
 } from "@/lib/client-cache";
+import { readResponseJson } from "@/lib/read-response-json";
 import { countByStatus, migrateSectorIfNeeded } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -274,7 +275,17 @@ export function HomeApp({
       const res = await fetch(`/api/flow${force ? "?force=1" : ""}`, {
         cache: "no-store",
       });
-      const data = await res.json();
+      const data = await readResponseJson<{
+        ok?: boolean;
+        error?: string;
+        isDemo?: boolean;
+        source?: string;
+        sectors?: SectorFlow[];
+        brief?: MarketBrief;
+        deploy?: Parameters<typeof applySyncProgress>[0]["deploy"];
+        backgroundBusy?: boolean;
+        rebuild?: Parameters<typeof applySyncProgress>[0]["rebuild"];
+      }>(res, "資金流同步失敗");
       const stillSyncing = applySyncProgress(data);
       if (force && stillSyncing) {
         // 觸發後開始輪詢進度（見下方 effect）
@@ -317,7 +328,10 @@ export function HomeApp({
       });
     } catch (e) {
       setLoadState((s) => (s === "ready" ? "ready" : "error"));
-      if (!hadReal) setError(e instanceof Error ? e.message : "載入失敗");
+      // force 同步失敗也要顯示（含伺服器回 HTML／冷啟動），不能只在無資料時提示
+      if (force || !hadReal) {
+        setError(e instanceof Error ? e.message : "載入失敗");
+      }
     } finally {
       setRefreshing(false);
     }
@@ -330,7 +344,11 @@ export function HomeApp({
     const tick = async () => {
       try {
         const res = await fetch("/api/flow", { cache: "no-store" });
-        const data = await res.json();
+        const data = await readResponseJson<{
+          deploy?: Parameters<typeof applySyncProgress>[0]["deploy"];
+          backgroundBusy?: boolean;
+          rebuild?: Parameters<typeof applySyncProgress>[0]["rebuild"];
+        }>(res, "進度查詢失敗");
         if (cancelled) return;
         applySyncProgress(data);
       } catch {
@@ -355,7 +373,12 @@ export function HomeApp({
         `/api/stocks?limit=50${force ? "&force=1" : ""}`,
         { cache: "no-store" },
       );
-      const data = await res.json();
+      const data = await readResponseJson<{
+        ok?: boolean;
+        error?: string;
+        rows?: StockFlowRankRow[];
+        date?: string;
+      }>(res, "個股資金流載入失敗");
       if (!data.ok || !data.rows?.length) {
         throw new Error(data.error || "沒有個股資金流資料");
       }
