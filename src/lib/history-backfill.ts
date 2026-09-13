@@ -74,7 +74,9 @@ export function requestHistoryBackfill(reason: string): {
     return { started: false, alreadyRunning: true };
   }
   g.__jinliuHistoryBackfill.running = true;
-  // 延後啟動，先讓 /api/flow 回完 JSON，避免 Render 冷啟動／記憶體尖峰把本次請求打成 HTML 502
+  // 立刻標記進度，避免首屏輪詢在延後啟動前把 UI 清掉
+  beginRebuildProgress("補齊歷史報價");
+  // 延後啟動重活，先讓 /api/flow 回完 JSON，避免 Render 冷啟動／記憶體尖峰把本次請求打成 HTML 502
   setTimeout(() => {
     void runHistoryBackfill(reason)
       .catch((err) => {

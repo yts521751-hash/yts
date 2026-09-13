@@ -530,7 +530,9 @@ export async function getDeployStatus() {
     Boolean(process.env.CACHE_DIR?.trim());
   return {
     ...meta,
-    rebuildRunning: isRebuildRunning(),
+    rebuildRunning:
+      isRebuildRunning() ||
+      (await import("@/lib/history-backfill")).isHistoryBackfillRunning(),
     progress: await readRebuildProgress(),
     dailyClose,
     cacheDir,

@@ -138,6 +138,7 @@ export function HomeApp({
   const syncHoldRef = useRef(false);
   /** 是否已見過 active 進度（用來判斷真正完成） */
   const syncSeenActiveRef = useRef(false);
+  const syncStartedAtRef = useRef(0);
 
   useEffect(() => {
     try {
@@ -244,14 +245,24 @@ export function HomeApp({
     }
 
     if (busy) {
-      syncHoldRef.current = false;
+      // 仍在跑：不要清掉 hold，等真正看過 active 進度再鬆手
+      setSyncing(true);
+      setSyncProgress((prev) =>
+        prev ?? { percent: Math.max(1, Number(prog?.percent) || 1), label: String(prog?.label || "同步中") },
+      );
+      return true;
+    }
+
+    // force 請求尚未回來／進度檔尚未寫入：保留畫面
+    if (syncHoldRef.current && !syncSeenActiveRef.current) {
       setSyncing(true);
       setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中" });
       return true;
     }
 
-    // force 請求尚未回來時，保留畫面上的進度，避免被空輪詢清掉
-    if (syncHoldRef.current && !syncSeenActiveRef.current) {
+    // 至少顯示 1.2 秒，避免一閃就沒
+    const shownMs = Date.now() - (syncStartedAtRef.current || 0);
+    if (shownMs < 1200) {
       setSyncing(true);
       setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中" });
       return true;
@@ -482,6 +493,33 @@ export function HomeApp({
 
       <main className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-4 px-4 py-4 sm:px-6 sm:py-6">
         <section className="space-y-3">
+          {(syncing || syncProgress) ? (
+            <div
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--mk-anchor)",
+                background: "var(--mk-anchor-bg)",
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-foreground">
+                  正在同步資料… {syncProgress?.percent ?? 0}%
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {syncProgress?.label || "請稍候"}
+                </span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded bg-black/10 dark:bg-white/15">
+                <div
+                  className="h-full rounded transition-[width] duration-300"
+                  style={{
+                    width: `${Math.max(2, syncProgress?.percent ?? 0)}%`,
+                    background: "var(--mk-anchor)",
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end justify-between gap-2">
             <div>
               <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -511,6 +549,7 @@ export function HomeApp({
                   else {
                     syncHoldRef.current = true;
                     syncSeenActiveRef.current = false;
+                    syncStartedAtRef.current = Date.now();
                     setSyncing(true);
                     setSyncProgress({ percent: 1, label: "同步中" });
                     void loadFlow(true);
@@ -535,18 +574,28 @@ export function HomeApp({
                       ? "讀取中…"
                       : "補齊／更新歷史資料"}
               </button>
-              {syncProgress ? (
-                <div className="min-w-[10rem] rounded border border-[var(--mk-anchor)]/40 bg-[var(--mk-anchor)]/10 px-2 py-1 text-right">
-                  <div className="text-[11px] font-medium text-foreground">
-                    同步進度 {syncProgress.percent}%
+              {(syncing || syncProgress) ? (
+                <div
+                  className="min-w-[12rem] rounded-md border px-2.5 py-1.5 text-right shadow-sm"
+                  style={{
+                    borderColor: "var(--mk-anchor)",
+                    background: "var(--mk-anchor-bg)",
+                  }}
+                  aria-live="polite"
+                >
+                  <div className="text-xs font-semibold text-foreground">
+                    同步進度 {syncProgress?.percent ?? 0}%
                   </div>
-                  <div className="text-[10px] tabular-nums text-muted-foreground">
-                    {syncProgress.label}
+                  <div className="text-[11px] tabular-nums text-muted-foreground">
+                    {syncProgress?.label || "同步中"}
                   </div>
-                  <div className="mt-1 h-1 overflow-hidden rounded bg-muted">
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-black/10 dark:bg-white/15">
                     <div
-                      className="h-full bg-[var(--mk-anchor)] transition-[width] duration-300"
-                      style={{ width: `${syncProgress.percent}%` }}
+                      className="h-full rounded transition-[width] duration-300"
+                      style={{
+                        width: `${Math.max(2, syncProgress?.percent ?? 0)}%`,
+                        background: "var(--mk-anchor)",
+                      }}
                     />
                   </div>
                 </div>
