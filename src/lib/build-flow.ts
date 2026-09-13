@@ -10,6 +10,7 @@ import {
 import {
   ACTIVE_FLOW_CACHE,
   STAGING_FLOW_CACHE,
+  LAST_CLOSE_FLOW_CACHE,
   listRecentTradingDays,
   loadMergedInstiDay,
   loadMergedQuotesDay,
@@ -221,14 +222,51 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
   }).filter((s) => s.stocks.length > 0);
 }
 
-/** 重建：寫 staging → 原子切 active（灰度） */
+
+/** 台北時間：平日 18:00 後才允許 staging→active（灰度定稿） */
+function taipeiClock() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(new Date());
+  const get = (ty: string) => parts.find((p) => p.type === ty)?.value ?? "";
+  const hour = Number(get("hour"));
+  const minute = Number(get("minute"));
+  const weekday = get("weekday");
+  const ymd = `${get("year")}${get("month")}${get("day")}`;
+  const isWeekday = !["Sat", "Sun"].includes(weekday);
+  const mins = hour * 60 + minute;
+  return { hour, minute, mins, isWeekday, ymd };
+}
+
+function shouldPromoteFlowToActive(force?: boolean) {
+  if (force) return true;
+  const { isWeekday, mins } = taipeiClock();
+  return isWeekday && mins >= 18 * 60;
+}
+
+/** 重建：寫 staging；18:00 後（或強制／無 active）才原子切 active */
 export async function rebuildFlowPayload(options?: {
   days?: number;
+  /** 強制切 active（略過 18:00；冷啟動無 active 也會自動切） */
+  promote?: boolean;
 }): Promise<FlowPayload> {
   await writeDeployMeta({ syncing: true, lastError: null });
   try {
     const needDays = options?.days ?? 20;
-    const tradingDays = await listRecentTradingDays(needDays, 50);
+    const tradingDaysRaw = await listRecentTradingDays(needDays, 50);
+    const clock = taipeiClock();
+    // 18:00 前不用「今天」未定稿日，避免晨間／盤中覆蓋上個交易日結果
+    const tradingDays =
+      clock.isWeekday && clock.mins < 18 * 60
+        ? tradingDaysRaw.filter((d) => d !== clock.ymd)
+        : tradingDaysRaw;
     if (tradingDays.length < 5) {
       throw new Error("無法取得足夠交易日（證交所可能維護中或尚未收盤）");
     }
@@ -300,7 +338,22 @@ export async function rebuildFlowPayload(options?: {
       lastBuildAt: payload.builtAt,
       stagingBuiltAt: payload.builtAt,
     });
-    await promoteStagingToActive();
+    const existingActive = await getActiveFlowPayload();
+    const doPromote =
+      shouldPromoteFlowToActive(options?.promote) || !existingActive;
+    if (doPromote) {
+      await promoteStagingToActive();
+      // 定稿快照：18:00 前開頁保底
+      await writeCacheFile(LAST_CLOSE_FLOW_CACHE, {
+        ...payload,
+        deploySlot: "active",
+      });
+      console.log(`[rebuild] promoted active (${payload.brief.date})`);
+    } else {
+      console.log(
+        "[rebuild] staging only — keep last-close active until 18:00 gray cutover",
+      );
+    }
 
     // 預熱產業 K 線快取，避免點進頁面才重算
     try {
@@ -311,7 +364,7 @@ export async function rebuildFlowPayload(options?: {
       console.warn("[rebuild] kline warm failed:", err);
     }
 
-    return { ...payload, deploySlot: "active" };
+    return { ...payload, deploySlot: doPromote ? "active" : "staging" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await writeDeployMeta({ syncing: false, lastError: message });
@@ -320,17 +373,27 @@ export async function rebuildFlowPayload(options?: {
 }
 
 /** 背景重建（單飛）：API force=1 只觸發，不阻塞 */
-export function requestBackgroundRebuild(reason = "api"): {
+export function requestBackgroundRebuild(
+  reason = "api",
+  opts?: { promote?: boolean },
+): {
   started: boolean;
   alreadyRunning: boolean;
 } {
   const bag = rebuildBag();
   if (bag.running) return { started: false, alreadyRunning: true };
   bag.running = true;
-  void rebuildFlowPayload()
+  const promote =
+    opts?.promote ??
+    (reason.startsWith("cron:") || reason.includes("18:")
+      ? true
+      : reason.startsWith("morning:")
+        ? false
+        : undefined);
+  void rebuildFlowPayload({ promote })
     .then((p) => {
       console.log(
-        `[rebuild] ok (${reason}): ${p.brief.date} sectors=${p.sectors.length}`,
+        `[rebuild] ok (${reason}): ${p.brief.date} sectors=${p.sectors.length} slot=${p.deploySlot}`,
       );
     })
     .catch((err) => {
@@ -353,6 +416,11 @@ export async function getActiveFlowPayload(): Promise<FlowPayload | null> {
   );
   if (active?.sectors?.length && "dayFlow" in (active.sectors[0] ?? {})) {
     return { ...active, source: "cache", deploySlot: "active" };
+  }
+
+  const lastClose = await readCacheFile<FlowPayload>(LAST_CLOSE_FLOW_CACHE);
+  if (lastClose?.sectors?.length && "dayFlow" in (lastClose.sectors[0] ?? {})) {
+    return { ...lastClose, source: "cache", deploySlot: "active" };
   }
 
   for (const legacy of [

@@ -330,6 +330,8 @@ const CACHE_DIR = path.join(process.cwd(), ".cache");
 
 export const ACTIVE_FLOW_CACHE = "flow-active.json";
 export const STAGING_FLOW_CACHE = "flow-staging.json";
+/** 上個交易日收盤定稿（18:00 灰度切換前的保底） */
+export const LAST_CLOSE_FLOW_CACHE = "flow-last-close.json";
 export const DEPLOY_META_CACHE = "deploy-meta.json";
 
 export type DeployMeta = {

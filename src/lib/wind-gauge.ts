@@ -1,6 +1,7 @@
 import "server-only";
 /**
- * 風度儀表板：用均線乖離與波動，判斷上市／上櫃「強風、陣風、亂流、無風」。
+ * 風度儀表板：依「指數相對均線的結構」分級（強風／陣風／亂流／無風）。
+ * 分數看排列清楚程度，不用乖離率大小當主力道。
  */
 
 import {
@@ -25,7 +26,7 @@ import {
 export type { MaStance, WindLevel, WindPayload, WindReading } from "@/lib/wind-types";
 export { MA_STANCE_LABEL, WIND_META } from "@/lib/wind-types";
 
-const CACHE = "wind-gauge.json";
+const CACHE = "wind-gauge-v2.json";
 
 function sma(xs: number[], n: number): number | null {
   if (xs.length < n) return null;
@@ -51,54 +52,58 @@ function classify(input: {
   ma60: number;
   vol20: number;
   sampleDays: number;
-  /** 櫃買波動本來較大，門檻略提高，避免常態被判成破錶 */
+  /** 櫃買波動本來較大，亂流／無風門檻略提高 */
   market: "twse" | "tpex";
 }): { level: WindLevel; score: number } {
   const { close, ma5, ma20, ma60, vol20, sampleDays, market } = input;
-  const bias5 = ((close - ma5) / ma5) * 100;
-  const bias20 = ((close - ma20) / ma20) * 100;
   const bull = close > ma5 && ma5 > ma20 && ma20 > ma60;
   const bear = close < ma5 && ma5 < ma20 && ma20 < ma60;
-  const aligned = bull || bear;
-  const absBias = Math.max(Math.abs(bias5), Math.abs(bias20));
-  // vol20 已是日報酬標準差（%）；年化後上市常態約 12–25%，櫃買常偏高
+  // 三段均線鏈結同向數（指數→月→季結構），不用乖離率絕對值
+  const links = [
+    Math.sign(close - ma5),
+    Math.sign(ma5 - ma20),
+    Math.sign(ma20 - ma60),
+  ];
+  const upLinks = links.filter((s) => s > 0).length;
+  const downLinks = links.filter((s) => s < 0).length;
+  const alignedLinks = Math.max(upLinks, downLinks);
+  const conflicting = upLinks > 0 && downLinks > 0;
+  const aboveBoth = close > ma20 && close > ma60;
+  const belowBoth = close < ma20 && close < ma60;
+  const positionPts = aboveBoth || belowBoth ? 2 : close > ma20 || close < ma20 ? 1 : 0;
+
   const annualVol = vol20 * Math.sqrt(252);
-  // 樣本不足時避免誤判「強風／亂流破錶」
   const shortHist = sampleDays < 45;
   const turbVol = market === "tpex" ? 42 : 32;
-  const galeBias = market === "tpex" ? 3.2 : 2.2;
   const calmVol = market === "tpex" ? 22 : 18;
 
-  if (
-    annualVol >= turbVol &&
-    absBias >= 3.2 &&
-    !aligned &&
-    !shortHist
-  ) {
+  // 亂流：波動高且均線方向打架
+  if (annualVol >= turbVol && conflicting && alignedLinks <= 1 && !shortHist) {
     return {
       level: "turbulence",
-      score: Math.min(market === "tpex" ? 78 : 88, 52 + annualVol * 0.45),
+      score: Math.min(market === "tpex" ? 78 : 88, 52 + annualVol * 0.4),
     };
   }
-  if (absBias <= 1.2 && annualVol <= calmVol) {
-    return { level: "calm", score: Math.max(8, 26 - absBias * 4) };
+  // 無風：結構糾結、波動低
+  if (conflicting && alignedLinks <= 1 && annualVol <= calmVol) {
+    return { level: "calm", score: Math.max(8, 24 - alignedLinks * 2) };
   }
-  if (aligned && Math.abs(bias20) >= galeBias && !shortHist) {
+  // 強風：多頭或空頭排列完整（多空都算強風）
+  if ((bull || bear) && !shortHist) {
     return {
       level: "gale",
       score: Math.min(
         market === "tpex" ? 82 : 90,
-        50 + Math.abs(bias20) * 2.6 + (annualVol > 24 ? 3 : 0),
+        56 + alignedLinks * 8 + positionPts * 3 + (annualVol > 24 ? 2 : 0),
       ),
     };
   }
-  // 短歷史或中等波動 → 陣風，分數收斂，避免儀表破錶
-  const gustCap = shortHist ? (market === "tpex" ? 52 : 58) : 72;
-  const gustScore = Math.min(
-    gustCap,
-    34 + absBias * 1.8 + annualVol * 0.28,
-  );
-  return { level: "gust", score: gustScore };
+  // 陣風：站上／跌破月季線等半成形結構
+  const gustCap = shortHist ? (market === "tpex" ? 52 : 58) : 68;
+  return {
+    level: "gust",
+    score: Math.min(gustCap, 34 + alignedLinks * 7 + positionPts * 6),
+  };
 }
 
 async function fetchYahooCloses(symbol: string): Promise<{

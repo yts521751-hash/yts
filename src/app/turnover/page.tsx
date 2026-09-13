@@ -1,5 +1,26 @@
 "use client";
 
+/** 台北現在幾分（自 00:00）；失敗回 -1 */
+function taipeiMinsNow() {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Taipei",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+      weekday: "short",
+    }).formatToParts(new Date());
+    const wd = parts.find((p) => p.type === "weekday")?.value ?? "";
+    if (wd === "Sat" || wd === "Sun") return -1;
+    const h = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+    const m = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+    return h * 60 + m;
+  } catch {
+    return -1;
+  }
+}
+
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -127,11 +148,20 @@ export default function TurnoverPage() {
     return () => clearInterval(t);
   }, [inSession, load]);
 
-  // 休市時偶爾探測是否已開盤（例如週一 09:00），不重抓 live 行情
+  // 休市探測：接近開盤（08:50–09:10）每 10 秒並可 live 預熱，其餘 60 秒
   useEffect(() => {
     if (inSession) return;
-    const t = setInterval(() => void load(false), 60_000);
-    return () => clearInterval(t);
+    let timer: number | undefined;
+    const schedule = () => {
+      const mins = taipeiMinsNow();
+      const nearOpen = mins >= 8 * 60 + 50 && mins < 9 * 60 + 10;
+      void load(nearOpen);
+      timer = window.setTimeout(schedule, nearOpen ? 10_000 : 60_000);
+    };
+    schedule();
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+    };
   }, [inSession, load]);
 
   const metaLine = (

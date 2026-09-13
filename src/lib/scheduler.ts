@@ -89,7 +89,8 @@ async function runSync(reason: string) {
   console.log(`[scheduler] start sync (${reason}) at ${state.lastRunAt}`);
   try {
     const { rebuildFlowPayload } = await import("@/lib/build-flow");
-    const payload = await rebuildFlowPayload();
+    // 排程同步（18:00／18:30／19:00）定稿切 active
+    const payload = await rebuildFlowPayload({ promote: true });
     state.lastResult = "ok";
     state.lastError = null;
     console.log(

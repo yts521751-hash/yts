@@ -52,9 +52,9 @@ function taipeiSession() {
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
   const isWeekday = !["Sat", "Sun"].includes(weekday);
   const mins = hour * 60 + minute;
-  // 09:00–13:35（含尾盤撮合緩衝）
-  const inSession = isWeekday && mins >= 9 * 60 && mins < 13 * 60 + 35;
-  return { hour, minute, weekday, isWeekday, inSession };
+  // 08:55 起進入即時模式（開盤前預熱），至 13:35（含尾盤撮合緩衝）
+  const inSession = isWeekday && mins >= 8 * 60 + 55 && mins < 13 * 60 + 35;
+  return { hour, minute, weekday, isWeekday, inSession, mins };
 }
 
 function rankFromQuotes(
@@ -86,8 +86,8 @@ function rankFromQuotes(
     total: rows.length,
     inSession,
     sessionNote: inSession
-      ? "盤中即時：約每 3 秒重抓證交所／櫃買公開行情並刷新表格"
-      : "休市／週末：維持上個交易日排行，不自動刷新；開盤後會自動改為即時",
+      ? "開盤預熱／盤中即時：約每 3 秒重抓證交所／櫃買公開行情並刷新表格（平日 08:55 起）"
+      : "休市／週末：維持上個交易日排行，不自動刷新；平日約 08:55 起自動改為即時",
   };
 }
 

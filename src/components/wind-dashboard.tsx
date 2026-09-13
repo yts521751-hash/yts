@@ -97,19 +97,19 @@ function WindDial({ reading }: { reading: WindReading }) {
           </dd>
         </div>
         <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">BIAS5</dt>
+          <dt className="text-muted-foreground">距MA5</dt>
           <dd className="mt-0.5 font-semibold tabular-nums">
             {reading.bias5.toFixed(2)}%
           </dd>
         </div>
         <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">BIAS20</dt>
+          <dt className="text-muted-foreground">距月線</dt>
           <dd className="mt-0.5 font-semibold tabular-nums">
             {reading.bias20.toFixed(2)}%
           </dd>
         </div>
         <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">BIAS60</dt>
+          <dt className="text-muted-foreground">距季線</dt>
           <dd className="mt-0.5 font-semibold tabular-nums">
             {reading.bias60.toFixed(2)}%
           </dd>
@@ -155,7 +155,7 @@ export function WindDashboard({
             風度儀表板
           </h1>
           <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-            風力度＝乖離＋波動的「強度」；均線站上／跌破請看右上角標籤，兩者不要混為多空分數
+            風力度＝指數相對均線的結構清楚程度（非乖離率大小）；右上角標籤是站上／跌破結構
           </p>
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -172,17 +172,17 @@ export function WindDashboard({
         <h2 className="font-medium text-foreground">怎麼讀（很重要）</h2>
         <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
           <li>
-            <span className="text-foreground">強度分數愈高</span>
-            ＝短線乖離或波動愈大，不是「愈強勢／愈該買」。跌破均線的急殺，分數也可以高於溫和站上月線。
+            <span className="text-foreground">強度分數</span>
+            看指數與 MA5／月／季線的排列是否清楚，不是看乖離率絕對值，也不是多空分數。
           </li>
           <li>
             <span className="text-foreground">右上角均線標籤</span>
-            才是結構：多頭／空頭排列、站上月線、跌破月季線等。
+            ：多頭／空頭排列、站上月線、跌破月季線等。
           </li>
-          <li>強風：多頭或空頭排列清楚（空頭排列也是強風）。</li>
-          <li>陣風：有短線推力，但均線尚未完全排齊。</li>
-          <li>亂流：波動偏高且訊號打架。</li>
-          <li>無風：乖離小、波動低。</li>
+          <li>強風：多頭或空頭排列完整（空頭排列也是強風）。</li>
+          <li>陣風：站上或跌破月／季線，但尚未排齊。</li>
+          <li>亂流：均線方向打架且波動偏高。</li>
+          <li>無風：均線糾結、波動低。</li>
         </ul>
       </section>
     </div>

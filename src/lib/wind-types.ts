@@ -41,22 +41,22 @@ export const WIND_META: Record<
 > = {
   gale: {
     label: "強風",
-    hint: "均線多頭／空頭排列明確，趨勢風偏強（多空都算強風）",
+    hint: "指數與均線多頭／空頭排列清楚（多空都算強風）",
     color: "var(--mk-surge)",
   },
   gust: {
     label: "陣風",
-    hint: "短線乖離或波動拉高，但未形成完整排列",
+    hint: "站上或跌破月／季線等半成形結構，尚未完整排列",
     color: "var(--mk-rotate)",
   },
   turbulence: {
     label: "亂流",
-    hint: "波動偏高且訊號打架，方向不穩",
+    hint: "均線方向打架且波動偏高，結構不穩",
     color: "var(--mk-watch)",
   },
   calm: {
     label: "無風",
-    hint: "乖離小、波動低，盤勢平靜",
+    hint: "均線糾結、波動低，盤勢平靜",
     color: "var(--mk-ebb)",
   },
 };
