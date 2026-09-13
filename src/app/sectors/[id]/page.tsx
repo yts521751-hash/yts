@@ -4,6 +4,7 @@ import {
   readSectorKlineCache,
 } from "@/lib/sector-kline";
 import { lookupSectorDef } from "@/lib/resolve-universe";
+import { membersWithTurnover } from "@/lib/sector-members";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -35,6 +36,7 @@ export default async function SectorPage({ params }: Props) {
   // 首屏只讀快取，避免重建拖慢 TTFB；缺快取時交給客戶端拉 API
   const cached = await readSectorKlineCache(def.id);
   const candles = cached?.candles ?? [];
+  const { members, asOf: membersAsOf } = await membersWithTurnover(def.members);
 
   if (candles.length) {
     // 背景輕觸刷新（不阻塞首屏）
@@ -46,10 +48,8 @@ export default async function SectorPage({ params }: Props) {
       sectorId={def.id}
       initialName={def.name}
       initialCandles={candles}
-      initialMembers={def.members.map((m) => ({
-        code: m.code,
-        name: m.name,
-      }))}
+      initialMembers={members}
+      initialMembersAsOf={membersAsOf}
       initialError={null}
     />
   );

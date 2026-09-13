@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildSectorKline } from "@/lib/sector-kline";
 import { lookupSectorDef } from "@/lib/resolve-universe";
+import { membersWithTurnover } from "@/lib/sector-members";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -23,6 +24,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const { searchParams } = new URL(req.url);
   const days = Math.min(120, Math.max(20, Number(searchParams.get("days") || 80)));
   const force = searchParams.get("force") === "1";
+  const { members, asOf: membersAsOf } = await membersWithTurnover(def.members);
 
   try {
     const data = await buildSectorKline(id, days, { force, def });
@@ -34,7 +36,8 @@ export async function GET(req: Request, ctx: Ctx) {
             "產業 K 線資料不足。請回首頁按「觸發背景更新」暖機日行情後再試（本頁只讀快取，不會卡住瀏覽器）。",
           sectorId: id,
           sectorName: def.name,
-          members: def.members.map((m) => ({ code: m.code, name: m.name })),
+          members,
+          membersAsOf,
         },
         { status: 503 },
       );
@@ -42,7 +45,8 @@ export async function GET(req: Request, ctx: Ctx) {
     const res = NextResponse.json({
       ok: true,
       ...data,
-      members: def.members.map((m) => ({ code: m.code, name: m.name })),
+      members,
+      membersAsOf,
     });
     // 短快取：同產業短時間重複開啟可走瀏覽器／邊緣快取
     if (data.source === "cache" || data.source === "memory") {

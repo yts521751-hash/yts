@@ -13,6 +13,22 @@ import { cn } from "@/lib/utils";
 
 type Filter = "all" | "ma5" | "ma10" | "ma20" | "all3";
 
+function isAbove(close: number, ma: number | null | undefined) {
+  return ma != null && close >= ma;
+}
+
+function rowFlags(row: MaScreenerRow) {
+  const above5 = isAbove(row.close, row.ma5);
+  const above10 = isAbove(row.close, row.ma10);
+  const above20 = isAbove(row.close, row.ma20);
+  return {
+    above5,
+    above10,
+    above20,
+    aboveAll: above5 && above10 && above20,
+  };
+}
+
 const FILTERS: Array<{ id: Filter; label: string; hint: string }> = [
   { id: "all", label: "全部產業", hint: "依站上均線數排序" },
   { id: "all3", label: "三線之上", hint: "同時站上 MA5／10／20" },
@@ -49,6 +65,7 @@ function Flag({ on, label }: { on: boolean; label: string }) {
 }
 
 function RowCard({ row }: { row: MaScreenerRow }) {
+  const flags = rowFlags(row);
   return (
     <Link
       href={`/sectors/${encodeURIComponent(row.id)}`}
@@ -58,13 +75,15 @@ function RowCard({ row }: { row: MaScreenerRow }) {
         <div className="min-w-0">
           <div className="truncate font-medium">{row.name}</div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            收盤 {row.close.toFixed(2)} · 站上 {row.aboveCount}/3
+            收盤 {row.close.toFixed(2)} · 站上{" "}
+            {Number(flags.above5) + Number(flags.above10) + Number(flags.above20)}
+            /3
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-1">
-          <Flag on={row.above5} label="5" />
-          <Flag on={row.above10} label="10" />
-          <Flag on={row.above20} label="20" />
+          <Flag on={flags.above5} label="5" />
+          <Flag on={flags.above10} label="10" />
+          <Flag on={flags.above20} label="20" />
         </div>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
@@ -157,20 +176,34 @@ export function MaScreenerClient({
 
   const filtered = useMemo(() => {
     const rows = data?.rows ?? [];
-    if (filter === "ma5") return rows.filter((r) => r.above5);
-    if (filter === "ma10") return rows.filter((r) => r.above10);
-    if (filter === "ma20") return rows.filter((r) => r.above20);
-    if (filter === "all3") return rows.filter((r) => r.aboveAll);
+    if (filter === "ma5") return rows.filter((r) => rowFlags(r).above5);
+    if (filter === "ma10") return rows.filter((r) => rowFlags(r).above10);
+    if (filter === "ma20") return rows.filter((r) => rowFlags(r).above20);
+    if (filter === "all3") return rows.filter((r) => rowFlags(r).aboveAll);
     return rows;
   }, [data, filter]);
 
-  const summary = data?.counts ?? {
-    ma5: 0,
-    ma10: 0,
-    ma20: 0,
-    all3: 0,
-    total: data?.rows?.length ?? 0,
-  };
+  // 一律由收盤／均線重算計數，避免舊快取旗標錯位時月線／三線顯示成 0
+  const summary = useMemo(() => {
+    const rows = data?.rows ?? [];
+    let ma5 = 0;
+    let ma10 = 0;
+    let ma20 = 0;
+    let all3 = 0;
+    for (const r of rows) {
+      const f = rowFlags(r);
+      if (f.above5) ma5++;
+      if (f.above10) ma10++;
+      if (f.above20) ma20++;
+      if (f.aboveAll) all3++;
+    }
+    return { ma5, ma10, ma20, all3, total: rows.length };
+  }, [data?.rows]);
+
+  const shortBars = useMemo(
+    () => (data?.rows ?? []).filter((r) => (r.bars ?? 0) < 20).length,
+    [data?.rows],
+  );
 
   const activeHint = FILTERS.find((f) => f.id === filter)?.hint ?? "";
 
@@ -253,6 +286,11 @@ export function MaScreenerClient({
           })}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">{activeHint}</p>
+        {shortBars > 0 ? (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+            有 {shortBars} 個產業日線不足 20 根，月線／三線可能暫時無法判定；可按「重新掃描」補建。
+          </p>
+        ) : null}
 
         {error ? (
           <div className="mt-6 rounded-xl border border-[var(--mk-down)]/30 bg-[var(--mk-down)]/10 px-4 py-3 text-sm text-[var(--mk-down)]">
@@ -300,7 +338,9 @@ export function MaScreenerClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((row) => (
+                  {filtered.map((row) => {
+                    const flags = rowFlags(row);
+                    return (
                     <tr
                       key={row.id}
                       className="border-b border-border/30 transition hover:bg-muted/30"
@@ -317,16 +357,19 @@ export function MaScreenerClient({
                         {row.close.toFixed(2)}
                       </td>
                       <td className="px-3 py-3">
-                        <Flag on={row.above5} label="上" />
+                        <Flag on={flags.above5} label="上" />
                       </td>
                       <td className="px-3 py-3">
-                        <Flag on={row.above10} label="上" />
+                        <Flag on={flags.above10} label="上" />
                       </td>
                       <td className="px-3 py-3">
-                        <Flag on={row.above20} label="上" />
+                        <Flag on={flags.above20} label="上" />
                       </td>
                       <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                        {row.aboveCount}/3
+                        {Number(flags.above5) +
+                          Number(flags.above10) +
+                          Number(flags.above20)}
+                        /3
                       </td>
                       <td className="px-3 py-3 tabular-nums">
                         <Bias value={row.bias5} />
@@ -338,7 +381,8 @@ export function MaScreenerClient({
                         <Bias value={row.bias20} />
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

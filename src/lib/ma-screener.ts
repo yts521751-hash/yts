@@ -109,8 +109,24 @@ function rowFromCloses(
   };
 }
 
+/** 依收盤／均線重算站上旗標，避免舊快取欄位缺漏或錯位導致月線／三線計成 0 */
+function normalizeRow(r: MaScreenerRow): MaScreenerRow {
+  const above5 = r.ma5 != null && r.close >= r.ma5;
+  const above10 = r.ma10 != null && r.close >= r.ma10;
+  const above20 = r.ma20 != null && r.close >= r.ma20;
+  return {
+    ...r,
+    above5,
+    above10,
+    above20,
+    aboveAll: above5 && above10 && above20,
+    aboveCount: Number(above5) + Number(above10) + Number(above20),
+  };
+}
+
 function finalize(rows: MaScreenerRow[], source: MaScreenerPayload["source"]): MaScreenerPayload {
-  rows.sort((a, b) => {
+  const normalized = rows.map(normalizeRow);
+  normalized.sort((a, b) => {
     const score =
       Number(b.aboveAll) * 8 +
       Number(b.above20) * 4 +
@@ -125,31 +141,49 @@ function finalize(rows: MaScreenerRow[], source: MaScreenerPayload["source"]): M
   });
 
   const asOf =
-    rows
+    normalized
       .map((r) => r.asOf)
       .filter((d): d is string => Boolean(d))
       .sort()
       .at(-1) ?? null;
 
   return {
-    rows,
+    rows: normalized,
     builtAt: new Date().toISOString(),
     asOf,
     source,
     counts: {
-      ma5: rows.filter((r) => r.above5).length,
-      ma10: rows.filter((r) => r.above10).length,
-      ma20: rows.filter((r) => r.above20).length,
-      all3: rows.filter((r) => r.aboveAll).length,
-      total: rows.length,
+      ma5: normalized.filter((r) => r.above5).length,
+      ma10: normalized.filter((r) => r.above10).length,
+      ma20: normalized.filter((r) => r.above20).length,
+      all3: normalized.filter((r) => r.aboveAll).length,
+      total: normalized.length,
     },
   };
 }
 
 export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
   const cached = await readCacheFile<MaScreenerPayload>(MA_SCREENER_CACHE);
-  if (cached?.rows?.length) return cached;
-  return null;
+  if (!cached?.rows?.length) return null;
+  // 舊快取若缺 counts 或計數與列不一致，依列重算後回寫
+  const fixed = finalize(cached.rows, cached.source ?? "cache");
+  const same =
+    cached.counts?.ma20 === fixed.counts.ma20 &&
+    cached.counts?.all3 === fixed.counts.all3 &&
+    cached.counts?.total === fixed.counts.total;
+  if (!same) {
+    await writeCacheFile(MA_SCREENER_CACHE, {
+      ...fixed,
+      builtAt: cached.builtAt,
+      asOf: cached.asOf ?? fixed.asOf,
+    }).catch(() => null);
+  }
+  return {
+    ...fixed,
+    builtAt: cached.builtAt,
+    asOf: cached.asOf ?? fixed.asOf,
+    source: "cache",
+  };
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   readCacheFile,
   type QuoteRow,
 } from "@/lib/tw-market";
+import { membersWithTurnover } from "@/lib/sector-members";
 
 const THEME_WITH_KIND: SectorDef[] = SECTOR_UNIVERSE.map((s) => ({
   ...s,
@@ -186,17 +187,17 @@ export async function lookupSectorDef(id: string): Promise<SectorDef | null> {
     const industry = decoded.slice(4);
     const map = await loadIndustryMap().catch(() => null);
     if (map?.stocks?.length) {
-      const members = map.stocks
-        .filter((s) => s.industry === industry)
-        .slice(0, 12)
-        .map((s) => ({ code: s.code, name: s.name }));
-      if (members.length >= 3) {
+      const all = map.stocks.filter((s) => s.industry === industry);
+      if (all.length >= 3) {
+        const { members } = await membersWithTurnover(
+          all.map((s) => ({ code: s.code, name: s.name })),
+        );
         return {
           id: decoded,
           name: industry,
           basis: "官方產業",
           kind: "industry",
-          members,
+          members: members.slice(0, 24).map(({ code, name }) => ({ code, name })),
         };
       }
     }
