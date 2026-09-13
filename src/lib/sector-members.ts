@@ -2,6 +2,7 @@ import "server-only";
 import {
   getCachedDayQuotes,
   listCachedTradingDays,
+  ymdToIso,
 } from "@/lib/tw-market";
 
 export type SectorMemberView = {
@@ -16,8 +17,8 @@ export async function membersWithTurnover(
   members: { code: string; name: string }[],
 ): Promise<{ members: SectorMemberView[]; asOf: string | null }> {
   const days = await listCachedTradingDays(1, 40);
-  const asOf = days[0] ?? null;
-  const quotes = asOf ? ((await getCachedDayQuotes(asOf)) ?? new Map()) : new Map();
+  const ymd = days[0] ?? null;
+  const quotes = ymd ? ((await getCachedDayQuotes(ymd)) ?? new Map()) : new Map();
 
   const enriched: SectorMemberView[] = members.map((m) => {
     const q = quotes.get(m.code);
@@ -33,5 +34,5 @@ export async function membersWithTurnover(
     (a, b) => b.dayAmt - a.dayAmt || a.code.localeCompare(b.code),
   );
 
-  return { members: enriched, asOf };
+  return { members: enriched, asOf: ymd ? ymdToIso(ymd) : null };
 }
