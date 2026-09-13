@@ -108,11 +108,19 @@ export default function TurnoverPage() {
     void load(false);
   }, [load]);
 
-  // 固定每 3 秒輪詢：盤中 live=1 重抓公開行情；休市仍刷新時間戳，週一開盤自動切即時
+  // 僅盤中每 3 秒 live 更新；休市／週末維持上個交易日結果，不輪詢刷新
   useEffect(() => {
+    if (!inSession) return;
     const t = setInterval(() => void load(true), 3000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [inSession, load]);
+
+  // 休市時偶爾探測是否已開盤（例如週一 09:00），不重抓 live 行情
+  useEffect(() => {
+    if (inSession) return;
+    const t = setInterval(() => void load(false), 60_000);
+    return () => clearInterval(t);
+  }, [inSession, load]);
 
   const metaLine = (
     <>
@@ -121,14 +129,18 @@ export default function TurnoverPage() {
         ? source === "live-refresh"
           ? " · 盤中即時"
           : " · 盤中讀取中"
-        : " · 休市快取"}
+        : " · 休市（上個交易日）"}
       {updatedAt
         ? ` · ${new Date(updatedAt).toLocaleTimeString("zh-TW", {
             hour12: false,
           })}`
         : ""}
-      <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-[var(--mk-up)] align-middle" />
-      <span className="ml-1 tabular-nums opacity-70">#{tick}</span>
+      {inSession ? (
+        <>
+          <span className="ml-1.5 inline-block size-1.5 animate-pulse rounded-full bg-[var(--mk-up)] align-middle" />
+          <span className="ml-1 tabular-nums opacity-70">#{tick}</span>
+        </>
+      ) : null}
     </>
   );
 
@@ -153,7 +165,7 @@ export default function TurnoverPage() {
               成交金額排行 Top 50
             </h1>
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground sm:mt-2">
-              證交所／櫃買公開資料 · 盤中約每 3 秒更新
+              證交所／櫃買公開資料 · 盤中約每 3 秒更新，休市固定上個交易日
               {fromCache ? " · 已先顯示本機快取" : ""}
             </p>
           </div>

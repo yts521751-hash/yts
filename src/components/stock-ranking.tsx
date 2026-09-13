@@ -204,6 +204,28 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
         </p>
       </div>
 
+      <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-1 pb-1 touch-pan-x md:hidden">
+        {columns.map((col) => {
+          const active = sortKey === col.key;
+          return (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => onSort(col.key)}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] transition",
+                active
+                  ? "border-[var(--mk-anchor)]/40 bg-[var(--mk-anchor)]/10 font-semibold text-foreground"
+                  : "border-border/50 bg-[var(--panel)]/70 text-muted-foreground",
+              )}
+            >
+              <span>{col.label}</span>
+              {renderSortIcon(col.key)}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="min-h-0 flex-1 space-y-2 overflow-auto p-1 md:hidden">
         {ranked.map((s, i) => {
           const amt = periodAmt(s, period);

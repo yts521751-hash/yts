@@ -202,6 +202,25 @@ export function SectorRanking({
     return { rows, totalMatched: sorted.length };
   }, [sectors, filter, kindFilter, sortKey, asc, period]);
 
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setAsc((v) => !v);
+    else {
+      setSortKey(key);
+      setAsc(false);
+    }
+  };
+
+  const formatSortMetric = (s: SectorFlow) => {
+    const v = sortValue(s, sortKey, period);
+    if (sortKey === "heat") return formatHeat(v);
+    if (sortKey === "priceChange20d" || sortKey === "cp") {
+      if (sortKey === "cp") return Number.isFinite(v) ? v.toFixed(0) : "—";
+      return formatPct(v);
+    }
+    if (sortKey === "amt") return formatYi(v);
+    return formatYiSigned(v, sortKey === "d20Flow" ? 0 : 1);
+  };
+
   return (
     <div className="flex h-full min-h-[320px] flex-col sm:min-h-[480px]">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 px-2 pb-2 sm:px-3">
@@ -241,12 +260,49 @@ export function SectorRanking({
         </p>
       </div>
 
+      {/* 手機：可橫滑的欄位排序（桌面用表頭按鈕） */}
+      <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-1 pb-1 touch-pan-x md:hidden">
+        {columns.map((col) => {
+          const active = sortKey === col.key;
+          return (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => toggleSort(col.key)}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] transition",
+                active
+                  ? "border-[var(--mk-surge)]/50 bg-[var(--mk-surge-bg)] font-semibold text-foreground"
+                  : "border-border/50 bg-[var(--panel)]/70 text-muted-foreground",
+              )}
+            >
+              <span>{col.label}</span>
+              {active ? (
+                asc ? (
+                  <ArrowUp className="size-3" />
+                ) : (
+                  <ArrowDown className="size-3" />
+                )
+              ) : (
+                <ArrowUpDown className="size-3 opacity-40" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="min-h-0 flex-1 space-y-2 overflow-auto p-1 md:hidden">
         {rows.map((s, i) => {
           const meta = STATUS_META[s.status];
           const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
           const amt = periodAmt(s, period);
           const flow = periodFlow(s, period);
+          const metric = formatSortMetric(s);
+          const metricSigned =
+            sortKey === "flow" ||
+            sortKey === "accel" ||
+            sortKey === "d20Flow" ||
+            sortKey === "priceChange20d";
           return (
             <button
               key={s.id}
@@ -275,14 +331,34 @@ export function SectorRanking({
                     {KIND_LABEL[kind]}
                   </span>
                 </div>
-                <div className="mt-0.5 flex gap-3 text-[11px] text-muted-foreground">
+                <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span>
-                    {period === "day" ? "成交" : "5日成交"} {formatYi(amt)}
+                    {period === "day" ? "成交" : period === "d3" ? "3日成交" : "5日成交"}{" "}
+                    {formatYi(amt)}
                   </span>
                   <span className={signedClass(flow)}>
-                    {period === "day" ? "淨流" : "5日流"} {formatYiSigned(flow)}
+                    {period === "day" ? "淨流" : period === "d3" ? "3日流" : "5日流"}{" "}
+                    {formatYiSigned(flow)}
                   </span>
+                  {sortKey !== "amt" && sortKey !== "flow" ? (
+                    <span className={metricSigned ? signedClass(sortValue(s, sortKey, period)) : undefined}>
+                      {columns.find((c) => c.key === sortKey)?.label} {metric}
+                    </span>
+                  ) : null}
                 </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <p
+                  className={cn(
+                    "text-xs font-semibold tabular-nums",
+                    metricSigned ? signedClass(sortValue(s, sortKey, period)) : "text-foreground",
+                  )}
+                >
+                  {metric}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {columns.find((c) => c.key === sortKey)?.label}
+                </p>
               </div>
             </button>
           );
@@ -307,13 +383,7 @@ export function SectorRanking({
                   >
                     <button
                       type="button"
-                      onClick={() => {
-                        if (sortKey === col.key) setAsc((v) => !v);
-                        else {
-                          setSortKey(col.key);
-                          setAsc(false);
-                        }
-                      }}
+                      onClick={() => toggleSort(col.key)}
                       className={cn(
                         "inline-flex w-full items-center justify-end gap-1 whitespace-nowrap transition hover:text-foreground",
                         active && "text-foreground",
