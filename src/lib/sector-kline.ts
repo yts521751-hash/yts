@@ -129,7 +129,9 @@ export async function buildSectorKline(
 
   // 快取優先：先讀記憶體／磁碟，避免每次都掃交易日清單
   // 但日線根數不足時不可當「夠用」——否則 MA20／MA60 會永遠算不出來
-  const minBars = Math.min(days, 60);
+  // 目標 ≥60 時，要求快取接近目標深度（舊的 16／80 根不可卡住季線可視區間）
+  const minBars =
+    days >= 60 ? Math.min(days, Math.max(60, days - 10)) : Math.min(days, 20);
   if (!options?.force) {
     const mem = memGet(id);
     if (mem?.candles?.length && mem.candles.length >= minBars) {
