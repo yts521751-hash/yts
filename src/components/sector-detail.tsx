@@ -123,7 +123,7 @@ export function SectorDetail({
 
       <div className="px-4 pb-2">
         <Link
-          href={`/sectors/${encodeURIComponent(sector.id)}`}
+          href={`/sectors/${encodeURIComponent(sector.id)}?from=home`}
           prefetch
           onMouseEnter={() => {
             // 滑過就預熱 API／路由，點進去幾乎秒開

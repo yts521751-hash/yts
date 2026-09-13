@@ -15,6 +15,10 @@ export type MaScreenerRow = {
   above20: boolean;
   aboveAll: boolean;
   aboveCount: number;
+  /** 近 5 日成交金額合計（億） */
+  amt5: number;
+  /** 近 5 日淨流入合計（億） */
+  flow5: number;
   asOf: string | null;
   bars: number;
 };

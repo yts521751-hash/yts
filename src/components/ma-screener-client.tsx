@@ -8,6 +8,7 @@ import {
   readClientCache,
   writeClientCache,
 } from "@/lib/client-cache";
+import { formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import type { MaScreenerPayload, MaScreenerRow } from "@/lib/ma-screener-types";
 import { cn } from "@/lib/utils";
 
@@ -64,11 +65,15 @@ function Flag({ on, label }: { on: boolean; label: string }) {
   );
 }
 
+function sectorHref(id: string) {
+  return `/sectors/${encodeURIComponent(id)}?from=ma`;
+}
+
 function RowCard({ row }: { row: MaScreenerRow }) {
   const flags = rowFlags(row);
   return (
     <Link
-      href={`/sectors/${encodeURIComponent(row.id)}`}
+      href={sectorHref(row.id)}
       className="block rounded-xl border border-border/50 bg-[var(--panel)]/70 p-3.5 transition hover:border-[var(--mk-anchor)]/40 hover:bg-muted/30"
     >
       <div className="flex items-start justify-between gap-3">
@@ -86,20 +91,39 @@ function RowCard({ row }: { row: MaScreenerRow }) {
           <Flag on={flags.above20} label="20" />
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
         <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+          <div className="text-muted-foreground">5日成交</div>
+          <div className="mt-0.5 font-semibold tabular-nums">
+            {formatYi(row.amt5 ?? 0)}
+          </div>
+        </div>
+        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+          <div className="text-muted-foreground">5日淨流入</div>
+          <div
+            className={cn(
+              "mt-0.5 font-semibold tabular-nums",
+              signedClass(row.flow5 ?? 0),
+            )}
+          >
+            {formatYiSigned(row.flow5 ?? 0)}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
           <div className="text-muted-foreground">乖離5</div>
           <div className="mt-0.5 font-semibold tabular-nums">
             <Bias value={row.bias5} />
           </div>
         </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
           <div className="text-muted-foreground">乖離10</div>
           <div className="mt-0.5 font-semibold tabular-nums">
             <Bias value={row.bias10} />
           </div>
         </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
+        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
           <div className="text-muted-foreground">乖離20</div>
           <div className="mt-0.5 font-semibold tabular-nums">
             <Bias value={row.bias20} />
@@ -171,8 +195,14 @@ export function MaScreenerClient({
   }, []);
 
   useEffect(() => {
+    // 已有 SSR／本機快照：先畫出來，稍後再輕量校對，避免開頁感覺卡住
+    if (seeded.data?.rows?.length) {
+      setLoading(false);
+      const t = window.setTimeout(() => void load(false), 1200);
+      return () => window.clearTimeout(t);
+    }
     void load(false);
-  }, [load]);
+  }, [load, seeded.data?.rows?.length]);
 
   const filtered = useMemo(() => {
     const rows = data?.rows ?? [];
@@ -183,7 +213,6 @@ export function MaScreenerClient({
     return rows;
   }, [data, filter]);
 
-  // 一律由收盤／均線重算計數，避免舊快取旗標錯位時月線／三線顯示成 0
   const summary = useMemo(() => {
     const rows = data?.rows ?? [];
     let ma5 = 0;
@@ -236,7 +265,7 @@ export function MaScreenerClient({
           產業均線掃描
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          找出產業指數收盤站上五日、十日、二十日線的族群。點列可進產業 K 線。
+          找出產業指數收盤站上五日、十日、二十日線的族群，並顯示近五日成交與淨流入。點列可進產業 K 線。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料
@@ -322,16 +351,15 @@ export function MaScreenerClient({
               ))}
             </div>
 
-            <div className="mt-6 hidden overflow-hidden rounded-xl border border-border/50 bg-[var(--panel)]/70 md:block">
-              <table className="w-full text-left text-sm">
+            <div className="mt-6 hidden overflow-x-auto rounded-xl border border-border/50 bg-[var(--panel)]/70 md:block">
+              <table className="w-full min-w-[920px] text-left text-sm">
                 <thead className="border-b border-border/50 bg-muted/30 text-[11px] text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">產業</th>
                     <th className="px-3 py-3 font-medium">收盤</th>
-                    <th className="px-3 py-3 font-medium">MA5</th>
-                    <th className="px-3 py-3 font-medium">MA10</th>
-                    <th className="px-3 py-3 font-medium">MA20</th>
                     <th className="px-3 py-3 font-medium">站上</th>
+                    <th className="px-3 py-3 font-medium">5日成交</th>
+                    <th className="px-3 py-3 font-medium">5日淨流入</th>
                     <th className="px-3 py-3 font-medium">乖離5</th>
                     <th className="px-3 py-3 font-medium">乖離10</th>
                     <th className="px-4 py-3 font-medium">乖離20</th>
@@ -341,46 +369,49 @@ export function MaScreenerClient({
                   {filtered.map((row) => {
                     const flags = rowFlags(row);
                     return (
-                    <tr
-                      key={row.id}
-                      className="border-b border-border/30 transition hover:bg-muted/30"
-                    >
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/sectors/${encodeURIComponent(row.id)}`}
-                          className="font-medium hover:text-[var(--mk-anchor)]"
+                      <tr
+                        key={row.id}
+                        className="border-b border-border/30 transition hover:bg-muted/30"
+                      >
+                        <td className="px-4 py-3">
+                          <Link
+                            href={sectorHref(row.id)}
+                            className="font-medium hover:text-[var(--mk-anchor)]"
+                          >
+                            {row.name}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                          {row.close.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex gap-1">
+                            <Flag on={flags.above5} label="5" />
+                            <Flag on={flags.above10} label="10" />
+                            <Flag on={flags.above20} label="20" />
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {formatYi(row.amt5 ?? 0)}
+                        </td>
+                        <td
+                          className={cn(
+                            "px-3 py-3 tabular-nums",
+                            signedClass(row.flow5 ?? 0),
+                          )}
                         >
-                          {row.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                        {row.close.toFixed(2)}
-                      </td>
-                      <td className="px-3 py-3">
-                        <Flag on={flags.above5} label="上" />
-                      </td>
-                      <td className="px-3 py-3">
-                        <Flag on={flags.above10} label="上" />
-                      </td>
-                      <td className="px-3 py-3">
-                        <Flag on={flags.above20} label="上" />
-                      </td>
-                      <td className="px-3 py-3 tabular-nums text-muted-foreground">
-                        {Number(flags.above5) +
-                          Number(flags.above10) +
-                          Number(flags.above20)}
-                        /3
-                      </td>
-                      <td className="px-3 py-3 tabular-nums">
-                        <Bias value={row.bias5} />
-                      </td>
-                      <td className="px-3 py-3 tabular-nums">
-                        <Bias value={row.bias10} />
-                      </td>
-                      <td className="px-4 py-3 tabular-nums">
-                        <Bias value={row.bias20} />
-                      </td>
-                    </tr>
+                          {formatYiSigned(row.flow5 ?? 0)}
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          <Bias value={row.bias5} />
+                        </td>
+                        <td className="px-3 py-3 tabular-nums">
+                          <Bias value={row.bias10} />
+                        </td>
+                        <td className="px-4 py-3 tabular-nums">
+                          <Bias value={row.bias20} />
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>

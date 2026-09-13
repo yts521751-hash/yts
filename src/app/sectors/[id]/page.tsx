@@ -6,7 +6,10 @@ import {
 import { lookupSectorDef } from "@/lib/resolve-universe";
 import { membersWithTurnover } from "@/lib/sector-members";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +21,14 @@ function safeDecode(id: string) {
   }
 }
 
-export default async function SectorPage({ params }: Props) {
+export default async function SectorPage({ params, searchParams }: Props) {
   const raw = (await params).id;
   const id = safeDecode(raw);
+  const from = (await searchParams).from;
+  const fromMa = from === "ma";
+  const backHref = fromMa ? "/ma" : from === "home" ? "/" : "/ma";
+  const backLabel = fromMa || from !== "home" ? "回產業掃描" : "回資金流";
+
   const def = await lookupSectorDef(id);
 
   if (!def) {
@@ -29,6 +37,8 @@ export default async function SectorPage({ params }: Props) {
         sectorId={id}
         initialName={id}
         initialError="找不到此產業。請從首頁板塊詳情再進入。"
+        backHref={backHref}
+        backLabel={backLabel}
       />
     );
   }
@@ -51,6 +61,8 @@ export default async function SectorPage({ params }: Props) {
       initialMembers={members}
       initialMembersAsOf={membersAsOf}
       initialError={null}
+      backHref={backHref}
+      backLabel={backLabel}
     />
   );
 }
