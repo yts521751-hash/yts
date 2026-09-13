@@ -101,6 +101,7 @@ export function AppHeader({
           <div className="hidden items-center gap-2 sm:flex">
             {(
               [
+                ["/ma", "均線掃描"],
                 ["/wind", "風度"],
                 ["/turnover", "成交排行"],
                 ["/news", "熱議新聞"],

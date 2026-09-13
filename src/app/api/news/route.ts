@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const meta = await readNewsMeta();
     const stale =
       !payload.builtAt ||
-      Date.now() - Date.parse(payload.builtAt) > 1000 * 60 * 12;
+      Date.now() - Date.parse(payload.builtAt) > 1000 * 60 * 6;
 
     if ((stale || payload.source === "demo") && !meta.syncing) {
       rebuild = requestNewsRebuild(stale ? "api-stale" : "api-empty");

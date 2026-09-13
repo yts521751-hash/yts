@@ -5,6 +5,8 @@ import type { SectorCandle } from "@/lib/types";
 import { formatPct, formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+import { smaSeries } from "@/lib/ma";
+
 type Props = { candles: SectorCandle[] };
 
 const MA_PERIODS = [
@@ -13,17 +15,6 @@ const MA_PERIODS = [
   { key: "ma20", period: 20, color: "#7c3aed", label: "MA20" },
   { key: "ma60", period: 60, color: "#0f766e", label: "MA60" },
 ] as const;
-
-function movingAverage(values: number[], period: number): (number | null)[] {
-  const out: (number | null)[] = Array(values.length).fill(null);
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-    if (i >= period) sum -= values[i - period];
-    if (i >= period - 1) out[i] = sum / period;
-  }
-  return out;
-}
 
 function polyline(
   xs: number[],
@@ -52,7 +43,7 @@ export function SectorKlineChart({ candles }: Props) {
     if (!candles.length) return null;
     const closes = candles.map((c) => c.close);
     const mas = Object.fromEntries(
-      MA_PERIODS.map((m) => [m.key, movingAverage(closes, m.period)]),
+      MA_PERIODS.map((m) => [m.key, smaSeries(closes, m.period)]),
     ) as Record<(typeof MA_PERIODS)[number]["key"], (number | null)[]>;
 
     const maVals = Object.values(mas).flatMap((arr) =>

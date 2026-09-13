@@ -179,8 +179,8 @@ export function startScheduler() {
     console.log(`[scheduler] morning cron: ${morningExpr} (${TZ})`);
   }
 
-  // 新聞：每 10 分鐘灰度抓取（staging→active）
-  const newsExpr = process.env.NEWS_CRON?.trim() || "*/10 * * * *";
+  // 新聞：每 5 分鐘灰度抓取（staging→active）；可用 NEWS_CRON 覆寫
+  const newsExpr = process.env.NEWS_CRON?.trim() || "*/5 * * * *";
   if (cron.validate(newsExpr)) {
     const newsTask = cron.schedule(
       newsExpr,

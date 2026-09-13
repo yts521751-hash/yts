@@ -30,7 +30,7 @@ export const viewport = {
 export const metadata: Metadata = {
   title: "金流看板｜台股板塊資金流",
   description:
-    "台股板塊資金流與成交排行：強勢／輪動／觀望／出場四態、產業日線、成交 Top50 與熱議新聞。",
+    "台股板塊資金流與成交排行：強勢／輪動／觀望／出場四態、產業日線與均線掃描、成交 Top50 與熱議新聞。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

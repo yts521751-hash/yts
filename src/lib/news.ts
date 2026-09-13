@@ -102,7 +102,7 @@ async function fetchFeed(url: string): Promise<string | null> {
         Accept: "application/rss+xml, application/xml, text/xml, */*",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) return null;
     return await res.text();
@@ -170,28 +170,37 @@ export async function rebuildNewsPayload(): Promise<NewsPayload> {
     });
     const tokenSet = [...new Set(tokens)];
 
-    const collected: NewsItem[] = [];
-
-    // 依 Top50 名稱分批查詢（避免 URL 過長）
-    for (let i = 0; i < Math.min(top.length, 30); i += 5) {
+    // 並行抓取：Top20 分批 + 主題源，縮短整輪同步牆鐘時間
+    type Job = { url: string; source: string };
+    const jobs: Job[] = [];
+    for (let i = 0; i < Math.min(top.length, 20); i += 5) {
       const batch = top.slice(i, i + 5);
       const q = batch
         .map((r) => `"${r.name.replace(/\s+/g, "")}" OR ${r.code}`)
         .join(" OR ");
-      const url = `https://news.google.com/rss/search?q=${encodeURIComponent(
-        `(${q}) 台股`,
-      )}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
-      const xml = await fetchFeed(url);
-      if (!xml) continue;
-      collected.push(...parseRss(xml, "成交熱門股"));
+      jobs.push({
+        url: `https://news.google.com/rss/search?q=${encodeURIComponent(
+          `(${q}) 台股`,
+        )}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`,
+        source: "成交熱門股",
+      });
+    }
+    for (const feed of FEEDS) {
+      jobs.push({ url: feed.url, source: feed.source });
     }
 
-    // 再抓一般台股源，之後用 Top50 關鍵字過濾
-    for (const feed of FEEDS) {
-      const xml = await fetchFeed(feed.url);
-      if (!xml) continue;
-      collected.push(...parseRss(xml, feed.source));
-    }
+    const collected: NewsItem[] = [];
+    let cursor = 0;
+    const workers = Array.from({ length: Math.min(4, jobs.length) }, async () => {
+      while (cursor < jobs.length) {
+        const idx = cursor++;
+        const job = jobs[idx];
+        const xml = await fetchFeed(job.url);
+        if (!xml) continue;
+        collected.push(...parseRss(xml, job.source));
+      }
+    });
+    await Promise.all(workers);
 
     const matched = collected.filter((n) => {
       if (n.title.includes("熱門族群")) return true;

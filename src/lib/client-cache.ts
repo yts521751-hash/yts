@@ -41,4 +41,5 @@ export const CLIENT_CACHE_KEYS = {
   stocks: "jinliu:cache:stocks:v2",
   wind: "jinliu:cache:wind:v2",
   turnover: "jinliu:cache:turnover:v2",
+  ma: "jinliu:cache:ma-screener:v1",
 } as const;

@@ -56,12 +56,12 @@ export default function NewsPage() {
 
   useEffect(() => {
     if (!syncing) return;
-    const t = setInterval(() => void load(false), 8000);
+    const t = setInterval(() => void load(false), 5000);
     return () => clearInterval(t);
   }, [syncing, load]);
 
   useEffect(() => {
-    const t = setInterval(() => void load(false), 1000 * 60 * 10);
+    const t = setInterval(() => void load(false), 1000 * 60 * 5);
     return () => clearInterval(t);
   }, [load]);
 

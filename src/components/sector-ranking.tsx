@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SectorFlow, TideStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { cpScore } from "@/lib/mock-data";
@@ -77,6 +77,43 @@ const PIN_THEME_IDS = new Set([
 ]);
 
 const RANK_LIMIT = 20;
+const RANK_UI_KEY = "jinliu:rank-ui:v1";
+
+type RankUiState = { sortKey: SortKey; asc: boolean };
+
+function readRankUi(): RankUiState {
+  if (typeof window === "undefined") return { sortKey: "amt", asc: false };
+  try {
+    const raw = sessionStorage.getItem(RANK_UI_KEY);
+    if (!raw) return { sortKey: "amt", asc: false };
+    const parsed = JSON.parse(raw) as Partial<RankUiState>;
+    const keys: SortKey[] = [
+      "amt",
+      "flow",
+      "accel",
+      "d20Flow",
+      "heat",
+      "priceChange20d",
+      "cp",
+    ];
+    const sortKey = keys.includes(parsed.sortKey as SortKey)
+      ? (parsed.sortKey as SortKey)
+      : "amt";
+    return { sortKey, asc: Boolean(parsed.asc) };
+  } catch {
+    return { sortKey: "amt", asc: false };
+  }
+}
+
+function writeRankUi(state: RankUiState) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(RANK_UI_KEY, JSON.stringify(state));
+  } catch {
+    /* ignore */
+  }
+}
+
 
 function takeTopMixed(sorted: SectorFlow[], limit = RANK_LIMIT): SectorFlow[] {
   const themes = sorted.filter((s) => (s.kind ?? "theme") !== "industry");
@@ -124,8 +161,26 @@ export function SectorRanking({
   };
   const [sortKey, setSortKey] = useState<SortKey>("amt");
   const [asc, setAsc] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const prevPeriodRef = useRef(period);
+
+  // 手機／桌面共用同一排序狀態，避免切換裝置寬度後名次看起來不一致
+  useEffect(() => {
+    const saved = readRankUi();
+    setSortKey(saved.sortKey);
+    setAsc(saved.asc);
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
+    writeRankUi({ sortKey, asc });
+  }, [sortKey, asc, hydrated]);
+
+  useEffect(() => {
+    if (prevPeriodRef.current === period) return;
+    prevPeriodRef.current = period;
+    // 切換時間維度時回到「成交額→淨流」，兩邊行為一致
     setSortKey("amt");
     setAsc(false);
   }, [period]);
@@ -162,25 +217,21 @@ export function SectorRanking({
         key: "accel" as const,
         label: "加速度",
         tip: COLUMN_TIPS.accel,
-        hideLg: true,
       },
       {
         key: "d20Flow" as const,
         label: "近 20 日流",
         tip: COLUMN_TIPS.flow20,
-        hideLg: true,
       },
       {
         key: "heat" as const,
         label: "量能",
         tip: COLUMN_TIPS.heat,
-        hideLg: true,
       },
       {
         key: "priceChange20d" as const,
         label: "20 日漲幅",
         tip: COLUMN_TIPS.priceChange20d,
-        hideLg: true,
       },
       { key: "cp" as const, label: "CP", tip: COLUMN_TIPS.cp },
     ],
@@ -220,16 +271,6 @@ export function SectorRanking({
     }
   };
 
-  const formatSortMetric = (s: SectorFlow) => {
-    const v = sortValue(s, sortKey, period);
-    if (sortKey === "heat") return formatHeat(v);
-    if (sortKey === "priceChange20d" || sortKey === "cp") {
-      if (sortKey === "cp") return Number.isFinite(v) ? v.toFixed(0) : "—";
-      return formatPct(v);
-    }
-    if (sortKey === "amt") return formatYi(v);
-    return formatYiSigned(v, sortKey === "d20Flow" ? 0 : 1);
-  };
 
   return (
     <div className="flex h-full min-h-[320px] flex-col sm:min-h-[480px]">
@@ -266,12 +307,12 @@ export function SectorRanking({
         <p className="text-[11px] tabular-nums text-muted-foreground">
           顯示前 {rows.length}（上限 {RANK_LIMIT}）
           {totalMatched > rows.length ? `／共 ${totalMatched}` : ""} 板塊 ·
-          預設成交額→淨流
+          排序 {columns.find((c) => c.key === sortKey)?.label ?? "成交額"}{asc ? "↑" : "↓"}
         </p>
       </div>
 
-      {/* 手機：可橫滑的欄位排序（桌面用表頭按鈕） */}
-      <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-1 pb-1 touch-pan-x md:hidden">
+      {/* 手機／桌面共用排序列，避免只在手機改排序後桌面看起來「數據不一樣」 */}
+      <div className="-mx-0.5 flex gap-1.5 overflow-x-auto px-1 pb-1 touch-pan-x">
         {columns.map((col) => {
           const active = sortKey === col.key;
           return (
@@ -307,12 +348,6 @@ export function SectorRanking({
           const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
           const amt = periodAmt(s, period);
           const flow = periodFlow(s, period);
-          const metric = formatSortMetric(s);
-          const metricSigned =
-            sortKey === "flow" ||
-            sortKey === "accel" ||
-            sortKey === "d20Flow" ||
-            sortKey === "priceChange20d";
           return (
             <button
               key={s.id}
@@ -341,6 +376,7 @@ export function SectorRanking({
                     {KIND_LABEL[kind]}
                   </span>
                 </div>
+                {/* 與桌面表一致：永遠顯示成交額＋淨流，避免手機只看排序欄位造成「數字不一樣」 */}
                 <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span>
                     {period === "day" ? "成交" : period === "d3" ? "3日成交" : "5日成交"}{" "}
@@ -350,24 +386,23 @@ export function SectorRanking({
                     {period === "day" ? "淨流" : period === "d3" ? "3日流" : "5日流"}{" "}
                     {formatYiSigned(flow)}
                   </span>
-                  {sortKey !== "amt" && sortKey !== "flow" ? (
-                    <span className={metricSigned ? signedClass(sortValue(s, sortKey, period)) : undefined}>
-                      {columns.find((c) => c.key === sortKey)?.label} {metric}
-                    </span>
-                  ) : null}
                 </div>
               </div>
               <div className="shrink-0 text-right">
                 <p
                   className={cn(
                     "text-xs font-semibold tabular-nums",
-                    metricSigned ? signedClass(sortValue(s, sortKey, period)) : "text-foreground",
+                    signedClass(flow),
                   )}
                 >
-                  {metric}
+                  {formatYiSigned(flow)}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  {columns.find((c) => c.key === sortKey)?.label}
+                  {period === "day"
+                    ? "當日淨流"
+                    : period === "d3"
+                      ? "近 3 日流"
+                      : "近 5 日流"}
                 </p>
               </div>
             </button>
@@ -388,7 +423,6 @@ export function SectorRanking({
                     key={col.key}
                     className={cn(
                       "px-2 py-2.5 text-right font-medium sm:px-3",
-                      "hideLg" in col && col.hideLg && "hidden lg:table-cell",
                     )}
                   >
                     <button
@@ -466,7 +500,7 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
                       signedClass(s.accel),
                     )}
                   >
@@ -474,18 +508,18 @@ export function SectorRanking({
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
                       signedClass(s.d20Flow),
                     )}
                   >
                     {formatYiSigned(s.d20Flow, 0)}
                   </td>
-                  <td className="hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground lg:table-cell sm:px-3">
+                  <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground sm:px-3">
                     {formatHeat(s.heat)}
                   </td>
                   <td
                     className={cn(
-                      "hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3",
+                      "px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3",
                       signedClass(s.priceChange20d),
                     )}
                   >

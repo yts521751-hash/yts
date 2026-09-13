@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { AppHeader } from "@/components/app-header";
 import { SectorDetail } from "@/components/sector-detail";
 import {
@@ -69,7 +70,24 @@ export function HomeApp({
   const [filter, setFilter] = useState<TideStatus | "all">("all");
   const [boardMode, setBoardMode] = useState<BoardMode>("sector");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
-  const [flowPeriod, setFlowPeriod] = useState<RankPeriod>("day");
+  const [flowPeriod, setFlowPeriod] = useState<RankPeriod>(() => {
+    if (typeof window === "undefined") return "day";
+    try {
+      const v = sessionStorage.getItem("jinliu:flow-period:v1");
+      if (v === "day" || v === "d3" || v === "d5") return v;
+    } catch {
+      /* ignore */
+    }
+    return "day";
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("jinliu:flow-period:v1", flowPeriod);
+    } catch {
+      /* ignore */
+    }
+  }, [flowPeriod]);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
   const seed =
@@ -348,7 +366,17 @@ export function HomeApp({
                 <p className="mt-1 text-xs text-muted-foreground">
                   資料日 {stocksDate} · 與板塊相同金流公式（成交×漲跌 80%＋法人 20%）
                 </p>
-              ) : null}
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  手機／電腦共用成交額→淨流排序 ·{" "}
+                  <Link
+                    href="/ma"
+                    className="text-[var(--mk-anchor)] underline-offset-2 hover:underline"
+                  >
+                    產業均線掃描
+                  </Link>
+                </p>
+              )}
             </div>
             <button
               type="button"
