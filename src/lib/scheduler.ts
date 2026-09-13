@@ -231,5 +231,11 @@ export function startScheduler() {
     } catch (e) {
       console.error("[scheduler] wind warmup failed", e);
     }
+    try {
+      const { requestMaScreenerWarmup } = await import("@/lib/ma-screener");
+      requestMaScreenerWarmup("boot-ma");
+    } catch (e) {
+      console.error("[scheduler] ma warmup failed", e);
+    }
   })();
 }

@@ -90,16 +90,25 @@ export function HomeApp({
   }, [flowPeriod]);
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
-  const seed =
-    sessionFlow?.sectors && sessionFlow.sectors.length >= 20
-      ? sessionFlow
-      : initialFlow?.sectors && initialFlow.sectors.length >= 20
-        ? {
-            sectors: initialFlow.sectors,
-            brief: initialFlow.brief,
-            source: initialFlow.source || "ssr",
-          }
-        : null;
+  const seed = ((): FlowClientSnapshot | null => {
+    if (sessionFlow?.sectors && sessionFlow.sectors.length >= 20) return sessionFlow;
+    if (initialFlow?.sectors && initialFlow.sectors.length >= 20 && initialFlow.brief) {
+      return {
+        sectors: initialFlow.sectors,
+        brief: initialFlow.brief,
+        source: initialFlow.source || "ssr",
+      };
+    }
+    // 首屏就讀本機快取（不要等 useEffect），手機／電腦都先畫上個交易日
+    if (typeof window !== "undefined") {
+      const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
+      if (cached?.sectors && cached.sectors.length >= 20 && cached.brief) {
+        sessionFlow = cached;
+        return cached;
+      }
+    }
+    return null;
+  })();
 
   const [sectors, setSectors] = useState<SectorFlow[]>(
     () => seed?.sectors.map(migrateSectorIfNeeded) ?? [],

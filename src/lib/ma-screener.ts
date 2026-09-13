@@ -4,9 +4,16 @@ import { readSectorKlineCache, buildSectorKline } from "@/lib/sector-kline";
 import { getActiveFlowPayload } from "@/lib/build-flow";
 import type { SectorDef } from "@/lib/sector-universe";
 import { lookupSectorDef } from "@/lib/resolve-universe";
+import { loadIndustryMap, industrySectorId } from "@/lib/industry-map";
+import {
+  readCacheFile,
+  writeCacheFile,
+} from "@/lib/tw-market";
 import type { MaScreenerPayload, MaScreenerRow } from "@/lib/ma-screener-types";
 
 export type { MaScreenerPayload, MaScreenerRow };
+
+const MA_SCREENER_CACHE = "ma-screener-active.json";
 
 async function mapPool<T, R>(
   items: T[],
@@ -26,7 +33,7 @@ async function mapPool<T, R>(
   return out;
 }
 
-/** 從金流 active 取出官方產業清單 */
+/** 從金流 active 取出官方產業；若金流尚未暖機，直接從產業對照表組清單 */
 export async function listIndustryDefs(): Promise<SectorDef[]> {
   const flow = await getActiveFlowPayload();
   const industries =
@@ -37,7 +44,32 @@ export async function listIndustryDefs(): Promise<SectorDef[]> {
     const def = await lookupSectorDef(s.id);
     if (def?.members?.length) defs.push(def);
   }
-  return defs;
+  if (defs.length >= 8) return defs;
+
+  // 後備：不依賴金流快取，直接用官方產業對照
+  const map = await loadIndustryMap().catch(() => null);
+  if (!map?.stocks?.length) return defs;
+
+  const byIndustry = new Map<string, { code: string; name: string }[]>();
+  for (const s of map.stocks) {
+    const list = byIndustry.get(s.industry) ?? [];
+    if (list.length < 12) list.push({ code: s.code, name: s.name });
+    byIndustry.set(s.industry, list);
+  }
+
+  const fallback: SectorDef[] = [];
+  for (const [industry, members] of byIndustry) {
+    if (members.length < 4) continue;
+    if ((industry === "其他" || industry === "其他業") && members.length < 8) continue;
+    fallback.push({
+      id: industrySectorId(industry),
+      name: industry,
+      basis: "官方產業對照（均線掃描後備）",
+      kind: "industry",
+      members,
+    });
+  }
+  return fallback.length ? fallback : defs;
 }
 
 function rowFromCloses(
@@ -51,7 +83,6 @@ function rowFromCloses(
   const ma5 = lastSma(closes, 5);
   const ma10 = lastSma(closes, 10);
   const ma20 = lastSma(closes, 20);
-  // 「站上」採收盤 ≥ 均線
   const above5 = ma5 != null && close >= ma5;
   const above10 = ma10 != null && close >= ma10;
   const above20 = ma20 != null && close >= ma20;
@@ -78,30 +109,7 @@ function rowFromCloses(
   };
 }
 
-/**
- * 掃描官方產業 K 線：指數收盤相對 MA5／10／20 的位置。
- * 優先讀快取；缺資料時才背景補建（不阻塞整批）。
- */
-export async function buildMaScreener(options?: {
-  forceRebuildMissing?: boolean;
-}): Promise<MaScreenerPayload> {
-  const defs = await listIndustryDefs();
-  const rows = (
-    await mapPool(defs, 8, async (def) => {
-      let payload = await readSectorKlineCache(def.id);
-      if (
-        (!payload?.candles || payload.candles.length < 20) &&
-        options?.forceRebuildMissing
-      ) {
-        payload = await buildSectorKline(def.id, 80, { def, force: true }).catch(() => null);
-      }
-      if (!payload?.candles?.length) return null;
-      const closes = payload.candles.map((c) => c.close);
-      const asOf = payload.candles[payload.candles.length - 1]?.date ?? null;
-      return rowFromCloses(def.id, def.name, closes, asOf);
-    })
-  ).filter((r): r is MaScreenerRow => Boolean(r));
-
+function finalize(rows: MaScreenerRow[], source: MaScreenerPayload["source"]): MaScreenerPayload {
   rows.sort((a, b) => {
     const score =
       Number(b.aboveAll) * 8 +
@@ -127,7 +135,7 @@ export async function buildMaScreener(options?: {
     rows,
     builtAt: new Date().toISOString(),
     asOf,
-    source: "cache",
+    source,
     counts: {
       ma5: rows.filter((r) => r.above5).length,
       ma10: rows.filter((r) => r.above10).length,
@@ -136,4 +144,77 @@ export async function buildMaScreener(options?: {
       total: rows.length,
     },
   };
+}
+
+export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
+  const cached = await readCacheFile<MaScreenerPayload>(MA_SCREENER_CACHE);
+  if (cached?.rows?.length) return cached;
+  return null;
+}
+
+/**
+ * 掃描官方產業 K 線：指數收盤相對 MA5／10／20。
+ * - 先讀磁碟掃描快取（秒開）
+ * - 缺 K 線時自動補建（冷啟動也要有資料，不再等使用者按強制）
+ */
+export async function buildMaScreener(options?: {
+  forceRebuildMissing?: boolean;
+  skipDiskCache?: boolean;
+}): Promise<MaScreenerPayload> {
+  if (!options?.skipDiskCache && !options?.forceRebuildMissing) {
+    const cached = await readMaScreenerCache();
+    if (cached?.rows?.length) return { ...cached, source: "cache" };
+  }
+
+  const defs = await listIndustryDefs();
+  // 冷啟動或強制：缺 K 線就補；一般請求若完全沒列也補
+  const shouldFillMissing = Boolean(options?.forceRebuildMissing) || defs.length > 0;
+
+  const rows = (
+    await mapPool(defs, 6, async (def) => {
+      let payload = await readSectorKlineCache(def.id);
+      const needBuild =
+        shouldFillMissing && (!payload?.candles || payload.candles.length < 20);
+      if (needBuild) {
+        payload = await buildSectorKline(def.id, 80, {
+          def,
+          force: Boolean(options?.forceRebuildMissing),
+        }).catch(() => null);
+      }
+      if (!payload?.candles?.length) return null;
+      const closes = payload.candles.map((c) => c.close);
+      const asOf = payload.candles[payload.candles.length - 1]?.date ?? null;
+      return rowFromCloses(def.id, def.name, closes, asOf);
+    })
+  ).filter((r): r is MaScreenerRow => Boolean(r));
+
+  const payload = finalize(rows, rows.length ? "mixed" : "cache");
+  if (payload.rows.length) {
+    await writeCacheFile(MA_SCREENER_CACHE, payload).catch(() => null);
+  }
+  return payload;
+}
+
+/** 背景暖機：不阻塞 HTTP */
+export function requestMaScreenerWarmup(reason = "boot"): {
+  started: boolean;
+  alreadyRunning: boolean;
+} {
+  const g = globalThis as typeof globalThis & {
+    __jinliuMaWarm?: { running: boolean };
+  };
+  if (!g.__jinliuMaWarm) g.__jinliuMaWarm = { running: false };
+  if (g.__jinliuMaWarm.running) return { started: false, alreadyRunning: true };
+  g.__jinliuMaWarm.running = true;
+  void buildMaScreener({ forceRebuildMissing: true, skipDiskCache: true })
+    .then((p) => {
+      console.log(`[ma-screener] warm (${reason}): rows=${p.rows.length}`);
+    })
+    .catch((err) => {
+      console.error(`[ma-screener] warm failed (${reason}):`, err);
+    })
+    .finally(() => {
+      g.__jinliuMaWarm!.running = false;
+    });
+  return { started: true, alreadyRunning: false };
 }
