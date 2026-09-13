@@ -34,6 +34,9 @@ type Props = {
   onSelect: (s: SectorFlow) => void;
   filter?: TideStatus | "all";
   kindFilter?: KindFilter;
+  /** 與板塊明細共用的時間維度（受控） */
+  period?: RankPeriod;
+  onPeriodChange?: (period: RankPeriod) => void;
 };
 
 const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
@@ -110,8 +113,15 @@ export function SectorRanking({
   onSelect,
   filter = "all",
   kindFilter = "all",
+  period: periodProp,
+  onPeriodChange,
 }: Props) {
-  const [period, setPeriod] = useState<RankPeriod>("day");
+  const [periodInner, setPeriodInner] = useState<RankPeriod>("day");
+  const period = periodProp ?? periodInner;
+  const setPeriod = (next: RankPeriod) => {
+    if (periodProp === undefined) setPeriodInner(next);
+    onPeriodChange?.(next);
+  };
   const [sortKey, setSortKey] = useState<SortKey>("amt");
   const [asc, setAsc] = useState(false);
 

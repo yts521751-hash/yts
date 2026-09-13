@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { SectorFlow } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
@@ -15,15 +15,33 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CandlestickChart, X } from "lucide-react";
 
+type StockPeriod = "day" | "d3" | "d5";
+
 type Props = {
   sector: SectorFlow | null;
   onClose: () => void;
+  /** 與排行榜共用的時間維度（受控）；未傳則內部自管 */
+  period?: StockPeriod;
+  onPeriodChange?: (period: StockPeriod) => void;
 };
 
-type StockPeriod = "day" | "d3" | "d5";
+export function SectorDetail({
+  sector,
+  onClose,
+  period: periodProp,
+  onPeriodChange,
+}: Props) {
+  const [periodInner, setPeriodInner] = useState<StockPeriod>("day");
+  const stockPeriod = periodProp ?? periodInner;
+  const setStockPeriod = (next: StockPeriod) => {
+    if (periodProp === undefined) setPeriodInner(next);
+    onPeriodChange?.(next);
+  };
 
-export function SectorDetail({ sector, onClose }: Props) {
-  const [stockPeriod, setStockPeriod] = useState<StockPeriod>("day");
+  // 外層切換當日／3日／5日時，明細跟著同步
+  useEffect(() => {
+    if (periodProp !== undefined) setPeriodInner(periodProp);
+  }, [periodProp]);
 
   const stocks = useMemo(() => {
     if (!sector) return [];

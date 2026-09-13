@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { SectorDetail } from "@/components/sector-detail";
-import { SectorRanking } from "@/components/sector-ranking";
+import {
+  SectorRanking,
+  type RankPeriod,
+} from "@/components/sector-ranking";
 import { StatusCards } from "@/components/status-cards";
 import {
   StockRanking,
@@ -38,6 +41,7 @@ export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
   const [boardMode, setBoardMode] = useState<BoardMode>("sector");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
+  const [flowPeriod, setFlowPeriod] = useState<RankPeriod>("day");
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
   const [sectors, setSectors] = useState<SectorFlow[]>([]);
@@ -361,12 +365,16 @@ export function HomeApp() {
                   onSelect={setSelected}
                   filter={filter}
                   kindFilter="all"
+                  period={flowPeriod}
+                  onPeriodChange={setFlowPeriod}
                 />
               </div>
               <div className="hidden lg:block">
                 <SectorDetail
                   sector={selected}
                   onClose={() => setSelected(null)}
+                  period={flowPeriod}
+                  onPeriodChange={setFlowPeriod}
                 />
               </div>
             </section>
@@ -382,6 +390,8 @@ export function HomeApp() {
                   <SectorDetail
                     sector={selected}
                     onClose={() => setSelected(null)}
+                    period={flowPeriod}
+                    onPeriodChange={setFlowPeriod}
                   />
                 </div>
               </div>
