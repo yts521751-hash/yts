@@ -142,7 +142,12 @@ export function watchCodesFromUniverse(sectors: SectorDef[]): Set<string> {
  * 產業 K 線與 API 必須用這支，不能只查靜態 SECTOR_UNIVERSE。
  */
 export async function lookupSectorDef(id: string): Promise<SectorDef | null> {
-  const decoded = decodeURIComponent(id);
+  let decoded = id;
+  try {
+    decoded = decodeURIComponent(id);
+  } catch {
+    decoded = id;
+  }
   const staticDef = THEME_WITH_KIND.find(
     (s) => s.id === decoded || s.id === id,
   );

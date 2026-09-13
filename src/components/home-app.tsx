@@ -72,14 +72,15 @@ export function HomeApp() {
 
       // 先畫本機快取，再開網路同步（stale-while-revalidate）
       const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
-      if (cached?.sectors?.length) {
+      // 本機快取需夠完整才先畫，避免舊／半套資料被當成「同步中的正式結果」
+      if (cached?.sectors && cached.sectors.length >= 20) {
         const next = cached.sectors.map(migrateSectorIfNeeded);
         setSectors(next);
         setBrief(cached.brief);
         setSource(cached.source || "client-cache");
         setLoadState("ready");
         setFromClientCache(true);
-        setSyncing(true);
+        // 不把 syncing 打開：有可用畫面時背景核對不應顯示「資料不完整」
       }
       const cachedStocks = readClientCache<StocksClientSnapshot>(
         CLIENT_CACHE_KEYS.stocks,
@@ -278,7 +279,7 @@ export function HomeApp() {
                 : refreshing || loadState === "loading"
                   ? "讀取中…"
                   : syncing
-                    ? "背景同步中…"
+                    ? "灰度更新中…"
                     : "觸發背景更新"}
             </button>
           </div>
@@ -306,11 +307,14 @@ export function HomeApp() {
             ))}
           </div>
 
-          {(fromClientCache || syncing) && boardMode === "sector" && (
+          {fromClientCache && boardMode === "sector" && (
             <p className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              {fromClientCache
-                ? "已先顯示本機快取，背景同步最新金流中…"
-                : "背景灰度同步中，畫面會自動刷新"}
+              已先顯示本機快取，正在核對伺服器最新結果…
+            </p>
+          )}
+          {syncing && !fromClientCache && boardMode === "sector" && (
+            <p className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              尚無正式 active 快取，目前顯示灰度 staging，完成後會自動切換
             </p>
           )}
 
@@ -386,7 +390,10 @@ export function HomeApp() {
                   aria-label="關閉"
                   onClick={() => setSelected(null)}
                 />
-                <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-2xl border border-border/60 bg-[var(--panel)] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl">
+                <div
+                  className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-2xl border border-border/60 bg-[var(--panel)] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <SectorDetail
                     sector={selected}
                     onClose={() => setSelected(null)}

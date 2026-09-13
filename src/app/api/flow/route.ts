@@ -80,16 +80,21 @@ export async function GET(req: Request) {
     }
 
     const sectors = payload.sectors.map(migrateSectorIfNeeded);
+    // 已有可用 active／last-close 時，背景重建不算「資料不完整」；
+    // 只有實際在讀 staging（尚無正式 active）才標 syncing。
+    const servingStaging = payload.deploySlot === "staging";
+    const backgroundBusy =
+      deploy.syncing ||
+      deploy.rebuildRunning ||
+      Boolean(rebuild?.started || rebuild?.alreadyRunning);
     return NextResponse.json({
       ok: true,
       ...payload,
       sectors,
       isDemo: false,
       dataProvenance: "twse+tpex-public",
-      syncing:
-        deploy.syncing ||
-        deploy.rebuildRunning ||
-        Boolean(rebuild?.started || rebuild?.alreadyRunning),
+      syncing: servingStaging,
+      backgroundBusy,
       rebuild,
       schedule,
       deploy,

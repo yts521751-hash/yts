@@ -75,7 +75,7 @@ function WindDial({ reading }: { reading: WindReading }) {
           <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums">
             {reading.score}
           </p>
-          <p className="text-[11px] text-muted-foreground">強度（非多空）</p>
+          <p className="text-[11px] text-muted-foreground">結構強度</p>
         </div>
       </div>
 
@@ -173,14 +173,14 @@ export function WindDashboard({
         <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
           <li>
             <span className="text-foreground">強度分數</span>
-            看指數與 MA5／月／季線的排列是否清楚，不是看乖離率絕對值，也不是多空分數。
+            依指數相對 MA5／月／季線的細分位置計分（站上權重大、跌破權重小），避免「站上月季」與「跌破月季」同分。
           </li>
           <li>
             <span className="text-foreground">右上角均線標籤</span>
-            ：多頭／空頭排列、站上月線、跌破月季線等。
+            ：多頭／空頭排列、站上月季線、低於五日、跌破月季線等。
           </li>
-          <li>強風：多頭或空頭排列完整（空頭排列也是強風）。</li>
-          <li>陣風：站上或跌破月／季線，但尚未排齊。</li>
+          <li>強風：多頭或空頭排列完整（空頭排列也是強風，分數仍會較低）。</li>
+          <li>陣風：站上或跌破月／季線，但尚未排齊；細看分數與標籤。</li>
           <li>亂流：均線方向打架且波動偏高。</li>
           <li>無風：均線糾結、波動低。</li>
         </ul>

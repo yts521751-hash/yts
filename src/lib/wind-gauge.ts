@@ -26,7 +26,7 @@ import {
 export type { MaStance, WindLevel, WindPayload, WindReading } from "@/lib/wind-types";
 export { MA_STANCE_LABEL, WIND_META } from "@/lib/wind-types";
 
-const CACHE = "wind-gauge-v2.json";
+const CACHE = "wind-gauge-v3.json";
 
 function sma(xs: number[], n: number): number | null {
   if (xs.length < n) return null;
@@ -45,6 +45,11 @@ function ymdDash(ymd: string) {
   return `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
 }
 
+/**
+ * 風力度：依指數與 MA5／月／季線的「細分位置」計分。
+ * 站上月季線與跌破月季線不再給對稱分（避免兩邊都 60）。
+ * 分數仍非單純多空標籤；右上角 maStance 才是結構文字。
+ */
 function classify(input: {
   close: number;
   ma5: number;
@@ -56,9 +61,12 @@ function classify(input: {
   market: "twse" | "tpex";
 }): { level: WindLevel; score: number } {
   const { close, ma5, ma20, ma60, vol20, sampleDays, market } = input;
-  const bull = close > ma5 && ma5 > ma20 && ma20 > ma60;
-  const bear = close < ma5 && ma5 < ma20 && ma20 < ma60;
-  // 三段均線鏈結同向數（指數→月→季結構），不用乖離率絕對值
+  const above5 = close > ma5;
+  const above20 = close > ma20;
+  const above60 = close > ma60;
+  const bull = above5 && ma5 > ma20 && ma20 > ma60;
+  const bear = !above5 && ma5 < ma20 && ma20 < ma60;
+
   const links = [
     Math.sign(close - ma5),
     Math.sign(ma5 - ma20),
@@ -68,14 +76,26 @@ function classify(input: {
   const downLinks = links.filter((s) => s < 0).length;
   const alignedLinks = Math.max(upLinks, downLinks);
   const conflicting = upLinks > 0 && downLinks > 0;
-  const aboveBoth = close > ma20 && close > ma60;
-  const belowBoth = close < ma20 && close < ma60;
-  const positionPts = aboveBoth || belowBoth ? 2 : close > ma20 || close < ma20 ? 1 : 0;
+
+  // 細分階梯：站上權重大、跌破權重小 → 同樣「陣風」分數也會拉開
+  let ladder = 0;
+  ladder += above5 ? 10 : 2;
+  ladder += above20 ? 16 : 3;
+  ladder += above60 ? 18 : 4;
+  ladder += upLinks * 6;
+  ladder += downLinks * 2;
+  // 站上月季但低於五日＝回測中的偏多結構
+  if (above20 && above60 && !above5) ladder += 5;
+  // 跌破月季但高於五日＝弱反彈
+  if (!above20 && !above60 && above5) ladder += 1;
+  if (bull) ladder += 10;
+  if (bear) ladder += 2;
 
   const annualVol = vol20 * Math.sqrt(252);
   const shortHist = sampleDays < 45;
   const turbVol = market === "tpex" ? 42 : 32;
   const calmVol = market === "tpex" ? 22 : 18;
+  const volNudge = annualVol > 24 ? 2 : annualVol < 14 ? -1 : 0;
 
   // 亂流：波動高且均線方向打架
   if (annualVol >= turbVol && conflicting && alignedLinks <= 1 && !shortHist) {
@@ -86,23 +106,21 @@ function classify(input: {
   }
   // 無風：結構糾結、波動低
   if (conflicting && alignedLinks <= 1 && annualVol <= calmVol) {
-    return { level: "calm", score: Math.max(8, 24 - alignedLinks * 2) };
+    return { level: "calm", score: Math.max(8, 18 + ladder * 0.15) };
   }
-  // 強風：多頭或空頭排列完整（多空都算強風）
+  // 強風：多頭或空頭排列完整（等級同為強風，分數仍依階梯區分）
   if ((bull || bear) && !shortHist) {
+    const cap = market === "tpex" ? 86 : 94;
     return {
       level: "gale",
-      score: Math.min(
-        market === "tpex" ? 82 : 90,
-        56 + alignedLinks * 8 + positionPts * 3 + (annualVol > 24 ? 2 : 0),
-      ),
+      score: Math.min(cap, Math.round(48 + ladder * 0.45 + volNudge)),
     };
   }
-  // 陣風：站上／跌破月季線等半成形結構
-  const gustCap = shortHist ? (market === "tpex" ? 52 : 58) : 68;
+  // 陣風：半成形結構 — 分數完全跟均線階梯走
+  const gustCap = shortHist ? (market === "tpex" ? 54 : 60) : 72;
   return {
     level: "gust",
-    score: Math.min(gustCap, 34 + alignedLinks * 7 + positionPts * 6),
+    score: Math.min(gustCap, Math.max(12, Math.round(8 + ladder * 0.7 + volNudge))),
   };
 }
 
@@ -540,14 +558,20 @@ function resolveMaStance(
   ma20: number,
   ma60: number,
 ): MaStance {
-  const bull = close > ma5 && ma5 > ma20 && ma20 > ma60;
-  const bear = close < ma5 && ma5 < ma20 && ma20 < ma60;
+  const above5 = close > ma5;
+  const above20 = close > ma20;
+  const above60 = close > ma60;
+  const bull = above5 && ma5 > ma20 && ma20 > ma60;
+  const bear = !above5 && ma5 < ma20 && ma20 < ma60;
   if (bull) return "bull-stack";
   if (bear) return "bear-stack";
-  if (close > ma20 && close > ma60) return "above-ma20-ma60";
-  if (close > ma20) return "above-ma20";
-  if (close < ma20 && close < ma60) return "below-ma20-ma60";
-  if (close < ma20) return "below-ma20";
+  if (above20 && above60 && !above5) return "above-ma20-ma60-below-ma5";
+  if (above20 && above60) return "above-ma20-ma60";
+  if (above20) return "above-ma20";
+  if (above60 && !above20) return "above-ma60-only";
+  if (!above20 && !above60 && above5) return "below-ma20-ma60-above-ma5";
+  if (!above20 && !above60) return "below-ma20-ma60";
+  if (!above20) return "below-ma20";
   return "tangled";
 }
 

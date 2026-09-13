@@ -5,8 +5,11 @@ export type MaStance =
   | "bull-stack"
   | "bear-stack"
   | "above-ma20-ma60"
+  | "above-ma20-ma60-below-ma5"
   | "above-ma20"
+  | "above-ma60-only"
   | "below-ma20-ma60"
+  | "below-ma20-ma60-above-ma5"
   | "below-ma20"
   | "tangled";
 
@@ -41,12 +44,12 @@ export const WIND_META: Record<
 > = {
   gale: {
     label: "強風",
-    hint: "指數與均線多頭／空頭排列清楚（多空都算強風）",
+    hint: "指數與均線多頭／空頭排列清楚（多空都算強風；分數仍依站上／跌破階梯區分）",
     color: "var(--mk-surge)",
   },
   gust: {
     label: "陣風",
-    hint: "站上或跌破月／季線等半成形結構，尚未完整排列",
+    hint: "站上或跌破月／季線等半成形結構；分數依 MA5／月／季細分，不再對稱打分",
     color: "var(--mk-rotate)",
   },
   turbulence: {
@@ -65,8 +68,11 @@ export const MA_STANCE_LABEL: Record<MaStance, string> = {
   "bull-stack": "多頭排列",
   "bear-stack": "空頭排列",
   "above-ma20-ma60": "站上月季線",
+  "above-ma20-ma60-below-ma5": "站上月季線、低於五日",
   "above-ma20": "站上月線",
+  "above-ma60-only": "僅站上季線",
   "below-ma20-ma60": "跌破月季線",
+  "below-ma20-ma60-above-ma5": "跌破月季線、高於五日",
   "below-ma20": "跌破月線",
   tangled: "均線糾結",
 };

@@ -123,7 +123,12 @@ export function SectorDetail({
 
       <div className="px-4 pb-2">
         <Link
-          href={`/sectors/${sector.id}`}
+          href={`/sectors/${encodeURIComponent(sector.id)}`}
+          prefetch={false}
+          onClick={(e) => {
+            // 避免行動版底層 sheet／overlay 攔截導致「打不開」
+            e.stopPropagation();
+          }}
           className="inline-flex w-full items-center justify-center gap-2 border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium transition hover:bg-muted/70"
         >
           <CandlestickChart className="size-4" />
