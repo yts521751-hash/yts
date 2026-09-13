@@ -4,6 +4,8 @@ import "server-only";
  */
 
 import {
+  fetchJson,
+  fetchJsonViaCurl,
   fetchTpexQuotes,
   getCachedDayQuotes,
   listCachedTradingDays,
@@ -102,46 +104,160 @@ async function fetchYahooCloses(symbol: string): Promise<{
   asOf: string;
   changePct: number;
 } | null> {
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
-      symbol,
-    )}?interval=1d&range=6mo`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "JinMai/1.0 (wind-gauge)",
-        Accept: "application/json",
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      chart?: {
-        result?: Array<{
-          timestamp?: number[];
-          indicators?: { quote?: Array<{ close?: Array<number | null> }> };
-        }>;
+  const hosts = [
+    "https://query1.finance.yahoo.com",
+    "https://query2.finance.yahoo.com",
+  ];
+  for (const host of hosts) {
+    try {
+      const url = `${host}/v8/finance/chart/${encodeURIComponent(
+        symbol,
+      )}?interval=1d&range=6mo`;
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; JinMai/1.0; +https://jinliu-board.onrender.com)",
+          Accept: "application/json,text/plain,*/*",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        chart?: {
+          result?: Array<{
+            timestamp?: number[];
+            indicators?: { quote?: Array<{ close?: Array<number | null> }> };
+          }>;
+        };
       };
-    };
-    const result = data.chart?.result?.[0];
-    const raw = result?.indicators?.quote?.[0]?.close ?? [];
-    const closes = raw.filter((x): x is number => typeof x === "number" && x > 0);
-    // 櫃買指數有時資料點略少於加權，40 日已夠算 BIAS20／波動
-    if (closes.length < 40) return null;
-    const last = closes[closes.length - 1];
-    const prev = closes[closes.length - 2] ?? last;
-    const ts = result?.timestamp?.[result.timestamp.length - 1];
-    const asOf = ts
-      ? new Date(ts * 1000).toISOString().slice(0, 10)
-      : new Date().toISOString().slice(0, 10);
-    return {
-      closes,
-      asOf,
-      changePct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
-    };
-  } catch {
-    return null;
+      const result = data.chart?.result?.[0];
+      const raw = result?.indicators?.quote?.[0]?.close ?? [];
+      const closes = raw.filter(
+        (x): x is number => typeof x === "number" && x > 0,
+      );
+      // 櫃買指數有時資料點略少於加權，40 日已夠算 BIAS20／波動
+      if (closes.length < 40) continue;
+      const last = closes[closes.length - 1];
+      const prev = closes[closes.length - 2] ?? last;
+      const ts = result?.timestamp?.[result.timestamp.length - 1];
+      const asOf = ts
+        ? new Date(ts * 1000).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+      return {
+        closes,
+        asOf,
+        changePct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
+      };
+    } catch {
+      /* try next host */
+    }
   }
+  return null;
+}
+
+function parseTwseNum(raw: string): number | null {
+  const n = Number(String(raw).replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 民國年日期 → YYYY-MM-DD */
+function rocDateToIso(raw: string): string | null {
+  const m = String(raw)
+    .trim()
+    .match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
+  if (!m) return null;
+  const y = Number(m[1]) + 1911;
+  const mo = m[2].padStart(2, "0");
+  const d = m[3].padStart(2, "0");
+  return `${y}-${mo}-${d}`;
+}
+
+const TWSE_SERIES = "wind-twse-fmtqik.json";
+
+/**
+ * 證交所 FMTQIK：發行量加權股價指數日收盤（Yahoo 在雲端常被擋時的主備援）
+ */
+async function fetchTwseIndexCloses(options?: {
+  force?: boolean;
+}): Promise<{
+  closes: number[];
+  asOf: string;
+  changePct: number;
+  source: string;
+} | null> {
+  type Point = { date: string; close: number };
+  type Series = { points: Point[]; updatedAt: string };
+  if (!options?.force) {
+    const cached = await readCacheFile<Series>(TWSE_SERIES);
+    if (cached?.points && cached.points.length >= 40 && cached.updatedAt) {
+      const age = Date.now() - Date.parse(cached.updatedAt);
+      if (Number.isFinite(age) && age >= 0 && age < 6 * 60 * 60 * 1000) {
+        const pts = cached.points;
+        const last = pts[pts.length - 1];
+        const prev = pts[pts.length - 2] ?? last;
+        return {
+          closes: pts.map((p) => p.close),
+          asOf: last.date,
+          changePct:
+            prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+          source: "twse-FMTQIK-cache",
+        };
+      }
+    }
+  }
+
+  const points: Point[] = [];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const y = dt.getUTCFullYear();
+    const m = dt.getUTCMonth() + 1;
+    const date = `${y}${String(m).padStart(2, "0")}01`;
+    const url = `https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?response=json&date=${date}`;
+    try {
+      const payload =
+        (await fetchJsonViaCurl<{
+          stat?: string;
+          data?: string[][];
+        }>(url)) ??
+        (await fetchJson<{
+          stat?: string;
+          data?: string[][];
+        }>(url));
+      if (!payload || payload.stat !== "OK" || !payload.data?.length) continue;
+      for (const row of payload.data) {
+        const iso = rocDateToIso(String(row[0] ?? ""));
+        const close = parseTwseNum(String(row[4] ?? ""));
+        if (!iso || close == null || close <= 0) continue;
+        points.push({ date: iso, close });
+      }
+    } catch {
+      /* next month */
+    }
+  }
+
+  const byDate = new Map<string, number>();
+  for (const p of points) byDate.set(p.date, p.close);
+  const ordered = [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, close]) => ({ date, close }));
+  if (ordered.length < 40) return null;
+
+  await writeCacheFile(TWSE_SERIES, {
+    points: ordered,
+    updatedAt: new Date().toISOString(),
+  } satisfies Series);
+
+  const last = ordered[ordered.length - 1];
+  const prev = ordered[ordered.length - 2] ?? last;
+  return {
+    closes: ordered.map((p) => p.close),
+    asOf: last.date,
+    changePct:
+      prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+    source: "twse-FMTQIK",
+  };
 }
 
 type TpexSeries = {
@@ -425,17 +541,32 @@ export async function computeWindPayload(options?: {
     }
   }
 
-  const twii = await fetchYahooCloses("^TWII");
-  const twse = twii
+  // 上市加權：優先證交所 FMTQIK（Render 上 Yahoo 常被擋，會變成全日漲跌／BIAS=0）
+  const twseOfficial = await fetchTwseIndexCloses({ force: options?.force });
+  const twii = twseOfficial ? null : await fetchYahooCloses("^TWII");
+  const twse = twseOfficial
     ? readingFromCloses(
         "twse",
         "上市（加權）",
-        twii.closes,
-        twii.changePct,
-        twii.asOf,
-        "yahoo-TWII",
+        twseOfficial.closes,
+        twseOfficial.changePct,
+        twseOfficial.asOf,
+        twseOfficial.source,
       )
-    : fallbackReading("twse", "上市（加權）", options?.twseDayChangePct ?? 0);
+    : twii
+      ? readingFromCloses(
+          "twse",
+          "上市（加權）",
+          twii.closes,
+          twii.changePct,
+          twii.asOf,
+          "yahoo-TWII",
+        )
+      : fallbackReading(
+          "twse",
+          "上市（加權）",
+          options?.twseDayChangePct ?? 0,
+        );
 
   // 櫃買：優先本機上櫃股成交加權合成。Yahoo ^TWOII 圖表近期失真（單日可達 -7%），不當作主來源。
   let tpex: WindReading;

@@ -123,8 +123,15 @@ function WindDial({ reading }: { reading: WindReading }) {
       </dl>
       <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
         {meta.hint}
-        {reading.source.includes("tpex-turnover")
+        {reading.source.includes("tpex-turnover") ||
+        reading.source.includes("tpex-turnover-weighted")
           ? " · 櫃買指數為上櫃股成交加權合成（非 Yahoo）"
+          : ""}
+        {reading.source.includes("FMTQIK")
+          ? " · 加權指數取自證交所 FMTQIK"
+          : ""}
+        {reading.source.includes("fallback") && !reading.close
+          ? " · 指數序列暫缺，數值可能不完整"
           : ""}
       </p>
     </article>
