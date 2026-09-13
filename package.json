@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "next dev -p 43127 -H 0.0.0.0",
     "build": "next build",
-    "start": "next start -p 43127 -H 0.0.0.0",
+    "start": "next start -H 0.0.0.0 -p ${PORT:-43127}",
     "lint": "eslint"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

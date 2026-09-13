@@ -1,0 +1,15 @@
+node_modules
+.next
+.cache
+.git
+.github
+*.md
+.env*
+.vercel
+coverage
+tsconfig.tsbuildinfo
+playwright-report
+test-results
+opt
+tmp
+*.log

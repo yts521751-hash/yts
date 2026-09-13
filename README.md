@@ -28,9 +28,17 @@ npm run build && npm run start
 # 或開發：npm run dev
 ```
 
-預設綁定 `0.0.0.0:43127`。本機開啟 [http://127.0.0.1:43127](http://127.0.0.1:43127)。
+預設綁定 `0.0.0.0:43127`（雲端會讀 `PORT`）。本機開啟 [http://127.0.0.1:43127](http://127.0.0.1:43127)。
 
-> 目前以本機精煉為主，暫不對外公開。
+## 公開發布／持續迭代
+
+需要長駐 Node（排程＋快取）。已附：
+
+- `render.yaml` → Render Blueprint，連 GitHub 後 **push `main` 自動重發**
+- `Dockerfile` + `fly.toml` → Fly.io；可選 GitHub Secret `FLY_API_TOKEN` 自動部署
+- `.github/workflows/ci.yml` → 每次推送驗證 `npm run build`
+
+步驟與注意事項見 [DEPLOY.md](./DEPLOY.md)。
 
 ## API
 

@@ -1,0 +1,19 @@
+# Render Blueprint：連上 GitHub 後一鍵建立服務，之後 push main 自動重發
+# https://dashboard.render.com/blueprints
+services:
+  - type: web
+    name: jinliu-board
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TZ
+        value: Asia/Taipei
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
