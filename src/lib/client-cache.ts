@@ -37,10 +37,10 @@ export function writeClientCache<T>(key: string, data: T) {
 
 export const CLIENT_CACHE_KEYS = {
   /** v2：略過可能不完整的舊本機快取 */
-  flow: "jinliu:cache:flow:v2",
-  stocks: "jinliu:cache:stocks:v2",
+  flow: "jinliu:cache:flow:v3",
+  stocks: "jinliu:cache:stocks:v3",
   wind: "jinliu:cache:wind:v2",
   turnover: "jinliu:cache:turnover:v2",
-  ma: "jinliu:cache:ma-screener:v4",
+  ma: "jinliu:cache:ma-screener:v5",
   news: "jinliu:cache:news:v1",
 } as const;

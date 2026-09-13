@@ -11,18 +11,17 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const force = searchParams.get("force") === "1";
   try {
-    // 先回磁碟快取，避免首屏空等；缺資料或 force 再補建
+    // 先回磁碟快取；若多數無 MA20（日線不足）則重掃
     if (!force) {
       const cached = await readMaScreenerCache();
       if (cached?.rows?.length) {
-        // 日終大包已寫快照：開頁只讀，不在每次請求背景重算
         return NextResponse.json({ ok: true, ...cached, source: "cache" });
       }
     }
 
     const data = await buildMaScreener({
       forceRebuildMissing: true,
-      skipDiskCache: force,
+      skipDiskCache: true,
     });
     return NextResponse.json({ ok: true, ...data });
   } catch (err) {

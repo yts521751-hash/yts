@@ -202,6 +202,16 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
   const cached = await readCacheFile<MaScreenerPayload>(MA_SCREENER_CACHE);
   if (!cached?.rows?.length) return null;
 
+  // 多數列算不出 MA20（日線不足）→ 視為壞快照，交由 build 重掃
+  const shortBars = cached.rows.filter((r) => (r.bars ?? 0) < 20).length;
+  const missingMa20 = cached.rows.filter((r) => r.ma20 == null).length;
+  if (
+    shortBars >= Math.ceil(cached.rows.length * 0.5) ||
+    missingMa20 >= Math.ceil(cached.rows.length * 0.5)
+  ) {
+    return null;
+  }
+
   const needsD5 = cached.rows.some(
     (r) => typeof r.amt5 !== "number" || typeof r.flow5 !== "number",
   );
@@ -217,7 +227,6 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
     cached.counts?.total === fixed.counts.total;
 
   if (!same) {
-    // 不阻塞回傳：背景回寫即可
     void writeCacheFile(MA_SCREENER_CACHE, {
       ...fixed,
       builtAt: cached.builtAt,
@@ -248,19 +257,26 @@ export async function buildMaScreener(options?: {
   }
 
   const defs = await listIndustryDefs();
+  // 均線掃描至少要 20 根才能算月線；先補報價歷史
+  try {
+    const { ensureQuoteHistory } = await import("@/lib/turnover");
+    await ensureQuoteHistory(60);
+  } catch {
+    /* ignore */
+  }
   const shouldFillMissing =
     Boolean(options?.forceRebuildMissing) || defs.length > 0;
 
   const rows = (
     await mapPool(defs, 6, async (def) => {
       let payload = await readSectorKlineCache(def.id);
+      const bars = payload?.candles?.length ?? 0;
       const needBuild =
-        shouldFillMissing &&
-        (!payload?.candles || payload.candles.length < 20);
+        shouldFillMissing && (!payload?.candles || bars < 20);
       if (needBuild) {
         payload = await buildSectorKline(def.id, 80, {
           def,
-          force: Boolean(options?.forceRebuildMissing),
+          force: true,
         }).catch(() => null);
       }
       if (!payload?.candles?.length) return null;

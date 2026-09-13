@@ -126,19 +126,21 @@ export async function buildSectorKline(
   if (!def) return null;
 
   // 快取優先：先讀記憶體／磁碟，避免每次都掃交易日清單
+  // 但日線根數不足時不可當「夠用」——否則 MA20／MA60 會永遠算不出來
+  const minBars = Math.min(days, 60);
   if (!options?.force) {
     const mem = memGet(id);
-    if (mem?.candles?.length) {
+    if (mem?.candles?.length && mem.candles.length >= minBars) {
       const latest = await getLatestCachedTradingDay();
       if (!latest || mem.quoteDays?.[0] === latest) return mem;
     }
     const disk = await readDiskKline(id);
-    if (disk?.candles?.length) {
+    if (disk?.candles?.length && disk.candles.length >= minBars) {
       const latest = await getLatestCachedTradingDay();
       const freshEnough =
         !latest ||
         disk.quoteDays?.[0] === latest ||
-        (disk.quoteDays?.length ?? 0) >= Math.min(days, 40) - 2;
+        (disk.quoteDays?.length ?? 0) >= minBars - 2;
       if (freshEnough) {
         memSet(disk);
         return { ...disk, source: "cache" };
@@ -146,7 +148,13 @@ export async function buildSectorKline(
     }
   }
 
-  // 日線 + MA60 需要足夠交易日；只掃本機快取，不在請求路徑打證交所
+  // 日線 + MA60 需要足夠交易日；缺快取時先補報價再掃
+  try {
+    const { ensureQuoteHistory } = await import("@/lib/turnover");
+    await ensureQuoteHistory(Math.max(days, 60));
+  } catch {
+    /* 補價失敗仍嘗試用現有快取 */
+  }
   const tradingDays = await listCachedTradingDays(days, 180);
   if (tradingDays.length < 5) return null;
 

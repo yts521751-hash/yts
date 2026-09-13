@@ -4,16 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SectorFlow, TideStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { cpScore } from "@/lib/mock-data";
-import {
-  formatHeat,
-  formatPct,
-  formatYi,
-  formatYiSigned,
-  signedClass,
-} from "@/lib/format";
+import { formatHeat, formatPct, formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
+import { statusFromFlow } from "@/lib/money-flow";
 
 export type RankPeriod = "day" | "d3" | "d5";
 
@@ -77,9 +72,9 @@ const PIN_THEME_IDS = new Set([
 ]);
 
 const RANK_LIMIT = 20;
-const RANK_UI_KEY = "jinliu:rank-ui:v1";
+const RANK_UI_KEY = "jinliu:rank-ui:v2";
 
-type RankUiState = { sortKey: SortKey; asc: boolean };
+type RankUiState = { sortKey: SortKey; asc: boolean; period?: RankPeriod };
 
 function readRankUi(): RankUiState {
   if (typeof window === "undefined") return { sortKey: "amt", asc: false };
@@ -240,7 +235,8 @@ export function SectorRanking({
 
   const { rows, totalMatched } = useMemo(() => {
     const list = sectors.filter((s) => {
-      if (filter !== "all" && s.status !== filter) return false;
+      const liveStatus = statusFromFlow(s.d5Flow ?? 0, s.accel ?? 0);
+      if (filter !== "all" && liveStatus !== filter) return false;
       if (kindFilter !== "all" && (s.kind ?? "theme") !== kindFilter) return false;
       return true;
     });
@@ -344,10 +340,21 @@ export function SectorRanking({
 
       <div className="min-h-0 flex-1 space-y-2 overflow-auto p-1 md:hidden">
         {rows.map((s, i) => {
-          const meta = STATUS_META[s.status];
+          const liveStatus = statusFromFlow(s.d5Flow ?? 0, s.accel ?? 0);
+          const meta = STATUS_META[liveStatus];
           const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
           const amt = periodAmt(s, period);
           const flow = periodFlow(s, period);
+          const sortMetric = sortValue(s, sortKey, period);
+          const sortLabel = columns.find((c) => c.key === sortKey)?.label ?? "排序";
+          const sortText =
+            sortKey === "heat"
+              ? formatHeat(sortMetric)
+              : sortKey === "priceChange20d"
+                ? formatPct(sortMetric)
+                : sortKey === "cp"
+                  ? sortMetric.toFixed(1)
+                  : formatYiSigned(sortMetric);
           return (
             <button
               key={s.id}
@@ -376,14 +383,21 @@ export function SectorRanking({
                     {KIND_LABEL[kind]}
                   </span>
                 </div>
-                {/* 與桌面表一致：永遠顯示成交額＋淨流，避免手機只看排序欄位造成「數字不一樣」 */}
                 <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
                   <span>
-                    {period === "day" ? "成交" : period === "d3" ? "3日成交" : "5日成交"}{" "}
+                    {period === "day"
+                      ? "成交"
+                      : period === "d3"
+                        ? "3日成交"
+                        : "5日成交"}{" "}
                     {formatYi(amt)}
                   </span>
                   <span className={signedClass(flow)}>
-                    {period === "day" ? "淨流" : period === "d3" ? "3日流" : "5日流"}{" "}
+                    {period === "day"
+                      ? "淨流"
+                      : period === "d3"
+                        ? "3日流"
+                        : "5日流"}{" "}
                     {formatYiSigned(flow)}
                   </span>
                 </div>
@@ -392,18 +406,14 @@ export function SectorRanking({
                 <p
                   className={cn(
                     "text-xs font-semibold tabular-nums",
-                    signedClass(flow),
+                    sortKey === "heat" || sortKey === "cp"
+                      ? "text-foreground"
+                      : signedClass(sortMetric),
                   )}
                 >
-                  {formatYiSigned(flow)}
+                  {sortText}
                 </p>
-                <p className="text-[10px] text-muted-foreground">
-                  {period === "day"
-                    ? "當日淨流"
-                    : period === "d3"
-                      ? "近 3 日流"
-                      : "近 5 日流"}
-                </p>
+                <p className="text-[10px] text-muted-foreground">{sortLabel}</p>
               </div>
             </button>
           );
@@ -451,7 +461,8 @@ export function SectorRanking({
           </thead>
           <tbody>
             {rows.map((s, i) => {
-              const meta = STATUS_META[s.status];
+              const liveStatus = statusFromFlow(s.d5Flow ?? 0, s.accel ?? 0);
+              const meta = STATUS_META[liveStatus];
               const score = cpScore(s);
               const kind = (s.kind ?? "theme") as Exclude<KindFilter, "all">;
               const amt = periodAmt(s, period);

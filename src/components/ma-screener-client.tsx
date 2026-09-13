@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, RefreshCw } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -13,6 +13,7 @@ import type { MaScreenerPayload, MaScreenerRow } from "@/lib/ma-screener-types";
 import { cn } from "@/lib/utils";
 
 type Filter = "all" | "ma5" | "ma10" | "ma20" | "all3";
+type SortKey = "score" | "amt5" | "flow5" | "bias20" | "close";
 
 function isAbove(close: number, ma: number | null | undefined) {
   return ma != null && close >= ma;
@@ -27,7 +28,26 @@ function rowFlags(row: MaScreenerRow) {
     above10,
     above20,
     aboveAll: above5 && above10 && above20,
+    aboveCount: Number(above5) + Number(above10) + Number(above20),
   };
+}
+
+function sortScore(row: MaScreenerRow) {
+  const f = rowFlags(row);
+  return (
+    Number(f.aboveAll) * 8 +
+    Number(f.above20) * 4 +
+    Number(f.above10) * 2 +
+    Number(f.above5)
+  );
+}
+
+function sortValue(row: MaScreenerRow, key: SortKey) {
+  if (key === "amt5") return row.amt5 ?? 0;
+  if (key === "flow5") return row.flow5 ?? 0;
+  if (key === "bias20") return row.bias20 ?? -999;
+  if (key === "close") return row.close;
+  return sortScore(row);
 }
 
 const FILTERS: Array<{ id: Filter; label: string; hint: string }> = [
@@ -36,6 +56,13 @@ const FILTERS: Array<{ id: Filter; label: string; hint: string }> = [
   { id: "ma5", label: "站上五日", hint: "收盤 ≥ MA5" },
   { id: "ma10", label: "站上十日", hint: "收盤 ≥ MA10" },
   { id: "ma20", label: "站上月線", hint: "收盤 ≥ MA20" },
+];
+
+const SORTS: Array<{ id: SortKey; label: string }> = [
+  { id: "score", label: "站上強度" },
+  { id: "amt5", label: "5日成交" },
+  { id: "flow5", label: "5日淨流入" },
+  { id: "bias20", label: "乖離20" },
 ];
 
 function Bias({ value }: { value: number | null }) {
@@ -80,9 +107,8 @@ function RowCard({ row }: { row: MaScreenerRow }) {
         <div className="min-w-0">
           <div className="truncate font-medium">{row.name}</div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            收盤 {row.close.toFixed(2)} · 站上{" "}
-            {Number(flags.above5) + Number(flags.above10) + Number(flags.above20)}
-            /3
+            收盤 {row.close.toFixed(2)} · 站上 {flags.aboveCount}/3
+            {row.ma20 == null ? " · 月線未就緒" : ""}
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-1">
@@ -110,26 +136,6 @@ function RowCard({ row }: { row: MaScreenerRow }) {
           </div>
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
-        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
-          <div className="text-muted-foreground">乖離5</div>
-          <div className="mt-0.5 font-semibold tabular-nums">
-            <Bias value={row.bias5} />
-          </div>
-        </div>
-        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
-          <div className="text-muted-foreground">乖離10</div>
-          <div className="mt-0.5 font-semibold tabular-nums">
-            <Bias value={row.bias10} />
-          </div>
-        </div>
-        <div className="rounded-lg bg-muted/30 px-2.5 py-2">
-          <div className="text-muted-foreground">乖離20</div>
-          <div className="mt-0.5 font-semibold tabular-nums">
-            <Bias value={row.bias20} />
-          </div>
-        </div>
-      </div>
     </Link>
   );
 }
@@ -137,11 +143,17 @@ function RowCard({ row }: { row: MaScreenerRow }) {
 function seedFrom(
   initial: MaScreenerPayload | null,
 ): { data: MaScreenerPayload | null; fromCache: boolean } {
-  if (initial?.rows?.length) return { data: initial, fromCache: false };
+  const usable = (p: MaScreenerPayload | null) => {
+    if (!p?.rows?.length) return false;
+    const noMa20 = p.rows.filter((r) => r.ma20 == null).length;
+    // 舊本機快取多數無月線 → 丟掉，改等伺服器
+    return noMa20 < Math.ceil(p.rows.length * 0.5);
+  };
+  if (usable(initial)) return { data: initial, fromCache: false };
   if (typeof window === "undefined") return { data: null, fromCache: false };
   const cached = readClientCache<MaScreenerPayload>(CLIENT_CACHE_KEYS.ma);
-  if (cached?.rows?.length) return { data: cached, fromCache: true };
-  return { data: null, fromCache: false };
+  if (usable(cached)) return { data: cached, fromCache: true };
+  return { data: usable(initial) ? initial : null, fromCache: false };
 }
 
 export function MaScreenerClient({
@@ -155,6 +167,8 @@ export function MaScreenerClient({
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("score");
+  const [asc, setAsc] = useState(false);
   const [fromCache, setFromCache] = useState(() => seeded.fromCache);
 
   const hasRowsRef = useRef(Boolean(seeded.data?.rows?.length));
@@ -195,23 +209,28 @@ export function MaScreenerClient({
   }, []);
 
   useEffect(() => {
-    // 已有 SSR／本機快照：先畫出來，稍後再輕量校對，避免開頁感覺卡住
     if (seeded.data?.rows?.length) {
       setLoading(false);
-      const t = window.setTimeout(() => void load(false), 1200);
-      return () => window.clearTimeout(t);
+      // 有可用快照就略過自動重抓；手動「重新掃描」才 force
+      return;
     }
     void load(false);
   }, [load, seeded.data?.rows?.length]);
 
   const filtered = useMemo(() => {
     const rows = data?.rows ?? [];
-    if (filter === "ma5") return rows.filter((r) => rowFlags(r).above5);
-    if (filter === "ma10") return rows.filter((r) => rowFlags(r).above10);
-    if (filter === "ma20") return rows.filter((r) => rowFlags(r).above20);
-    if (filter === "all3") return rows.filter((r) => rowFlags(r).aboveAll);
-    return rows;
-  }, [data, filter]);
+    let list = rows;
+    if (filter === "ma5") list = rows.filter((r) => rowFlags(r).above5);
+    else if (filter === "ma10") list = rows.filter((r) => rowFlags(r).above10);
+    else if (filter === "ma20") list = rows.filter((r) => rowFlags(r).above20);
+    else if (filter === "all3") list = rows.filter((r) => rowFlags(r).aboveAll);
+
+    return [...list].sort((a, b) => {
+      const d = sortValue(a, sortKey) - sortValue(b, sortKey);
+      if (d !== 0) return asc ? d : -d;
+      return (b.amt5 ?? 0) - (a.amt5 ?? 0);
+    });
+  }, [data, filter, sortKey, asc]);
 
   const summary = useMemo(() => {
     const rows = data?.rows ?? [];
@@ -235,6 +254,14 @@ export function MaScreenerClient({
   );
 
   const activeHint = FILTERS.find((f) => f.id === filter)?.hint ?? "";
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setAsc((v) => !v);
+    else {
+      setSortKey(key);
+      setAsc(false);
+    }
+  };
 
   return (
     <div className="relative min-h-full flex-1 pb-20 md:pb-6">
@@ -265,7 +292,7 @@ export function MaScreenerClient({
           產業均線掃描
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          找出產業指數收盤站上五日、十日、二十日線的族群，並顯示近五日成交與淨流入。點列可進產業 K 線。
+          找出產業指數收盤站上五日、十日、二十日線的族群，並顯示近五日成交與淨流入。點欄位可排序。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料
@@ -315,9 +342,40 @@ export function MaScreenerClient({
           })}
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">{activeHint}</p>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {SORTS.map((s) => {
+            const active = sortKey === s.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggleSort(s.id)}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition",
+                  active
+                    ? "border-[var(--mk-surge)]/50 bg-[var(--mk-surge-bg)] font-semibold text-foreground"
+                    : "border-border/50 bg-[var(--panel)]/70 text-muted-foreground",
+                )}
+              >
+                {s.label}
+                {active ? (
+                  asc ? (
+                    <ArrowUp className="size-3" />
+                  ) : (
+                    <ArrowDown className="size-3" />
+                  )
+                ) : (
+                  <ArrowUpDown className="size-3 opacity-40" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
         {shortBars > 0 ? (
-          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-            有 {shortBars} 個產業日線不足 20 根，月線／三線可能暫時無法判定；可按「重新掃描」補建。
+          <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+            有 {shortBars} 個產業日線不足 20 根，月線／三線可能暫時無法判定；請按「重新掃描」補建報價歷史。
           </p>
         ) : null}
 
@@ -339,8 +397,8 @@ export function MaScreenerClient({
         ) : filtered.length === 0 ? (
           <div className="mt-6 rounded-xl border border-border/50 bg-[var(--panel)]/60 px-5 py-10 text-center text-sm text-muted-foreground">
             目前沒有符合「{FILTERS.find((f) => f.id === filter)?.label}」的產業。
-            {!data?.rows?.length
-              ? " 正在補建產業 K 線，請稍後按「重新掃描」。"
+            {shortBars > 0 || (data?.rows ?? []).some((r) => r.ma20 == null)
+              ? " 日線／月線尚未就緒，請按「重新掃描」。"
               : ""}
           </div>
         ) : (
@@ -358,8 +416,42 @@ export function MaScreenerClient({
                     <th className="px-4 py-3 font-medium">產業</th>
                     <th className="px-3 py-3 font-medium">收盤</th>
                     <th className="px-3 py-3 font-medium">站上</th>
-                    <th className="px-3 py-3 font-medium">5日成交</th>
-                    <th className="px-3 py-3 font-medium">5日淨流入</th>
+                    <th className="px-3 py-3 font-medium">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                        onClick={() => toggleSort("amt5")}
+                      >
+                        5日成交
+                        {sortKey === "amt5" ? (
+                          asc ? (
+                            <ArrowUp className="size-3" />
+                          ) : (
+                            <ArrowDown className="size-3" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="size-3 opacity-40" />
+                        )}
+                      </button>
+                    </th>
+                    <th className="px-3 py-3 font-medium">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 hover:text-foreground"
+                        onClick={() => toggleSort("flow5")}
+                      >
+                        5日淨流入
+                        {sortKey === "flow5" ? (
+                          asc ? (
+                            <ArrowUp className="size-3" />
+                          ) : (
+                            <ArrowDown className="size-3" />
+                          )
+                        ) : (
+                          <ArrowUpDown className="size-3 opacity-40" />
+                        )}
+                      </button>
+                    </th>
                     <th className="px-3 py-3 font-medium">乖離5</th>
                     <th className="px-3 py-3 font-medium">乖離10</th>
                     <th className="px-4 py-3 font-medium">乖離20</th>

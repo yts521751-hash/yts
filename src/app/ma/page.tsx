@@ -6,14 +6,30 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function isWeakMaSnapshot(
+  payload: Awaited<ReturnType<typeof readMaScreenerCache>>,
+) {
+  if (!payload?.rows?.length) return true;
+  const short = payload.rows.filter((r) => (r.bars ?? 0) < 20).length;
+  const noMa20 = payload.rows.filter((r) => r.ma20 == null).length;
+  return (
+    short >= Math.ceil(payload.rows.length * 0.5) ||
+    noMa20 >= Math.ceil(payload.rows.length * 0.5)
+  );
+}
+
 export default async function MaPage() {
-  // 有日終快照就只讀快取，開頁不再觸發背景重掃（避免拖慢）
   let initial = await readMaScreenerCache();
-  if (!initial?.rows?.length) {
+
+  // 壞快照（多數無 MA20／日線不足）：同步重掃，否則月線／三線會一直是空的
+  if (isWeakMaSnapshot(initial)) {
     try {
-      initial = await buildMaScreener({ forceRebuildMissing: true });
+      initial = await buildMaScreener({
+        forceRebuildMissing: true,
+        skipDiskCache: true,
+      });
     } catch {
-      initial = null;
+      initial = initial?.rows?.length ? initial : null;
     }
   }
 

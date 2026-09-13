@@ -66,13 +66,15 @@ export const SECTORS: SectorFlow[] = SECTOR_UNIVERSE.map((def, i) => {
   };
 });
 
-/** 舊快取缺欄位時補預設，避免 UI 炸掉 */
+/** 舊快取缺欄位時補預設，並一律重算四態（避免手機／電腦各吃舊 status） */
 export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
   const dayFlow = s.dayFlow ?? 0;
   const d3Flow = s.d3Flow ?? (s.d5Flow ?? 0) * 0.6;
   const d5Flow = s.d5Flow ?? 0;
   const d20Flow = s.d20Flow ?? 0;
-  const accel = s.accel ?? d5Flow / 5 - d20Flow / 20;
+  const accel =
+    s.accel ??
+    Math.round((d5Flow / 5 - d20Flow / 20) * 10) / 10;
   return {
     ...s,
     dayFlow,
@@ -86,7 +88,7 @@ export function migrateSectorIfNeeded(s: SectorFlow): SectorFlow {
     d20: s.d20 ?? 0,
     accel,
     heat: s.heat ?? 1,
-    status: s.status ?? statusFromFlow(d5Flow, accel),
+    status: statusFromFlow(d5Flow, accel),
     stocks: (s.stocks ?? []).map((st) => ({
       ...st,
       dayFlow: st.dayFlow ?? 0,
@@ -127,12 +129,13 @@ export function getTopBuySectors(sectors: SectorFlow[], limit = 5): SectorFlow[]
 }
 
 export function countByStatus(sectors: SectorFlow[]) {
-  return {
-    surge: sectors.filter((s) => s.status === "surge").length,
-    rotate: sectors.filter((s) => s.status === "rotate").length,
-    watch: sectors.filter((s) => s.status === "watch").length,
-    ebb: sectors.filter((s) => s.status === "ebb").length,
-  };
+  // 用 d5Flow／accel 即時重算，避免舊快取 status 讓手機／電腦數字不一致
+  const counts = { surge: 0, rotate: 0, watch: 0, ebb: 0 };
+  for (const s of sectors) {
+    const st = statusFromFlow(s.d5Flow ?? 0, s.accel ?? 0);
+    counts[st] += 1;
+  }
+  return counts;
 }
 
 export type { TideStatus };
