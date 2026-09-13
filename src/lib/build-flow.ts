@@ -468,5 +468,11 @@ export async function buildFlowPayload(options?: {
 
 export async function getDeployStatus() {
   const meta = await readDeployMeta();
-  return { ...meta, rebuildRunning: isRebuildRunning() };
+  const { readDailyCloseMeta } = await import("@/lib/daily-close-package");
+  const dailyClose = await readDailyCloseMeta().catch(() => null);
+  return {
+    ...meta,
+    rebuildRunning: isRebuildRunning(),
+    dailyClose,
+  };
 }

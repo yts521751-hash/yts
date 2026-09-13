@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   buildMaScreener,
   readMaScreenerCache,
-  requestMaScreenerWarmup,
 } from "@/lib/ma-screener";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +15,7 @@ export async function GET(req: Request) {
     if (!force) {
       const cached = await readMaScreenerCache();
       if (cached?.rows?.length) {
-        // 背景刷新（不阻塞回應）
-        requestMaScreenerWarmup("api-stale-refresh");
+        // 日終大包已寫快照：開頁只讀，不在每次請求背景重算
         return NextResponse.json({ ok: true, ...cached, source: "cache" });
       }
     }

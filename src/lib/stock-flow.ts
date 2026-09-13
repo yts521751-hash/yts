@@ -73,7 +73,8 @@ export async function buildStockFlowRanking(
     const cached = await readCacheFile<StockFlowPayload>(CACHE);
     if (cached?.rows?.length) {
       const age = Date.now() - Date.parse(cached.builtAt || "");
-      if (Number.isFinite(age) && age >= 0 && age < 10 * 60 * 1000) {
+      // 日終大包寫入後，盤中／夜間都直接讀快照（約 20 小時）；只有 force 或過期才重算
+      if (Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000) {
         const rows = cached.rows;
         const needFund = rows.some((r) => r.revenueYoy == null && r.epsGrowth == null);
         if (needFund) {

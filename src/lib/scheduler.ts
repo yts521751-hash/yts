@@ -88,14 +88,24 @@ async function runSync(reason: string) {
   state.lastRunAt = new Date().toISOString();
   console.log(`[scheduler] start sync (${reason}) at ${state.lastRunAt}`);
   try {
-    const { rebuildFlowPayload } = await import("@/lib/build-flow");
-    // 排程同步（18:00／18:30／19:00）定稿切 active
-    const payload = await rebuildFlowPayload({ promote: true });
-    state.lastResult = "ok";
-    state.lastError = null;
-    console.log(
-      `[scheduler] sync ok: ${payload.brief.date} sectors=${payload.sectors.length} source=${payload.source}`,
-    );
+    // 日終大包：一次拉齊資金流／報價／K 線／個股／風度／均線／收盤成交排行
+    // 之後各頁只讀 .cache；盤中即時僅成交排行 live
+    const { runDailyClosePackage } = await import("@/lib/daily-close-package");
+    const meta = await runDailyClosePackage(reason);
+    const failed = meta.steps.filter((s) => !s.ok);
+    if (failed.length && !meta.artifacts.flow) {
+      state.lastResult = "error";
+      state.lastError = failed.map((f) => `${f.name}:${f.detail}`).join("; ");
+      console.error(`[scheduler] sync failed (flow):`, state.lastError);
+    } else {
+      state.lastResult = failed.length ? "ok" : "ok";
+      state.lastError = failed.length
+        ? `partial: ${failed.map((f) => f.name).join(",")}`
+        : null;
+      console.log(
+        `[scheduler] sync ok: asOf=${meta.asOf ?? "—"} artifacts=${JSON.stringify(meta.artifacts)}`,
+      );
+    }
   } catch (err) {
     state.lastResult = "error";
     state.lastError = err instanceof Error ? err.message : String(err);
@@ -142,7 +152,7 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = `${describe(expressions)}；開盤前暖機 08:50；新聞每 10 分鐘灰度更新`;
+  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線）；開盤前暖機 08:50；新聞每 5 分鐘；盤中僅成交排行即時`;
   console.log(`[scheduler] started: ${state.description}`);
 
   // 週一至週五 08:50：開盤前暖機（行情／風度），讓 09:00 後頁面有最新快取
@@ -200,16 +210,25 @@ export function startScheduler() {
     console.log(`[scheduler] news cron: ${newsExpr} (${TZ})`);
   }
 
-  // 啟動時若沒有 active，背景暖機（不阻塞 HTTP）
+  // 啟動時：缺日終大包／缺 active 就背景補包（不阻塞 HTTP）
   void (async () => {
     try {
-      const { getActiveFlowPayload, requestBackgroundRebuild } = await import(
-        "@/lib/build-flow"
+      const { getActiveFlowPayload } = await import("@/lib/build-flow");
+      const { readDailyCloseMeta, requestDailyClosePackage } = await import(
+        "@/lib/daily-close-package"
       );
       const active = await getActiveFlowPayload();
-      if (!active) {
-        console.log("[scheduler] no active cache — warming in background");
-        requestBackgroundRebuild("boot-warmup");
+      const meta = await readDailyCloseMeta();
+      const packageThin =
+        !meta?.artifacts?.flow ||
+        !meta.artifacts.stocks ||
+        !meta.artifacts.ma ||
+        !meta.artifacts.wind;
+      if (!active || packageThin) {
+        console.log(
+          `[scheduler] boot package warm (active=${Boolean(active)} thin=${packageThin})`,
+        );
+        requestDailyClosePackage("boot-daily-close");
       }
     } catch (e) {
       console.error("[scheduler] warmup check failed", e);
@@ -224,18 +243,6 @@ export function startScheduler() {
       }
     } catch (e) {
       console.error("[scheduler] news warmup failed", e);
-    }
-    try {
-      const { requestWindRebuild } = await import("@/lib/wind-gauge");
-      requestWindRebuild("boot-wind");
-    } catch (e) {
-      console.error("[scheduler] wind warmup failed", e);
-    }
-    try {
-      const { requestMaScreenerWarmup } = await import("@/lib/ma-screener");
-      requestMaScreenerWarmup("boot-ma");
-    } catch (e) {
-      console.error("[scheduler] ma warmup failed", e);
     }
   })();
 }
