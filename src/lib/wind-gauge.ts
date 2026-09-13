@@ -654,32 +654,32 @@ export async function computeWindPayload(options?: {
           options?.twseDayChangePct ?? 0,
         );
 
-  // 櫃買：本機合成 → 櫃買官方 tradingIndex →（謹慎）Yahoo；避免雲端無快取時全日漲跌／BIAS 變 0
+  // 櫃買：官方 tradingIndex 優先（完整日 K、BIAS 才準）→ 本機合成 →（謹慎）Yahoo
   let tpex: WindReading;
   try {
-    const syn = await buildTpexSyntheticCloses({
-      force: options?.force,
-      allowNetwork: options?.allowNetwork === true,
-    });
-    if (syn) {
+    const official = await fetchTpexIndexCloses({ force: options?.force });
+    if (official) {
       tpex = readingFromCloses(
         "tpex",
         "上櫃（櫃買加權）",
-        syn.closes,
-        syn.changePct,
-        syn.asOf,
-        syn.source,
+        official.closes,
+        official.changePct,
+        official.asOf,
+        official.source,
       );
     } else {
-      const official = await fetchTpexIndexCloses({ force: options?.force });
-      if (official) {
+      const syn = await buildTpexSyntheticCloses({
+        force: options?.force,
+        allowNetwork: options?.allowNetwork === true,
+      });
+      if (syn) {
         tpex = readingFromCloses(
           "tpex",
           "上櫃（櫃買加權）",
-          official.closes,
-          official.changePct,
-          official.asOf,
-          official.source,
+          syn.closes,
+          syn.changePct,
+          syn.asOf,
+          syn.source,
         );
       } else {
         const twoii = await fetchYahooCloses("^TWOII");
