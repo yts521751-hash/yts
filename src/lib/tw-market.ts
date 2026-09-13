@@ -528,11 +528,11 @@ export async function loadMergedQuotesDay(
 
 /**
  * 產業 K／均線掃描目標交易日數。
- * 季線 MA60 至少要 60 根；拉到 120 根才有足夠可視區間（約半年）。
+ * 掃描只需 MA5／MA10，近約 60 個交易日即可（約一季），縮短同步時間。
  */
-export const HISTORY_TRADING_DAYS = 120;
+export const HISTORY_TRADING_DAYS = 60;
 /** 對應 HISTORY_TRADING_DAYS 的日曆回看（含假日緩衝） */
-export const HISTORY_CALENDAR_LOOKBACK = 250;
+export const HISTORY_CALENDAR_LOOKBACK = 130;
 
 /** 交易日清單記憶體快取（避免每次開 K 線都掃上百個日檔） */
 let tradingDaysMemo: { at: number; days: string[] } | null = null;

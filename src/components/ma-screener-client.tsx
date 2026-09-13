@@ -12,8 +12,8 @@ import { formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import type { MaScreenerPayload, MaScreenerRow } from "@/lib/ma-screener-types";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "ma5" | "ma10" | "ma20" | "all3";
-type SortKey = "score" | "amt5" | "flow5" | "bias20" | "close";
+type Filter = "all" | "ma5" | "ma10" | "all2";
+type SortKey = "score" | "amt5" | "flow5" | "bias10" | "close";
 
 function isAbove(close: number, ma: number | null | undefined) {
   return ma != null && close >= ma;
@@ -22,47 +22,39 @@ function isAbove(close: number, ma: number | null | undefined) {
 function rowFlags(row: MaScreenerRow) {
   const above5 = isAbove(row.close, row.ma5);
   const above10 = isAbove(row.close, row.ma10);
-  const above20 = isAbove(row.close, row.ma20);
   return {
     above5,
     above10,
-    above20,
-    aboveAll: above5 && above10 && above20,
-    aboveCount: Number(above5) + Number(above10) + Number(above20),
+    aboveAll: above5 && above10,
+    aboveCount: Number(above5) + Number(above10),
   };
 }
 
 function sortScore(row: MaScreenerRow) {
   const f = rowFlags(row);
-  return (
-    Number(f.aboveAll) * 8 +
-    Number(f.above20) * 4 +
-    Number(f.above10) * 2 +
-    Number(f.above5)
-  );
+  return Number(f.aboveAll) * 8 + Number(f.above10) * 2 + Number(f.above5);
 }
 
 function sortValue(row: MaScreenerRow, key: SortKey) {
   if (key === "amt5") return row.amt5 ?? 0;
   if (key === "flow5") return row.flow5 ?? 0;
-  if (key === "bias20") return row.bias20 ?? -999;
+  if (key === "bias10") return row.bias10 ?? -999;
   if (key === "close") return row.close;
   return sortScore(row);
 }
 
 const FILTERS: Array<{ id: Filter; label: string; hint: string }> = [
   { id: "all", label: "全部產業", hint: "依站上均線數排序" },
-  { id: "all3", label: "三線之上", hint: "同時站上 MA5／10／20" },
+  { id: "all2", label: "兩線之上", hint: "同時站上 MA5／10" },
   { id: "ma5", label: "站上五日", hint: "收盤 ≥ MA5" },
   { id: "ma10", label: "站上十日", hint: "收盤 ≥ MA10" },
-  { id: "ma20", label: "站上月線", hint: "收盤 ≥ MA20" },
 ];
 
 const SORTS: Array<{ id: SortKey; label: string }> = [
   { id: "score", label: "站上強度" },
   { id: "amt5", label: "5日成交" },
   { id: "flow5", label: "5日淨流入" },
-  { id: "bias20", label: "乖離20" },
+  { id: "bias10", label: "乖離10" },
 ];
 
 function Bias({ value }: { value: number | null }) {
@@ -107,14 +99,12 @@ function RowCard({ row }: { row: MaScreenerRow }) {
         <div className="min-w-0">
           <div className="truncate font-medium">{row.name}</div>
           <div className="mt-1 text-[11px] text-muted-foreground">
-            收盤 {row.close.toFixed(2)} · 站上 {flags.aboveCount}/3
-            {row.ma20 == null ? " · 月線未就緒" : ""}
+            收盤 {row.close.toFixed(2)} · 站上 {flags.aboveCount}/2
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-1">
           <Flag on={flags.above5} label="5" />
           <Flag on={flags.above10} label="10" />
-          <Flag on={flags.above20} label="20" />
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
@@ -145,9 +135,8 @@ function seedFrom(
 ): { data: MaScreenerPayload | null; fromCache: boolean } {
   const usable = (p: MaScreenerPayload | null) => {
     if (!p?.rows?.length) return false;
-    const noMa20 = p.rows.filter((r) => r.ma20 == null).length;
-    // 舊本機快取多數無月線 → 丟掉，改等伺服器
-    return noMa20 < Math.ceil(p.rows.length * 0.5);
+    const noMa10 = p.rows.filter((r) => r.ma10 == null).length;
+    return noMa10 < Math.ceil(p.rows.length * 0.5);
   };
   if (usable(initial)) return { data: initial, fromCache: false };
   if (typeof window === "undefined") return { data: null, fromCache: false };
@@ -222,8 +211,7 @@ export function MaScreenerClient({
     let list = rows;
     if (filter === "ma5") list = rows.filter((r) => rowFlags(r).above5);
     else if (filter === "ma10") list = rows.filter((r) => rowFlags(r).above10);
-    else if (filter === "ma20") list = rows.filter((r) => rowFlags(r).above20);
-    else if (filter === "all3") list = rows.filter((r) => rowFlags(r).aboveAll);
+    else if (filter === "all2") list = rows.filter((r) => rowFlags(r).aboveAll);
 
     return [...list].sort((a, b) => {
       const d = sortValue(a, sortKey) - sortValue(b, sortKey);
@@ -236,20 +224,18 @@ export function MaScreenerClient({
     const rows = data?.rows ?? [];
     let ma5 = 0;
     let ma10 = 0;
-    let ma20 = 0;
-    let all3 = 0;
+    let all2 = 0;
     for (const r of rows) {
       const f = rowFlags(r);
       if (f.above5) ma5++;
       if (f.above10) ma10++;
-      if (f.above20) ma20++;
-      if (f.aboveAll) all3++;
+      if (f.aboveAll) all2++;
     }
-    return { ma5, ma10, ma20, all3, total: rows.length };
+    return { ma5, ma10, all2, total: rows.length };
   }, [data?.rows]);
 
   const shortBars = useMemo(
-    () => (data?.rows ?? []).filter((r) => (r.bars ?? 0) < 20).length,
+    () => (data?.rows ?? []).filter((r) => (r.bars ?? 0) < 10).length,
     [data?.rows],
   );
 
@@ -292,7 +278,7 @@ export function MaScreenerClient({
           產業均線掃描
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          找出產業指數收盤站上五日、十日、二十日線的族群，並顯示近五日成交與淨流入。點欄位可排序。
+          找出產業指數收盤站上五日、十日線的族群，並顯示近五日成交與淨流入。點欄位可排序。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料
@@ -312,9 +298,7 @@ export function MaScreenerClient({
                   ? summary.ma5
                   : f.id === "ma10"
                     ? summary.ma10
-                    : f.id === "ma20"
-                      ? summary.ma20
-                      : summary.all3;
+                    : summary.all2;
             const active = filter === f.id;
             return (
               <button
@@ -375,7 +359,7 @@ export function MaScreenerClient({
 
         {shortBars > 0 ? (
           <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
-            有 {shortBars} 個產業日線不足 20 根，月線／三線可能暫時無法判定；請按「重新掃描」補建報價歷史。
+            有 {shortBars} 個產業日線不足 10 根，兩線可能暫時無法判定；請按「重新掃描」補建報價歷史。
           </p>
         ) : null}
 
@@ -397,8 +381,8 @@ export function MaScreenerClient({
         ) : filtered.length === 0 ? (
           <div className="mt-6 rounded-xl border border-border/50 bg-[var(--panel)]/60 px-5 py-10 text-center text-sm text-muted-foreground">
             目前沒有符合「{FILTERS.find((f) => f.id === filter)?.label}」的產業。
-            {shortBars > 0 || (data?.rows ?? []).some((r) => r.ma20 == null)
-              ? " 日線／月線尚未就緒，請按「重新掃描」。"
+            {shortBars > 0 || (data?.rows ?? []).some((r) => r.ma10 == null)
+              ? " 日線尚未就緒，請按「重新掃描」。"
               : ""}
           </div>
         ) : (
@@ -453,8 +437,7 @@ export function MaScreenerClient({
                       </button>
                     </th>
                     <th className="px-3 py-3 font-medium">乖離5</th>
-                    <th className="px-3 py-3 font-medium">乖離10</th>
-                    <th className="px-4 py-3 font-medium">乖離20</th>
+                    <th className="px-4 py-3 font-medium">乖離10</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -480,7 +463,6 @@ export function MaScreenerClient({
                           <div className="flex gap-1">
                             <Flag on={flags.above5} label="5" />
                             <Flag on={flags.above10} label="10" />
-                            <Flag on={flags.above20} label="20" />
                           </div>
                         </td>
                         <td className="px-3 py-3 tabular-nums">
@@ -497,11 +479,8 @@ export function MaScreenerClient({
                         <td className="px-3 py-3 tabular-nums">
                           <Bias value={row.bias5} />
                         </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          <Bias value={row.bias10} />
-                        </td>
                         <td className="px-4 py-3 tabular-nums">
-                          <Bias value={row.bias20} />
+                          <Bias value={row.bias10} />
                         </td>
                       </tr>
                     );

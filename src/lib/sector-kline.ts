@@ -128,10 +128,9 @@ export async function buildSectorKline(
   if (!def) return null;
 
   // 快取優先：先讀記憶體／磁碟，避免每次都掃交易日清單
-  // 但日線根數不足時不可當「夠用」——否則 MA20／MA60 會永遠算不出來
-  // 目標 ≥60 時，要求快取接近目標深度（舊的 16／80 根不可卡住季線可視區間）
+  // 日線根數不足時不可當「夠用」（舊的極短快取不可卡住掃描）
   const minBars =
-    days >= 60 ? Math.min(days, Math.max(60, days - 10)) : Math.min(days, 20);
+    days >= 40 ? Math.min(days, Math.max(20, days - 5)) : Math.min(days, 10);
   if (!options?.force) {
     const mem = memGet(id);
     if (mem?.candles?.length && mem.candles.length >= minBars) {
@@ -152,7 +151,7 @@ export async function buildSectorKline(
     }
   }
 
-  // 日線 + MA60 需要足夠交易日；缺快取時先補報價再掃
+  // 缺快取時先補報價再掃（深度依 HISTORY_TRADING_DAYS，約 60 日）
   try {
     const { ensureQuoteHistory } = await import("@/lib/turnover");
     await ensureQuoteHistory(Math.max(days, HISTORY_TRADING_DAYS));

@@ -114,8 +114,9 @@ function rowFromCandles(
     above5,
     above10,
     above20,
-    aboveAll: above5 && above10 && above20,
-    aboveCount: Number(above5) + Number(above10) + Number(above20),
+    // 掃描只看五日／十日；月線不再列入「之上」條件
+    aboveAll: above5 && above10,
+    aboveCount: Number(above5) + Number(above10),
     amt5: sumLast5(candles, "amount"),
     flow5: sumLast5(candles, "flow"),
     asOf: candles[candles.length - 1]?.date ?? null,
@@ -133,8 +134,8 @@ function normalizeRow(r: MaScreenerRow): MaScreenerRow {
     above5,
     above10,
     above20,
-    aboveAll: above5 && above10 && above20,
-    aboveCount: Number(above5) + Number(above10) + Number(above20),
+    aboveAll: above5 && above10,
+    aboveCount: Number(above5) + Number(above10),
     amt5: Number.isFinite(r.amt5) ? r.amt5 : 0,
     flow5: Number.isFinite(r.flow5) ? r.flow5 : 0,
   };
@@ -148,15 +149,13 @@ function finalize(
   normalized.sort((a, b) => {
     const score =
       Number(b.aboveAll) * 8 +
-      Number(b.above20) * 4 +
       Number(b.above10) * 2 +
       Number(b.above5) -
       (Number(a.aboveAll) * 8 +
-        Number(a.above20) * 4 +
         Number(a.above10) * 2 +
         Number(a.above5));
     if (score !== 0) return score;
-    return (b.bias20 ?? -999) - (a.bias20 ?? -999);
+    return (b.bias10 ?? -999) - (a.bias10 ?? -999);
   });
 
   const asOf =
@@ -175,7 +174,7 @@ function finalize(
       ma5: normalized.filter((r) => r.above5).length,
       ma10: normalized.filter((r) => r.above10).length,
       ma20: normalized.filter((r) => r.above20).length,
-      all3: normalized.filter((r) => r.aboveAll).length,
+      all2: normalized.filter((r) => r.aboveAll).length,
       total: normalized.length,
     },
   };
@@ -202,12 +201,12 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
   const cached = await readCacheFile<MaScreenerPayload>(MA_SCREENER_CACHE);
   if (!cached?.rows?.length) return null;
 
-  // 多數列算不出季線／月線（日線不足）→ 視為壞快照，交由 build 重掃
-  const shortBars = cached.rows.filter((r) => (r.bars ?? 0) < 60).length;
-  const missingMa20 = cached.rows.filter((r) => r.ma20 == null).length;
+  // 多數列算不出十日線（日線不足）→ 視為壞快照，交由 build 重掃
+  const shortBars = cached.rows.filter((r) => (r.bars ?? 0) < 10).length;
+  const missingMa10 = cached.rows.filter((r) => r.ma10 == null).length;
   if (
     shortBars >= Math.ceil(cached.rows.length * 0.5) ||
-    missingMa20 >= Math.ceil(cached.rows.length * 0.5)
+    missingMa10 >= Math.ceil(cached.rows.length * 0.5)
   ) {
     return null;
   }
@@ -220,10 +219,13 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
     : cached.rows;
 
   const fixed = finalize(rows, cached.source ?? "cache");
+  const cachedAll2 =
+    (cached.counts as { all2?: number; all3?: number } | undefined)?.all2 ??
+    (cached.counts as { all2?: number; all3?: number } | undefined)?.all3;
   const same =
     !needsD5 &&
-    cached.counts?.ma20 === fixed.counts.ma20 &&
-    cached.counts?.all3 === fixed.counts.all3 &&
+    cached.counts?.ma10 === fixed.counts.ma10 &&
+    cachedAll2 === fixed.counts.all2 &&
     cached.counts?.total === fixed.counts.total;
 
   if (!same) {
@@ -243,7 +245,7 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
 }
 
 /**
- * 掃描官方產業 K 線：指數收盤相對 MA5／10／20，並附 5 日成交／淨流入。
+ * 掃描官方產業 K 線：指數收盤相對 MA5／10（兩線），並附 5 日成交／淨流入。
  * - 先讀磁碟掃描快取（秒開）
  * - 缺 K 線時自動補建
  */
@@ -257,7 +259,7 @@ export async function buildMaScreener(options?: {
   }
 
   const defs = await listIndustryDefs();
-  // 均線掃描／季線至少要 60 根；先補報價歷史到可畫季線的深度
+  // 均線掃描只需約 10～60 根；依 HISTORY_TRADING_DAYS（近 60 日）補報價
   try {
     const { ensureQuoteHistory } = await import("@/lib/turnover");
     const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
@@ -272,9 +274,9 @@ export async function buildMaScreener(options?: {
     await mapPool(defs, 6, async (def) => {
       let payload = await readSectorKlineCache(def.id);
       const bars = payload?.candles?.length ?? 0;
-      // 少於 60 根無法穩定顯示季線，強制重算
+      // 少於 10 根無法判定十日線，強制重算
       const needBuild =
-        shouldFillMissing && (!payload?.candles || bars < 60);
+        shouldFillMissing && (!payload?.candles || bars < 10);
       if (needBuild) {
         const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
         payload = await buildSectorKline(def.id, HISTORY_TRADING_DAYS, {

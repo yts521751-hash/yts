@@ -111,7 +111,7 @@ fly deploy
 2. 看回傳的 `deploy` 欄位：
    - `cacheDir` 應為 `/data/cache`
    - `cachePersistent` 應為 `true`
-   - `quoteDays` 理想接近 `120`（第一次會較少）
+   - `quoteDays` 理想接近 `60`（第一次會較少）
 3. 或看 Render → **Logs**：應有 `[cache] dir=/data/cache`
 4. 若 `quoteDays` 很少：回首頁按一次「補齊／更新歷史資料」，等進度跑完（可能要一段時間）
 

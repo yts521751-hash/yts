@@ -369,7 +369,7 @@ export async function rebuildFlowPayload(options?: {
       );
     }
 
-    // 預熱產業 K 線快取（深度需可畫季線 MA60），避免點進頁面才重算
+    // 預熱產業 K 線快取（近約 60 交易日），避免點進頁面才重算
     try {
       const { ensureQuoteHistory } = await import("@/lib/turnover");
       const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");

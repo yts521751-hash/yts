@@ -143,7 +143,7 @@ export async function buildTurnoverRanking(
   return payload;
 }
 
-/** 補齊報價日檔到可算季線（預設 120 交易日） */
+/** 補齊報價日檔到近約 60 個交易日（HISTORY_TRADING_DAYS） */
 export async function ensureQuoteHistory(
   needDays = HISTORY_TRADING_DAYS,
   options?: { onProgress?: (done: number, need: number) => void },
