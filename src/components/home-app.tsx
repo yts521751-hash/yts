@@ -10,6 +10,11 @@ import {
   type StockFlowRankRow,
 } from "@/components/stock-ranking";
 import { FlowBulletin } from "@/components/flow-bulletin";
+import {
+  CLIENT_CACHE_KEYS,
+  readClientCache,
+  writeClientCache,
+} from "@/lib/client-cache";
 import { countByStatus, migrateSectorIfNeeded } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -17,6 +22,17 @@ import { cn } from "@/lib/utils";
 type TextSize = "sm" | "md" | "lg";
 type LoadState = "loading" | "ready" | "error";
 type BoardMode = "sector" | "stock";
+
+type FlowClientSnapshot = {
+  sectors: SectorFlow[];
+  brief: MarketBrief;
+  source: string;
+};
+
+type StocksClientSnapshot = {
+  rows: StockFlowRankRow[];
+  date: string;
+};
 
 export function HomeApp() {
   const [filter, setFilter] = useState<TideStatus | "all">("all");
@@ -35,6 +51,7 @@ export function HomeApp() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [fromClientCache, setFromClientCache] = useState(false);
 
   useEffect(() => {
     try {
@@ -48,6 +65,25 @@ export function HomeApp() {
       setDark(preferDark);
       document.documentElement.dataset.textsize = ts;
       document.documentElement.classList.toggle("dark", preferDark);
+
+      // 先畫本機快取，再開網路同步（stale-while-revalidate）
+      const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
+      if (cached?.sectors?.length) {
+        const next = cached.sectors.map(migrateSectorIfNeeded);
+        setSectors(next);
+        setBrief(cached.brief);
+        setSource(cached.source || "client-cache");
+        setLoadState("ready");
+        setFromClientCache(true);
+        setSyncing(true);
+      }
+      const cachedStocks = readClientCache<StocksClientSnapshot>(
+        CLIENT_CACHE_KEYS.stocks,
+      );
+      if (cachedStocks?.rows?.length) {
+        setStocks(cachedStocks.rows);
+        setStocksDate(cachedStocks.date || "");
+      }
     } catch {
       /* ignore */
     }
@@ -68,7 +104,16 @@ export function HomeApp() {
       setSource(String(data.source ?? ""));
       setSyncing(Boolean(data.syncing));
       setLoadState("ready");
+      setFromClientCache(false);
       if (!data.ok && data.error) setError(String(data.error));
+      // 真實資料才寫入本機（示範資料不覆蓋，避免永久卡在 demo）
+      if (data.ok && !data.isDemo && !String(data.source ?? "").includes("demo")) {
+        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, {
+          sectors: next,
+          brief: data.brief as MarketBrief,
+          source: String(data.source ?? ""),
+        });
+      }
       setSelected((prev) => {
         if (!prev) return prev;
         return next.find((s) => s.id === prev.id) ?? null;
@@ -95,6 +140,10 @@ export function HomeApp() {
       }
       setStocks(data.rows as StockFlowRankRow[]);
       setStocksDate(String(data.date || ""));
+      writeClientCache<StocksClientSnapshot>(CLIENT_CACHE_KEYS.stocks, {
+        rows: data.rows as StockFlowRankRow[],
+        date: String(data.date || ""),
+      });
     } catch (e) {
       setStocksError(e instanceof Error ? e.message : "個股資金流載入失敗");
     } finally {
@@ -252,6 +301,14 @@ export function HomeApp() {
               </button>
             ))}
           </div>
+
+          {(fromClientCache || syncing) && boardMode === "sector" && (
+            <p className="rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {fromClientCache
+                ? "已先顯示本機快取，背景同步最新金流中…"
+                : "背景灰度同步中，畫面會自動刷新"}
+            </p>
+          )}
 
           {error && boardMode === "sector" && (
             <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">

@@ -11,6 +11,7 @@ function needleAngle(score: number) {
 function WindDial({ reading }: { reading: WindReading }) {
   const meta = WIND_META[reading.level];
   const angle = needleAngle(reading.score);
+  const stance = reading.maStanceLabel || "均線糾結";
 
   return (
     <article className="flex flex-col rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 shadow-sm backdrop-blur-sm">
@@ -23,15 +24,20 @@ function WindDial({ reading }: { reading: WindReading }) {
             資料日 {reading.asOf}
           </p>
         </div>
-        <span
-          className="rounded-md px-2 py-1 text-xs font-semibold"
-          style={{
-            color: meta.color,
-            background: `color-mix(in oklab, ${meta.color} 14%, transparent)`,
-          }}
-        >
-          {reading.levelLabel}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span
+            className="rounded-md px-2 py-1 text-xs font-semibold"
+            style={{
+              color: meta.color,
+              background: `color-mix(in oklab, ${meta.color} 14%, transparent)`,
+            }}
+          >
+            {reading.levelLabel}
+          </span>
+          <span className="rounded-md bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">
+            {stance}
+          </span>
+        </div>
       </div>
 
       <div className="relative mx-auto mt-4 aspect-[2/1] w-full max-w-[280px]">
@@ -69,7 +75,7 @@ function WindDial({ reading }: { reading: WindReading }) {
           <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums">
             {reading.score}
           </p>
-          <p className="text-[11px] text-muted-foreground">風力度</p>
+          <p className="text-[11px] text-muted-foreground">強度（非多空）</p>
         </div>
       </div>
 
@@ -123,18 +129,9 @@ function WindDial({ reading }: { reading: WindReading }) {
       </dl>
       <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
         {meta.hint}
-        {reading.source.includes("tpex-turnover") ||
-        reading.source.includes("tpex-turnover-weighted")
-          ? " · 櫃買指數為上櫃股成交加權合成（非 Yahoo）"
-          : ""}
-        {reading.source.includes("tradingIndex")
-          ? " · 櫃買指數取自櫃買中心日成交量值指數"
-          : ""}
-        {reading.source.includes("FMTQIK")
-          ? " · 加權指數取自證交所 FMTQIK"
-          : ""}
-        {reading.source.includes("fallback") && !reading.close
-          ? " · 指數序列暫缺，數值可能不完整"
+        {reading.source.includes("tradingIndex") ||
+        reading.source.includes("FMTQIK")
+          ? " · 指數來源為證交所／櫃買公開資料"
           : ""}
       </p>
     </article>
@@ -158,7 +155,7 @@ export function WindDashboard({
             風度儀表板
           </h1>
           <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-            用均線乖離與波動，快速分辨上市／上櫃是強風、陣風、亂流還是無風
+            風力度＝乖離＋波動的「強度」；均線站上／跌破請看右上角標籤，兩者不要混為多空分數
           </p>
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -172,12 +169,20 @@ export function WindDashboard({
       </div>
 
       <section className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 p-4 text-xs text-muted-foreground">
-        <h2 className="font-medium text-foreground">怎麼讀</h2>
-        <ul className="mt-2 list-disc space-y-1 pl-4">
-          <li>強風：均線排列清楚，趨勢方向明顯</li>
-          <li>陣風：有短線方向，但均線尚未完全排齊</li>
-          <li>亂流：波動偏高且訊號打架</li>
-          <li>無風：乖離小、波動低</li>
+        <h2 className="font-medium text-foreground">怎麼讀（很重要）</h2>
+        <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
+          <li>
+            <span className="text-foreground">強度分數愈高</span>
+            ＝短線乖離或波動愈大，不是「愈強勢／愈該買」。跌破均線的急殺，分數也可以高於溫和站上月線。
+          </li>
+          <li>
+            <span className="text-foreground">右上角均線標籤</span>
+            才是結構：多頭／空頭排列、站上月線、跌破月季線等。
+          </li>
+          <li>強風：多頭或空頭排列清楚（空頭排列也是強風）。</li>
+          <li>陣風：有短線推力，但均線尚未完全排齊。</li>
+          <li>亂流：波動偏高且訊號打架。</li>
+          <li>無風：乖離小、波動低。</li>
         </ul>
       </section>
     </div>

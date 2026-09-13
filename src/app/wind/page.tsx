@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { WindDashboard } from "@/components/wind-dashboard";
+import {
+  CLIENT_CACHE_KEYS,
+  readClientCache,
+  writeClientCache,
+} from "@/lib/client-cache";
 import type { WindPayload } from "@/lib/wind-types";
 import { cn } from "@/lib/utils";
 
@@ -12,10 +17,23 @@ export default function WindPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [fromCache, setFromCache] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    const cached = readClientCache<WindPayload>(CLIENT_CACHE_KEYS.wind);
+    if (cached?.twse && cached?.tpex) {
+      setData(cached);
+      setFromCache(true);
+      setLoading(false);
+      setSyncing(true);
+    }
+  }, []);
 
   const load = useCallback(async (force = false) => {
     setError(null);
     if (force) setRefreshing(true);
+    setSyncing(true);
     try {
       const res = await fetch(`/api/wind${force ? "?force=1" : ""}`, {
         cache: "no-store",
@@ -24,13 +42,18 @@ export default function WindPage() {
       if (!json.ok || !json.twse || !json.tpex) {
         throw new Error(json.error || "風度資料載入失敗");
       }
-      setData({
+      const next: WindPayload = {
         twse: json.twse,
         tpex: json.tpex,
         builtAt: json.builtAt,
-      });
+      };
+      setData(next);
+      setFromCache(false);
+      setSyncing(Boolean(json.syncing || json.rebuild?.started));
+      writeClientCache(CLIENT_CACHE_KEYS.wind, next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "載入失敗");
+      setSyncing(false);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -62,6 +85,14 @@ export default function WindPage() {
             更新
           </button>
         </div>
+
+        {(fromCache || syncing) && data ? (
+          <p className="mb-3 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {fromCache
+              ? "已先顯示本機快取，背景同步風度中…"
+              : "背景重建風度中，稍後會自動更新"}
+          </p>
+        ) : null}
 
         {loading && !data ? (
           <p className="py-16 text-center text-sm text-muted-foreground">載入中…</p>

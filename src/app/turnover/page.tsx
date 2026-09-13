@@ -6,6 +6,11 @@ import { ArrowLeft } from "lucide-react";
 import { formatPct, formatYi, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
+import {
+  CLIENT_CACHE_KEYS,
+  readClientCache,
+  writeClientCache,
+} from "@/lib/client-cache";
 
 type Row = {
   rank: number;
@@ -14,6 +19,15 @@ type Row = {
   turnoverYi: number;
   changePct: number;
   close: number;
+};
+
+type TurnoverSnapshot = {
+  rows: Row[];
+  date: string;
+  builtAt: string;
+  source: string;
+  inSession: boolean;
+  sessionNote: string;
 };
 
 export default function TurnoverPage() {
@@ -27,7 +41,23 @@ export default function TurnoverPage() {
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
   const [flashCodes, setFlashCodes] = useState<Set<string>>(new Set());
+  const [fromCache, setFromCache] = useState(false);
   const prevRef = useRef<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    const cached = readClientCache<TurnoverSnapshot>(CLIENT_CACHE_KEYS.turnover);
+    if (cached?.rows?.length) {
+      setRows(cached.rows);
+      setDate(cached.date || "");
+      setUpdatedAt(cached.builtAt || "");
+      setSource(cached.source || "client-cache");
+      setInSession(Boolean(cached.inSession));
+      setSessionNote(cached.sessionNote || "");
+      prevRef.current = new Map(cached.rows.map((r) => [r.code, r.turnoverYi]));
+      setFromCache(true);
+      setLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async (live = false) => {
     try {
@@ -52,7 +82,16 @@ export default function TurnoverPage() {
       setSource(String(data.source || ""));
       setInSession(Boolean(data.inSession));
       setSessionNote(String(data.sessionNote || ""));
+      setFromCache(false);
       setTick((n) => n + 1);
+      writeClientCache<TurnoverSnapshot>(CLIENT_CACHE_KEYS.turnover, {
+        rows: next,
+        date: String(data.date || ""),
+        builtAt: String(data.builtAt || ""),
+        source: String(data.source || ""),
+        inSession: Boolean(data.inSession),
+        sessionNote: String(data.sessionNote || ""),
+      });
       if (changed.size) {
         setFlashCodes(changed);
         window.setTimeout(() => setFlashCodes(new Set()), 900);
@@ -115,6 +154,7 @@ export default function TurnoverPage() {
             </h1>
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground sm:mt-2">
               證交所／櫃買公開資料 · 盤中約每 3 秒更新
+              {fromCache ? " · 已先顯示本機快取" : ""}
             </p>
           </div>
           <div className="text-[11px] leading-relaxed text-muted-foreground sm:text-right sm:text-xs">

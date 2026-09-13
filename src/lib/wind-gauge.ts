@@ -14,14 +14,16 @@ import {
   writeCacheFile,
 } from "@/lib/tw-market";
 import {
+  MA_STANCE_LABEL,
   WIND_META,
+  type MaStance,
   type WindLevel,
   type WindPayload,
   type WindReading,
 } from "@/lib/wind-types";
 
-export type { WindLevel, WindPayload, WindReading } from "@/lib/wind-types";
-export { WIND_META } from "@/lib/wind-types";
+export type { MaStance, WindLevel, WindPayload, WindReading } from "@/lib/wind-types";
+export { MA_STANCE_LABEL, WIND_META } from "@/lib/wind-types";
 
 const CACHE = "wind-gauge.json";
 
@@ -527,6 +529,23 @@ async function buildTpexSyntheticCloses(options?: {
   };
 }
 
+function resolveMaStance(
+  close: number,
+  ma5: number,
+  ma20: number,
+  ma60: number,
+): MaStance {
+  const bull = close > ma5 && ma5 > ma20 && ma20 > ma60;
+  const bear = close < ma5 && ma5 < ma20 && ma20 < ma60;
+  if (bull) return "bull-stack";
+  if (bear) return "bear-stack";
+  if (close > ma20 && close > ma60) return "above-ma20-ma60";
+  if (close > ma20) return "above-ma20";
+  if (close < ma20 && close < ma60) return "below-ma20-ma60";
+  if (close < ma20) return "below-ma20";
+  return "tangled";
+}
+
 function readingFromCloses(
   market: "twse" | "tpex",
   label: string,
@@ -554,6 +573,7 @@ function readingFromCloses(
     market,
   });
   const bias = (c: number, m: number) => ((c - m) / m) * 100;
+  const maStance = resolveMaStance(close, ma5, ma20, ma60);
   return {
     market,
     label,
@@ -568,6 +588,8 @@ function readingFromCloses(
     vol20: Math.round(vol20 * 100) / 100,
     asOf,
     source,
+    maStance,
+    maStanceLabel: MA_STANCE_LABEL[maStance],
   };
 }
 
@@ -600,6 +622,8 @@ function fallbackReading(
     vol20: abs,
     asOf: new Date().toISOString().slice(0, 10),
     source: "fallback-day-change",
+    maStance: "tangled",
+    maStanceLabel: MA_STANCE_LABEL.tangled,
   };
 }
 
@@ -623,7 +647,13 @@ export async function computeWindPayload(options?: {
     const cached = await readCacheFile<WindPayload>(CACHE);
     if (cached?.twse && cached?.tpex && cached.builtAt) {
       const age = Date.now() - Date.parse(cached.builtAt);
-      if (Number.isFinite(age) && age < 1000 * 60 * 30) return cached;
+      if (Number.isFinite(age) && age < 1000 * 60 * 30) {
+        return {
+          ...cached,
+          twse: withMaStance(cached.twse),
+          tpex: withMaStance(cached.tpex),
+        };
+      }
     }
   }
 
@@ -753,32 +783,61 @@ function isBrokenReading(r: WindReading | undefined): boolean {
   );
 }
 
+/** 舊快取沒有 maStance 時，用 BIAS 粗推一版，避免 UI 空白 */
+function withMaStance(r: WindReading): WindReading {
+  if (r.maStance && r.maStanceLabel) return r;
+  let maStance: MaStance = "tangled";
+  if (r.bias5 > 0.3 && r.bias20 > 0.3 && r.bias60 > 0.3) {
+    maStance = "bull-stack";
+  } else if (r.bias5 < -0.3 && r.bias20 < -0.3 && r.bias60 < -0.3) {
+    maStance = "bear-stack";
+  } else if (r.bias20 > 0 && r.bias60 > 0) {
+    maStance = "above-ma20-ma60";
+  } else if (r.bias20 > 0) {
+    maStance = "above-ma20";
+  } else if (r.bias20 < 0 && r.bias60 < 0) {
+    maStance = "below-ma20-ma60";
+  } else if (r.bias20 < 0) {
+    maStance = "below-ma20";
+  }
+  return {
+    ...r,
+    maStance,
+    maStanceLabel: MA_STANCE_LABEL[maStance],
+  };
+}
+
 export async function getWindPayload(): Promise<WindPayload> {
   const cached = await readCacheFile<WindPayload>(CACHE);
   if (cached?.twse && cached?.tpex && cached.builtAt) {
     const broken =
       isBrokenReading(cached.twse) || isBrokenReading(cached.tpex);
-    if (broken) {
-      // 快取裡上市／上櫃指標已壞（全日 0）→ 立刻重算，勿再餵空數字
-      const fixed = await computeWindPayload({
-        force: true,
-        allowNetwork: false,
-      });
-      requestWindRebuild("repair-broken");
-      return fixed;
-    }
     const age = Date.now() - Date.parse(cached.builtAt);
-    // 超過 30 分鐘觸發背景刷新，但仍先回舊快取，避免請求掛住
-    if (!Number.isFinite(age) || age >= 1000 * 60 * 30) {
-      requestWindRebuild("stale-cache");
+    const stale = !Number.isFinite(age) || age >= 1000 * 60 * 30;
+    // 壞掉或過期：先回快取，重算丟背景，避免開頁卡住
+    if (broken || stale) {
+      requestWindRebuild(broken ? "repair-broken" : "stale-cache");
     }
-    return cached;
+    return {
+      ...cached,
+      twse: withMaStance(cached.twse),
+      tpex: withMaStance(cached.tpex),
+    };
   }
-  // 無快取：先用本機行情／官方指數快速算一版，再背景補齊歷史
-  const quick = await computeWindPayload({
-    force: true,
-    allowNetwork: false,
-  });
+  // 無快取：背景補齊；前景限時快速算一版，逾時先回暫值
   requestWindRebuild("cold-fill");
-  return quick;
+  try {
+    const quick = await Promise.race([
+      computeWindPayload({ force: true, allowNetwork: false }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 4500)),
+    ]);
+    if (quick) return quick;
+  } catch {
+    /* fall through */
+  }
+  return {
+    twse: fallbackReading("twse", "上市（加權）", 0),
+    tpex: fallbackReading("tpex", "上櫃（櫃買加權）", 0),
+    builtAt: new Date().toISOString(),
+  };
 }
