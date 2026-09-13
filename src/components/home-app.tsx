@@ -537,28 +537,28 @@ export function HomeApp({
       />
       {syncing || syncProgress ? (
         <div
-          className="sticky top-0 z-50 border-b px-4 py-2.5 shadow-sm sm:px-6"
+          className="sticky top-0 z-50 border-b-2 px-4 py-3 shadow-md sm:px-6"
           style={{
             borderColor: "var(--mk-anchor)",
-            background: "var(--mk-anchor-bg)",
+            background: "color-mix(in oklab, var(--mk-anchor) 22%, var(--panel))",
           }}
           role="status"
           aria-live="polite"
         >
-          <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-foreground">
+          <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-2">
+            <div className="flex items-center justify-between gap-3 text-sm sm:text-base">
+              <span className="font-semibold tracking-tight text-foreground">
                 正在同步資料… {syncProgress?.percent ?? 0}%
               </span>
-              <span className="truncate text-xs text-muted-foreground">
+              <span className="max-w-[55%] truncate text-xs text-foreground/80 sm:text-sm">
                 {syncProgress?.label || "請稍候"}
               </span>
             </div>
-            <div className="h-2.5 overflow-hidden rounded bg-black/15 dark:bg-white/20">
+            <div className="h-3 overflow-hidden rounded-sm bg-black/20 dark:bg-white/25">
               <div
-                className="h-full rounded transition-[width] duration-300"
+                className="h-full rounded-sm transition-[width] duration-300"
                 style={{
-                  width: `${Math.max(3, syncProgress?.percent ?? 0)}%`,
+                  width: `${Math.max(4, syncProgress?.percent ?? 0)}%`,
                   background: "var(--mk-anchor)",
                 }}
               />
