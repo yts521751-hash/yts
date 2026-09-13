@@ -514,11 +514,28 @@ export async function buildFlowPayload(options?: {
 export async function getDeployStatus() {
   const meta = await readDeployMeta();
   const { readDailyCloseMeta } = await import("@/lib/daily-close-package");
+  const {
+    getCacheDir,
+    HISTORY_TRADING_DAYS,
+    listCachedTradingDays,
+  } = await import("@/lib/tw-market");
   const dailyClose = await readDailyCloseMeta().catch(() => null);
+  const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS).catch(
+    () => [] as string[],
+  );
+  const cacheDir = getCacheDir();
+  // 未掛持久碟時通常落在容器內 /.cache 或 /app/.cache，重發佈會清空
+  const cachePersistent =
+    cacheDir.startsWith("/data/") ||
+    Boolean(process.env.CACHE_DIR?.trim());
   return {
     ...meta,
     rebuildRunning: isRebuildRunning(),
     progress: await readRebuildProgress(),
     dailyClose,
+    cacheDir,
+    cachePersistent,
+    quoteDays: quoteDays.length,
+    quoteDaysTarget: HISTORY_TRADING_DAYS,
   };
 }
