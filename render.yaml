@@ -4,7 +4,8 @@ services:
   - type: web
     name: jinliu-board
     runtime: node
-    plan: starter
+    # 第一次可用 free；若要避免休眠影響排程，之後在 Dashboard 升成 Starter
+    plan: free
     region: singapore
     buildCommand: npm ci && npm run build
     startCommand: npm run start
