@@ -326,7 +326,28 @@ export async function fetchTpexInsti(ymd: string): Promise<InstiRow[] | null> {
     .filter((r) => /^\d{4}/.test(r.code));
 }
 
-const CACHE_DIR = path.join(process.cwd(), ".cache");
+/**
+ * 快照目錄（與程式發佈分離）。
+ * - 本機預設：`<cwd>/.cache`
+ * - 正式環境請設 `CACHE_DIR` 指向持久磁碟（如 `/data/cache`），
+ *   重發佈後歷史日檔仍在，日終同步只需補缺日／當日。
+ */
+function resolveCacheDir() {
+  const fromEnv = process.env.CACHE_DIR?.trim();
+  if (fromEnv) {
+    return path.isAbsolute(fromEnv)
+      ? fromEnv
+      : path.resolve(process.cwd(), fromEnv);
+  }
+  return path.join(process.cwd(), ".cache");
+}
+
+const CACHE_DIR = resolveCacheDir();
+
+/** 目前實際使用的快取根目錄（除錯／開機 log 用） */
+export function getCacheDir() {
+  return CACHE_DIR;
+}
 
 export const ACTIVE_FLOW_CACHE = "flow-active.json";
 export const STAGING_FLOW_CACHE = "flow-staging.json";
@@ -575,8 +596,9 @@ export async function getLatestCachedTradingDay(): Promise<string | null> {
 }
 
 /**
- * 向後抓取足夠的交易日報價（上市＋上櫃合併），寫入 .cache。
- * 正式環境若只有十來根 K，多半是這裡深度不夠或只打了證交所。
+ * 向後抓取足夠的交易日報價（上市＋上櫃合併），寫入 CACHE_DIR。
+ * 已有日檔會直接沿用，只補缺日——持久碟上歷史不必每天重抓。
+ * 正式環境若只有十來根 K，多半是快取被重發佈清掉或深度不夠。
  */
 export async function listRecentTradingDays(
   need: number,

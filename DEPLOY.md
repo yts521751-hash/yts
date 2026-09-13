@@ -56,8 +56,26 @@ fly deploy
 
 見 `.env.example`：`SYNC_DISABLED`、`SYNC_TZ`、`SYNC_CRON`。雲端後台加同名環境變數即可，不必把密鑰寫進 repo。
 
-## 六、注意
+## 六、快取與重發佈（重要）
+
+所有日終快照、報價日檔（`quotes-*.json`）、產業 K、進度等都寫在 **`CACHE_DIR`**，**不要跟程式碼／映像綁在一起**。
+
+| 環境 | 建議 |
+|------|------|
+| 本機 | 可不設 → 預設專案內 `.cache`（已 gitignore） |
+| Fly | `fly volumes create jinliu_cache --region nrt --size 1`，`fly.toml` 已掛 `/data/cache`，`CACHE_DIR=/data/cache` |
+| Render | Blueprint 已掛 Disk 到 `/data/cache`（需 Starter 以上）；環境變數 `CACHE_DIR=/data/cache` |
+
+行為：
+
+- **已有的歷史日檔不會因重發佈被清掉**（只要掛了持久碟）。
+- 日終／背景同步會**跳過已存在的交易日**，只補缺日與當日，不必每天重抓整段歷史。
+- 開機 log 會印 `[cache] dir=...`，可確認是否指到磁碟。
+
+未掛持久碟時，每次 deploy 仍會從空快取冷啟動（資料會短暫不完整，直到大包跑完）。
+
+## 七、注意
 
 - 公開後任何人可開看板；僅供研究參考，請保留免責聲明。
-- TWSE／TPEx／第三方 API 有頻率限制；單一長駐實例即可，勿水平擴太多副本。
+- TWSE／TPEx／第三方 API 有頻率限制；單一長駐實例即可，勿水平擴太多副本（多副本需共享同一 `CACHE_DIR`／物件儲存）。
 - Quick Tunnel 網址會變且會隨 Agent 結束失效；正式對外請用 Render／Fly。

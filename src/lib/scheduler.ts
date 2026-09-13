@@ -123,6 +123,12 @@ export function startScheduler() {
   const b = bag();
   if (b.started) return;
   b.started = true;
+
+  void import("@/lib/tw-market")
+    .then(({ getCacheDir }) => {
+      console.log(`[cache] dir=${getCacheDir()}`);
+    })
+    .catch(() => null);
   b.tasks = [];
 
   const state = ensureState();

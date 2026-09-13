@@ -1,5 +1,8 @@
-# Fly.io：長駐機器，適合排程與本機快取
-# 首次：fly launch --no-deploy && fly deploy
+# Fly.io：長駐機器 + 持久磁碟（快照與發佈分離）
+# 首次：
+#   fly launch --no-deploy
+#   fly volumes create jinliu_cache --region nrt --size 1
+#   fly deploy
 # 之後：git push 觸發 GitHub Actions，或本機 fly deploy
 
 app = "jinliu-board"
@@ -12,6 +15,8 @@ primary_region = "nrt"
   TZ = "Asia/Taipei"
   NEXT_TELEMETRY_DISABLED = "1"
   HOSTNAME = "0.0.0.0"
+  # 歷史報價／K 線／日終大包寫入此目錄（掛載 Volume，重發佈不丟）
+  CACHE_DIR = "/data/cache"
 
 [http_service]
   internal_port = 43127
@@ -27,6 +32,11 @@ primary_region = "nrt"
     grace_period = "45s"
     method = "GET"
     path = "/"
+
+# 持久磁碟：日檔 quotes-*.json 等放這裡；每天同步只補缺日
+[mounts]
+  source = "jinliu_cache"
+  destination = "/data/cache"
 
 [[vm]]
   memory = "512mb"

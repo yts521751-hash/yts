@@ -1,16 +1,23 @@
 # Render Blueprint：連上 GitHub 後一鍵建立服務，之後 push main 自動重發
 # https://dashboard.render.com/blueprints
+#
+# 快照目錄 CACHE_DIR=/data/cache 掛在 Disk 上，與程式發佈分離：
+# 重發佈後歷史日檔仍在，日終同步只需補缺日／當日。
 services:
   - type: web
     name: jinliu-board
     runtime: node
-    # 第一次可用 free；若要避免休眠影響排程，之後在 Dashboard 升成 Starter
-    plan: free
+    # Free 無持久碟且會休眠；正式請用 Starter 以上並掛 disk
+    plan: starter
     region: singapore
     buildCommand: npm ci && npm run build
     startCommand: npm run start
     healthCheckPath: /
     autoDeployTrigger: commit
+    disk:
+      name: jinliu-cache
+      mountPath: /data/cache
+      sizeGB: 2
     envVars:
       - key: NODE_VERSION
         value: "22"
@@ -18,3 +25,5 @@ services:
         value: Asia/Taipei
       - key: NEXT_TELEMETRY_DISABLED
         value: "1"
+      - key: CACHE_DIR
+        value: /data/cache
