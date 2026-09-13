@@ -64,7 +64,7 @@ fly deploy
 |------|------|
 | 本機 | 可不設 → 預設專案內 `.cache`（已 gitignore） |
 | Fly | `fly volumes create jinliu_cache --region nrt --size 1`，`fly.toml` 已掛 `/data/cache`，`CACHE_DIR=/data/cache` |
-| Render | Blueprint 已掛 Disk 到 `/data/cache`（需 Starter 以上）；環境變數 `CACHE_DIR=/data/cache` |
+| Render | 見下方「Render 掛 Disk」；需 **Starter** 以上 |
 
 行為：
 
@@ -73,6 +73,49 @@ fly deploy
 - 開機 log 會印 `[cache] dir=...`，可確認是否指到磁碟。
 
 未掛持久碟時，每次 deploy 仍會從空快取冷啟動（資料會短暫不完整，直到大包跑完）。
+
+### Render 掛 Disk（逐步）
+
+**前提：** Web Service 方案至少是 **Starter**（Free 不能掛持久碟，且會休眠）。
+
+#### A. 還沒建服務：用 Blueprint（最省事）
+
+1. 開啟 [Render Blueprints](https://dashboard.render.com/blueprints)
+2. Connect 你的 GitHub repo，選根目錄的 `render.yaml`
+3. 確認方案是 **Starter**（yaml 已寫 `plan: starter`）
+4. 建立服務——yaml 已包含：
+   - Disk 名稱 `jinliu-cache`
+   - 掛載路徑 `/data/cache`
+   - 容量 `2GB`
+   - 環境變數 `CACHE_DIR=/data/cache`
+5. 等第一次 Deploy 變綠燈
+
+#### B. 服務已經存在：在 Dashboard 手動加 Disk
+
+1. 開啟 [Render Dashboard](https://dashboard.render.com/) → 點你的 Web Service（例如 `jinliu-board`）
+2. 左側 **Settings**
+3. 若目前是 **Free**：先到 **Plan** 升成 **Starter**（或以上）並套用
+4. 同一頁找 **Disk**（有的介面在 **Disks**）→ **Add Disk**
+   - **Name：** `jinliu-cache`（任意，好認即可）
+   - **Mount Path：** 必須是 `/data/cache`（不要用別的路徑）
+   - **Size：** `1` 或 `2` GB 即可
+5. **Save** 後 Render 會重新部署一次
+6. 再到 **Environment**，新增／確認：
+   - Key：`CACHE_DIR`
+   - Value：`/data/cache`
+7. Save → 等 Deploy 完成
+
+#### C. 確認有掛成功
+
+1. 打開網站：`https://你的服務.onrender.com/api/flow`
+2. 看回傳的 `deploy` 欄位：
+   - `cacheDir` 應為 `/data/cache`
+   - `cachePersistent` 應為 `true`
+   - `quoteDays` 理想接近 `120`（第一次會較少）
+3. 或看 Render → **Logs**：應有 `[cache] dir=/data/cache`
+4. 若 `quoteDays` 很少：回首頁按一次「補齊／更新歷史資料」，等進度跑完（可能要一段時間）
+
+之後 push 程式重發佈，**Disk 裡的歷史日檔會留下**，不必每次重抓全部歷史。
 
 ## 七、注意
 
