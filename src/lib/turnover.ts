@@ -5,6 +5,8 @@ import {
   loadMergedQuotesDay,
   toYmd,
   ymdToIso,
+  HISTORY_CALENDAR_LOOKBACK,
+  HISTORY_TRADING_DAYS,
   type QuoteRow,
 } from "@/lib/tw-market";
 
@@ -141,10 +143,15 @@ export async function buildTurnoverRanking(
   return payload;
 }
 
-export async function ensureQuoteHistory(needDays = 80) {
-  const have = await listCachedTradingDays(needDays, 160);
+/** 補齊報價日檔到可算季線（預設 120 交易日） */
+export async function ensureQuoteHistory(needDays = HISTORY_TRADING_DAYS) {
+  const lookback = Math.max(
+    HISTORY_CALENDAR_LOOKBACK,
+    Math.ceil(needDays * 2.2),
+  );
+  const have = await listCachedTradingDays(needDays, lookback);
   if (have.length >= needDays) return have;
-  return listRecentTradingDays(needDays, 160);
+  return listRecentTradingDays(needDays, lookback);
 }
 
 export type { QuoteRow };

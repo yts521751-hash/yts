@@ -202,8 +202,8 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
   const cached = await readCacheFile<MaScreenerPayload>(MA_SCREENER_CACHE);
   if (!cached?.rows?.length) return null;
 
-  // 多數列算不出 MA20（日線不足）→ 視為壞快照，交由 build 重掃
-  const shortBars = cached.rows.filter((r) => (r.bars ?? 0) < 20).length;
+  // 多數列算不出季線／月線（日線不足）→ 視為壞快照，交由 build 重掃
+  const shortBars = cached.rows.filter((r) => (r.bars ?? 0) < 60).length;
   const missingMa20 = cached.rows.filter((r) => r.ma20 == null).length;
   if (
     shortBars >= Math.ceil(cached.rows.length * 0.5) ||
@@ -257,10 +257,11 @@ export async function buildMaScreener(options?: {
   }
 
   const defs = await listIndustryDefs();
-  // 均線掃描至少要 20 根才能算月線；先補報價歷史
+  // 均線掃描／季線至少要 60 根；先補報價歷史到可畫季線的深度
   try {
     const { ensureQuoteHistory } = await import("@/lib/turnover");
-    await ensureQuoteHistory(60);
+    const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+    await ensureQuoteHistory(HISTORY_TRADING_DAYS);
   } catch {
     /* ignore */
   }
@@ -271,10 +272,12 @@ export async function buildMaScreener(options?: {
     await mapPool(defs, 6, async (def) => {
       let payload = await readSectorKlineCache(def.id);
       const bars = payload?.candles?.length ?? 0;
+      // 少於 60 根無法穩定顯示季線，強制重算
       const needBuild =
-        shouldFillMissing && (!payload?.candles || bars < 20);
+        shouldFillMissing && (!payload?.candles || bars < 60);
       if (needBuild) {
-        payload = await buildSectorKline(def.id, 80, {
+        const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+        payload = await buildSectorKline(def.id, HISTORY_TRADING_DAYS, {
           def,
           force: true,
         }).catch(() => null);

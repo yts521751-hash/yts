@@ -10,6 +10,8 @@ import {
   getCachedDayInsti,
   getCachedDayQuotes,
   getLatestCachedTradingDay,
+  HISTORY_CALENDAR_LOOKBACK,
+  HISTORY_TRADING_DAYS,
   klineCacheName,
   klineCacheNameCandidates,
   listCachedTradingDays,
@@ -118,7 +120,7 @@ export async function readSectorKlineCache(
  */
 export async function buildSectorKline(
   sectorId: string,
-  days = 80,
+  days = HISTORY_TRADING_DAYS,
   options?: { force?: boolean; def?: SectorDef },
 ): Promise<SectorKlinePayload | null> {
   const id = normalizeSectorId(sectorId);
@@ -151,11 +153,14 @@ export async function buildSectorKline(
   // 日線 + MA60 需要足夠交易日；缺快取時先補報價再掃
   try {
     const { ensureQuoteHistory } = await import("@/lib/turnover");
-    await ensureQuoteHistory(Math.max(days, 60));
+    await ensureQuoteHistory(Math.max(days, HISTORY_TRADING_DAYS));
   } catch {
     /* 補價失敗仍嘗試用現有快取 */
   }
-  const tradingDays = await listCachedTradingDays(days, 180);
+  const tradingDays = await listCachedTradingDays(
+    days,
+    HISTORY_CALENDAR_LOOKBACK,
+  );
   if (tradingDays.length < 5) return null;
 
   const chronological = [...tradingDays].reverse();
@@ -279,7 +284,7 @@ export async function buildSectorKline(
 }
 
 export async function warmSectorKlineCaches(
-  days = 80,
+  days = HISTORY_TRADING_DAYS,
   defs?: SectorDef[],
 ) {
   const list = defs?.length ? defs : [];

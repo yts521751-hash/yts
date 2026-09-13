@@ -22,7 +22,11 @@ export async function GET(req: Request, ctx: Ctx) {
   }
 
   const { searchParams } = new URL(req.url);
-  const days = Math.min(120, Math.max(20, Number(searchParams.get("days") || 80)));
+  const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+  const days = Math.min(
+    HISTORY_TRADING_DAYS,
+    Math.max(20, Number(searchParams.get("days") || HISTORY_TRADING_DAYS)),
+  );
   const force = searchParams.get("force") === "1";
   const { members, asOf: membersAsOf } = await membersWithTurnover(def.members);
 

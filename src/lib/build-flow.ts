@@ -355,11 +355,12 @@ export async function rebuildFlowPayload(options?: {
       );
     }
 
-    // 預熱產業 K 線快取，避免點進頁面才重算
+    // 預熱產業 K 線快取（深度需可畫季線 MA60），避免點進頁面才重算
     try {
       const { ensureQuoteHistory } = await import("@/lib/turnover");
-      await ensureQuoteHistory(80);
-      await warmSectorKlineCaches(80, universe);
+      const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+      await ensureQuoteHistory(HISTORY_TRADING_DAYS);
+      await warmSectorKlineCaches(HISTORY_TRADING_DAYS, universe);
     } catch (err) {
       console.warn("[rebuild] kline warm failed:", err);
     }

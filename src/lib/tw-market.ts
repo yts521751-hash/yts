@@ -468,6 +468,7 @@ export async function loadMergedQuotesDay(
           fetchedAt: new Date().toISOString(),
         };
         await writeCacheFile(name, bundle);
+        invalidateTradingDaysMemo();
         return bundle;
       }
       // 櫃買仍失敗就先用舊快取，避免整日空白
@@ -500,12 +501,26 @@ export async function loadMergedQuotesDay(
     fetchedAt: new Date().toISOString(),
   };
   await writeCacheFile(name, bundle);
+  invalidateTradingDaysMemo();
   return bundle;
 }
+
+/**
+ * 產業 K／均線掃描目標交易日數。
+ * 季線 MA60 至少要 60 根；拉到 120 根才有足夠可視區間（約半年）。
+ */
+export const HISTORY_TRADING_DAYS = 120;
+/** 對應 HISTORY_TRADING_DAYS 的日曆回看（含假日緩衝） */
+export const HISTORY_CALENDAR_LOOKBACK = 250;
 
 /** 交易日清單記憶體快取（避免每次開 K 線都掃上百個日檔） */
 let tradingDaysMemo: { at: number; days: string[] } | null = null;
 const TRADING_DAYS_MEMO_MS = 60_000;
+
+/** 寫入新的 quotes 日檔後必須清掉，否則會一直回傳補價前的短清單 */
+export function invalidateTradingDaysMemo() {
+  tradingDaysMemo = null;
+}
 
 /**
  * 只掃本機 quotes 快取，不打證交所。
@@ -513,13 +528,14 @@ const TRADING_DAYS_MEMO_MS = 60_000;
  */
 export async function listCachedTradingDays(
   need: number,
-  lookbackCalendar = 120,
+  lookbackCalendar = HISTORY_CALENDAR_LOOKBACK,
 ): Promise<string[]> {
   const now = Date.now();
+  // 記憶體命中必須「根數夠」：否則 ensureQuoteHistory 補完日檔後仍讀到舊的 16 根
   if (
     tradingDaysMemo &&
     now - tradingDaysMemo.at < TRADING_DAYS_MEMO_MS &&
-    tradingDaysMemo.days.length >= Math.min(need, tradingDaysMemo.days.length)
+    tradingDaysMemo.days.length >= need
   ) {
     return tradingDaysMemo.days.slice(0, need);
   }
@@ -558,9 +574,13 @@ export async function getLatestCachedTradingDay(): Promise<string | null> {
   return days[0] ?? null;
 }
 
+/**
+ * 向後抓取足夠的交易日報價（上市＋上櫃合併），寫入 .cache。
+ * 正式環境若只有十來根 K，多半是這裡深度不夠或只打了證交所。
+ */
 export async function listRecentTradingDays(
   need: number,
-  lookbackCalendar = 50,
+  lookbackCalendar = HISTORY_CALENDAR_LOOKBACK,
   options?: { cacheOnly?: boolean },
 ): Promise<string[]> {
   if (options?.cacheOnly) return listCachedTradingDays(need, lookbackCalendar);
@@ -568,6 +588,7 @@ export async function listRecentTradingDays(
   const days: string[] = [];
   const cursor = new Date();
   cursor.setHours(12, 0, 0, 0);
+  let wrote = false;
 
   for (let i = 0; i < lookbackCalendar && days.length < need; i++) {
     const ymd = toYmd(cursor);
@@ -580,22 +601,20 @@ export async function listRecentTradingDays(
 
     const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
     if (cached?.quotes?.length) {
+      // 已有日檔就計入深度（即使舊檔偏上市）；缺日才打交易所
       days.push(ymd);
     } else {
-      const bundle = await fetchTwseQuotes(ymd);
-      if (bundle && bundle.quotes.length > 0) {
+      const bundle = await loadMergedQuotesDay(ymd);
+      if (bundle?.quotes?.length) {
         days.push(ymd);
-        await writeCacheFile(dayCacheName(ymd), {
-          ymd,
-          quotes: bundle.quotes,
-          indexChangePct: bundle.indexChangePct,
-          fetchedAt: new Date().toISOString(),
-        } satisfies DayQuoteCache);
+        wrote = true;
       }
       await sleep(220);
     }
     cursor.setDate(cursor.getDate() - 1);
   }
+
+  if (wrote) invalidateTradingDaysMemo();
   return days;
 }
 

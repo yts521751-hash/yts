@@ -49,8 +49,11 @@ export default async function SectorPage({ params, searchParams }: Props) {
   const { members, asOf: membersAsOf } = await membersWithTurnover(def.members);
 
   if (candles.length) {
-    // 背景輕觸刷新（不阻塞首屏）
-    void buildSectorKline(def.id, 80, { def }).catch(() => null);
+    // 背景輕觸刷新（不阻塞首屏）；深度預設可畫季線
+    const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+    void buildSectorKline(def.id, HISTORY_TRADING_DAYS, { def }).catch(
+      () => null,
+    );
   }
 
   return (
