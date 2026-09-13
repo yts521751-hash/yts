@@ -2,7 +2,6 @@ import "server-only";
 import {
   beginRebuildProgress,
   finishRebuildProgress,
-  getRebuildProgress,
   progressInRange,
   setRebuildProgress,
 } from "@/lib/rebuild-progress";
@@ -72,16 +71,7 @@ export function requestHistoryBackfill(reason: string): {
   };
   if (!g.__jinliuHistoryBackfill) g.__jinliuHistoryBackfill = { running: false };
   if (g.__jinliuHistoryBackfill.running) {
-    // 已在跑：確保進度仍為 active，讓輪詢／按鈕能繼續顯示
-    const cur = getRebuildProgress();
-    if (!cur.active) {
-      beginRebuildProgress("同步進行中");
-    } else {
-      setRebuildProgress(
-        { active: true, label: cur.label || "同步進行中" },
-        { immediate: true },
-      );
-    }
+    // 已在跑：只回傳旗標，不要重開假進度（收尾瞬間 active=false 仍 running 時會卡在 1%）
     return { started: false, alreadyRunning: true };
   }
   g.__jinliuHistoryBackfill.running = true;
