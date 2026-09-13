@@ -70,26 +70,38 @@ export default function TurnoverPage() {
         return;
       }
       const next = data.rows as Row[];
+      const sessionNow = Boolean(data.inSession);
       const changed = new Set<string>();
+      let rowsChanged = prevRef.current.size !== next.length;
       for (const r of next) {
         const prev = prevRef.current.get(r.code);
-        if (prev != null && prev !== r.turnoverYi) changed.add(r.code);
+        if (prev == null || prev !== r.turnoverYi) {
+          if (prev != null && prev !== r.turnoverYi) changed.add(r.code);
+          rowsChanged = true;
+        }
+      }
+      // 休市且排行未變：只同步 inSession，不刷新時間戳／tick，避免畫面一直跳動
+      const skipUiChurn =
+        !sessionNow && !rowsChanged && prevRef.current.size > 0;
+      setInSession(sessionNow);
+      setSessionNote(String(data.sessionNote || ""));
+      if (skipUiChurn) {
+        setError(null);
+        return;
       }
       prevRef.current = new Map(next.map((r) => [r.code, r.turnoverYi]));
       setRows(next);
       setDate(data.date || "");
       setUpdatedAt(data.builtAt || "");
       setSource(String(data.source || ""));
-      setInSession(Boolean(data.inSession));
-      setSessionNote(String(data.sessionNote || ""));
       setFromCache(false);
-      setTick((n) => n + 1);
+      if (sessionNow) setTick((n) => n + 1);
       writeClientCache<TurnoverSnapshot>(CLIENT_CACHE_KEYS.turnover, {
         rows: next,
         date: String(data.date || ""),
         builtAt: String(data.builtAt || ""),
         source: String(data.source || ""),
-        inSession: Boolean(data.inSession),
+        inSession: sessionNow,
         sessionNote: String(data.sessionNote || ""),
       });
       if (changed.size) {
