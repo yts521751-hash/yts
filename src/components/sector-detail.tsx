@@ -124,7 +124,20 @@ export function SectorDetail({
       <div className="px-4 pb-2">
         <Link
           href={`/sectors/${encodeURIComponent(sector.id)}`}
-          prefetch={false}
+          prefetch
+          onMouseEnter={() => {
+            // 滑過就預熱 API／路由，點進去幾乎秒開
+            void fetch(
+              `/api/sector/${encodeURIComponent(sector.id)}?days=80`,
+              { cache: "force-cache" },
+            ).catch(() => null);
+          }}
+          onTouchStart={() => {
+            void fetch(
+              `/api/sector/${encodeURIComponent(sector.id)}?days=80`,
+              { cache: "force-cache" },
+            ).catch(() => null);
+          }}
           onClick={(e) => {
             // 避免行動版底層 sheet／overlay 攔截導致「打不開」
             e.stopPropagation();

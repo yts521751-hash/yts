@@ -381,7 +381,14 @@ export function HomeApp({
                 <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
-                  onSelect={setSelected}
+                  onSelect={(s) => {
+                    setSelected(s);
+                    // 點選板塊時預熱產業 K 線，稍後開啟幾乎不用等
+                    void fetch(
+                      `/api/sector/${encodeURIComponent(s.id)}?days=80`,
+                      { cache: "force-cache" },
+                    ).catch(() => null);
+                  }}
                   filter={filter}
                   kindFilter="all"
                   period={flowPeriod}

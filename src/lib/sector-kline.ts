@@ -9,8 +9,11 @@ import {
 import {
   getCachedDayInsti,
   getCachedDayQuotes,
+  getLatestCachedTradingDay,
   klineCacheName,
+  klineCacheNameCandidates,
   listCachedTradingDays,
+  normalizeSectorId,
   readCacheFile,
   writeCacheFile,
   ymdToIso,
@@ -31,8 +34,79 @@ export type SectorKlinePayload = {
   quoteDays: string[];
   builtAt: string;
   formula: typeof FORMULA;
-  source: "cache" | "live";
+  source: "cache" | "live" | "memory";
 };
+
+const MEM_TTL_MS = 5 * 60 * 1000;
+const REBUILD_CONCURRENCY = 12;
+
+type MemEntry = { at: number; data: SectorKlinePayload };
+const memKline = new Map<string, MemEntry>();
+
+function memGet(sectorId: string): SectorKlinePayload | null {
+  const key = normalizeSectorId(sectorId);
+  const hit = memKline.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > MEM_TTL_MS) {
+    memKline.delete(key);
+    return null;
+  }
+  return { ...hit.data, source: "memory" };
+}
+
+function memSet(data: SectorKlinePayload) {
+  const key = normalizeSectorId(data.sectorId);
+  if (memKline.size > 80) {
+    const first = memKline.keys().next().value;
+    if (first) memKline.delete(first);
+  }
+  memKline.set(key, { at: Date.now(), data });
+}
+
+async function readDiskKline(
+  sectorId: string,
+): Promise<SectorKlinePayload | null> {
+  for (const name of klineCacheNameCandidates(sectorId)) {
+    const cached = await readCacheFile<SectorKlinePayload>(name);
+    if (cached?.candles?.length && cached.formula === FORMULA) {
+      return cached;
+    }
+  }
+  return null;
+}
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, Math.max(1, items.length)) },
+    async () => {
+      while (cursor < items.length) {
+        const idx = cursor++;
+        out[idx] = await fn(items[idx], idx);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return out;
+}
+
+/** 只讀快取（記憶體→磁碟），不重建。SSR 首屏用此避免 TTFB 被拖慢。 */
+export async function readSectorKlineCache(
+  sectorId: string,
+): Promise<SectorKlinePayload | null> {
+  const mem = memGet(sectorId);
+  if (mem?.candles?.length) return mem;
+  const disk = await readDiskKline(sectorId);
+  if (!disk?.candles?.length) return null;
+  memSet(disk);
+  return { ...disk, source: "cache" };
+}
+
 
 /**
  * 產業合成 K 線（類三竹族群圖）：
@@ -47,39 +121,56 @@ export async function buildSectorKline(
   days = 80,
   options?: { force?: boolean; def?: SectorDef },
 ): Promise<SectorKlinePayload | null> {
-  const def = options?.def ?? (await lookupSectorDef(sectorId));
+  const id = normalizeSectorId(sectorId);
+  const def = options?.def ?? (await lookupSectorDef(id));
   if (!def) return null;
+
+  // 快取優先：先讀記憶體／磁碟，避免每次都掃交易日清單
+  if (!options?.force) {
+    const mem = memGet(id);
+    if (mem?.candles?.length) {
+      const latest = await getLatestCachedTradingDay();
+      if (!latest || mem.quoteDays?.[0] === latest) return mem;
+    }
+    const disk = await readDiskKline(id);
+    if (disk?.candles?.length) {
+      const latest = await getLatestCachedTradingDay();
+      const freshEnough =
+        !latest ||
+        disk.quoteDays?.[0] === latest ||
+        (disk.quoteDays?.length ?? 0) >= Math.min(days, 40) - 2;
+      if (freshEnough) {
+        memSet(disk);
+        return { ...disk, source: "cache" };
+      }
+    }
+  }
 
   // 日線 + MA60 需要足夠交易日；只掃本機快取，不在請求路徑打證交所
   const tradingDays = await listCachedTradingDays(days, 180);
   if (tradingDays.length < 5) return null;
 
-  const cacheName = klineCacheName(sectorId);
-  if (!options?.force) {
-    const cached = await readCacheFile<SectorKlinePayload>(cacheName);
-    if (
-      cached?.candles?.length &&
-      cached.formula === FORMULA &&
-      cached.quoteDays?.[0] === tradingDays[0] &&
-      cached.quoteDays?.length >= Math.min(days, tradingDays.length) - 2
-    ) {
-      return { ...cached, source: "cache" };
-    }
-  }
-
   const chronological = [...tradingDays].reverse();
-  const series: {
-    ymd: string;
-    map: Map<string, QuoteRow>;
-    insti: Map<string, InstiRow>;
-  }[] = [];
-
-  for (const ymd of chronological) {
-    const map = await getCachedDayQuotes(ymd);
-    if (!map || map.size === 0) continue;
-    const insti = (await getCachedDayInsti(ymd)) ?? new Map<string, InstiRow>();
-    series.push({ ymd, map, insti });
-  }
+  const loaded = await mapPool(
+    chronological,
+    REBUILD_CONCURRENCY,
+    async (ymd) => {
+      const map = await getCachedDayQuotes(ymd);
+      if (!map || map.size === 0) return null;
+      const insti =
+        (await getCachedDayInsti(ymd)) ?? new Map<string, InstiRow>();
+      return { ymd, map, insti };
+    },
+  );
+  const series = loaded.filter(
+    (
+      x,
+    ): x is {
+      ymd: string;
+      map: Map<string, QuoteRow>;
+      insti: Map<string, InstiRow>;
+    } => Boolean(x),
+  );
 
   if (series.length < 5) return null;
 
@@ -174,7 +265,8 @@ export async function buildSectorKline(
     formula: FORMULA,
     source: "live",
   };
-  await writeCacheFile(cacheName, payload);
+  await writeCacheFile(klineCacheName(def.id), payload);
+  memSet(payload);
   return payload;
 }
 
@@ -183,11 +275,11 @@ export async function warmSectorKlineCaches(
   defs?: SectorDef[],
 ) {
   const list = defs?.length ? defs : [];
-  for (const def of list) {
+  await mapPool(list, 4, async (def) => {
     try {
       await buildSectorKline(def.id, days, { force: true, def });
     } catch (err) {
       console.warn(`[kline] warm ${def.id} failed:`, err);
     }
-  }
+  });
 }

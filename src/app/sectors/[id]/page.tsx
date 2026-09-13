@@ -1,5 +1,8 @@
 import { SectorKlineView } from "@/components/sector-kline-view";
-import { buildSectorKline } from "@/lib/sector-kline";
+import {
+  buildSectorKline,
+  readSectorKlineCache,
+} from "@/lib/sector-kline";
 import { lookupSectorDef } from "@/lib/resolve-universe";
 
 type Props = { params: Promise<{ id: string }> };
@@ -29,20 +32,25 @@ export default async function SectorPage({ params }: Props) {
     );
   }
 
-  const data = await buildSectorKline(id, 80, { def }).catch(() => null);
-  const candles = data?.candles ?? [];
+  // 首屏只讀快取，避免重建拖慢 TTFB；缺快取時交給客戶端拉 API
+  const cached = await readSectorKlineCache(def.id);
+  const candles = cached?.candles ?? [];
+
+  if (candles.length) {
+    // 背景輕觸刷新（不阻塞首屏）
+    void buildSectorKline(def.id, 80, { def }).catch(() => null);
+  }
 
   return (
     <SectorKlineView
       sectorId={def.id}
       initialName={def.name}
       initialCandles={candles}
-      initialMembers={def.members.map((m) => ({ code: m.code, name: m.name }))}
-      initialError={
-        candles.length
-          ? null
-          : "產業 K 線資料不足（本機日行情快取不夠）。可點再試一次，或回首頁觸發背景更新後重開。"
-      }
+      initialMembers={def.members.map((m) => ({
+        code: m.code,
+        name: m.name,
+      }))}
+      initialError={null}
     />
   );
 }

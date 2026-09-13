@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "fs/promises";
 import path from "path";
 
 const UA =
@@ -412,8 +412,26 @@ function instiCacheName(ymd: string) {
   return `insti-${ymd}.json`;
 }
 
+/** 正規化產業 id，避免中文 id 出現編碼／未編碼兩套檔名 */
+export function normalizeSectorId(sectorId: string): string {
+  try {
+    return decodeURIComponent(sectorId);
+  } catch {
+    return sectorId;
+  }
+}
+
 export function klineCacheName(sectorId: string) {
-  return `kline-${sectorId}.json`;
+  return `kline-${normalizeSectorId(sectorId)}.json`;
+}
+
+/** 相容舊版 encodeURIComponent 檔名 */
+export function klineCacheNameCandidates(sectorId: string): string[] {
+  const id = normalizeSectorId(sectorId);
+  const names = [`kline-${id}.json`];
+  const enc = encodeURIComponent(id);
+  if (enc !== id) names.push(`kline-${enc}.json`);
+  return names;
 }
 
 /** 快取是否已涵蓋足夠上櫃股（否則聯亞等 OTC 會變成成交 0） */
@@ -485,14 +503,41 @@ export async function loadMergedQuotesDay(
   return bundle;
 }
 
+/** 交易日清單記憶體快取（避免每次開 K 線都掃上百個日檔） */
+let tradingDaysMemo: { at: number; days: string[] } | null = null;
+const TRADING_DAYS_MEMO_MS = 60_000;
+
 /**
  * 只掃本機 quotes 快取，不打證交所。
- * 產業 K 線請求路徑必須用這個，避免週末／假日逐日網路探測造成「頁面掛住」。
+ * 優先 readdir 一次列出 quotes-*.json，避免逐日探測磁碟。
  */
 export async function listCachedTradingDays(
   need: number,
   lookbackCalendar = 120,
 ): Promise<string[]> {
+  const now = Date.now();
+  if (
+    tradingDaysMemo &&
+    now - tradingDaysMemo.at < TRADING_DAYS_MEMO_MS &&
+    tradingDaysMemo.days.length >= Math.min(need, tradingDaysMemo.days.length)
+  ) {
+    return tradingDaysMemo.days.slice(0, need);
+  }
+
+  try {
+    const files = await readdir(CACHE_DIR);
+    const days = files
+      .map((f) => /^quotes-(\d{8})\.json$/.exec(f)?.[1])
+      .filter((ymd): ymd is string => Boolean(ymd))
+      .sort((a, b) => b.localeCompare(a));
+    if (days.length) {
+      tradingDaysMemo = { at: now, days };
+      return days.slice(0, need);
+    }
+  } catch {
+    /* fall through to calendar probe */
+  }
+
   const days: string[] = [];
   const cursor = new Date();
   cursor.setHours(12, 0, 0, 0);
@@ -503,7 +548,14 @@ export async function listCachedTradingDays(
     if (cached?.quotes?.length) days.push(ymd);
     cursor.setDate(cursor.getDate() - 1);
   }
-  return days;
+  tradingDaysMemo = { at: now, days };
+  return days.slice(0, need);
+}
+
+/** 最新有 quotes 快取的交易日（記憶體命中極快） */
+export async function getLatestCachedTradingDay(): Promise<string | null> {
+  const days = await listCachedTradingDays(1, 40);
+  return days[0] ?? null;
 }
 
 export async function listRecentTradingDays(
@@ -547,12 +599,23 @@ export async function listRecentTradingDays(
   return days;
 }
 
+const dayQuotesMemo = new Map<string, Map<string, QuoteRow>>();
+
 export async function getCachedDayQuotes(
   ymd: string,
 ): Promise<Map<string, QuoteRow> | null> {
+  const hit = dayQuotesMemo.get(ymd);
+  if (hit) return hit;
   const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
   if (!cached?.quotes?.length) return null;
-  return new Map(cached.quotes.map((q) => [q.code, q]));
+  const map = new Map(cached.quotes.map((q) => [q.code, q]));
+  // 僅保留最近 ~100 日，避免長駐記憶體無限長
+  if (dayQuotesMemo.size > 120) {
+    const first = dayQuotesMemo.keys().next().value;
+    if (first) dayQuotesMemo.delete(first);
+  }
+  dayQuotesMemo.set(ymd, map);
+  return map;
 }
 
 /** 合併上市 T86 + 櫃買法人日報並快取 */

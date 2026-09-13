@@ -39,11 +39,21 @@ export async function GET(req: Request, ctx: Ctx) {
         { status: 503 },
       );
     }
-    return NextResponse.json({
+    const res = NextResponse.json({
       ok: true,
       ...data,
       members: def.members.map((m) => ({ code: m.code, name: m.name })),
     });
+    // 短快取：同產業短時間重複開啟可走瀏覽器／邊緣快取
+    if (data.source === "cache" || data.source === "memory") {
+      res.headers.set(
+        "Cache-Control",
+        "public, max-age=30, stale-while-revalidate=120",
+      );
+    } else {
+      res.headers.set("Cache-Control", "public, max-age=10, stale-while-revalidate=60");
+    }
+    return res;
   } catch (err) {
     const message = err instanceof Error ? err.message : "K 線組建失敗";
     return NextResponse.json({ ok: false, error: message }, { status: 502 });
