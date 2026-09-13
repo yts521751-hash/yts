@@ -144,14 +144,22 @@ export async function buildTurnoverRanking(
 }
 
 /** 補齊報價日檔到可算季線（預設 120 交易日） */
-export async function ensureQuoteHistory(needDays = HISTORY_TRADING_DAYS) {
+export async function ensureQuoteHistory(
+  needDays = HISTORY_TRADING_DAYS,
+  options?: { onProgress?: (done: number, need: number) => void },
+) {
   const lookback = Math.max(
     HISTORY_CALENDAR_LOOKBACK,
     Math.ceil(needDays * 2.2),
   );
   const have = await listCachedTradingDays(needDays, lookback);
-  if (have.length >= needDays) return have;
-  return listRecentTradingDays(needDays, lookback);
+  if (have.length >= needDays) {
+    options?.onProgress?.(have.length, needDays);
+    return have;
+  }
+  return listRecentTradingDays(needDays, lookback, {
+    onProgress: options?.onProgress,
+  });
 }
 
 export type { QuoteRow };

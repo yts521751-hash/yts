@@ -581,7 +581,10 @@ export async function getLatestCachedTradingDay(): Promise<string | null> {
 export async function listRecentTradingDays(
   need: number,
   lookbackCalendar = HISTORY_CALENDAR_LOOKBACK,
-  options?: { cacheOnly?: boolean },
+  options?: {
+    cacheOnly?: boolean;
+    onProgress?: (done: number, need: number) => void;
+  },
 ): Promise<string[]> {
   if (options?.cacheOnly) return listCachedTradingDays(need, lookbackCalendar);
 
@@ -603,6 +606,7 @@ export async function listRecentTradingDays(
     if (cached?.quotes?.length) {
       // 已有日檔就計入深度（即使舊檔偏上市）；缺日才打交易所
       days.push(ymd);
+      options?.onProgress?.(days.length, need);
     } else {
       const bundle = await loadMergedQuotesDay(ymd);
       if (bundle?.quotes?.length) {
@@ -611,6 +615,7 @@ export async function listRecentTradingDays(
       }
       await sleep(220);
     }
+    options?.onProgress?.(days.length, need);
     cursor.setDate(cursor.getDate() - 1);
   }
 

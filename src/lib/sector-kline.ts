@@ -288,13 +288,19 @@ export async function buildSectorKline(
 export async function warmSectorKlineCaches(
   days = HISTORY_TRADING_DAYS,
   defs?: SectorDef[],
+  options?: { onProgress?: (done: number, total: number) => void },
 ) {
   const list = defs?.length ? defs : [];
+  let done = 0;
+  const total = list.length;
   await mapPool(list, 4, async (def) => {
     try {
       await buildSectorKline(def.id, days, { force: true, def });
     } catch (err) {
       console.warn(`[kline] warm ${def.id} failed:`, err);
+    } finally {
+      done += 1;
+      options?.onProgress?.(done, total);
     }
   });
 }

@@ -126,6 +126,13 @@ export function HomeApp({
   );
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  /** 是否正在背景同步（用來驅動輪詢） */
+  const [syncing, setSyncing] = useState(false);
+  /** 背景同步進度；完成後隱藏 */
+  const [syncProgress, setSyncProgress] = useState<{
+    percent: number;
+    label: string;
+  } | null>(null);
 
   useEffect(() => {
     try {
@@ -198,6 +205,45 @@ export function HomeApp({
     sourceRef.current = source;
   }, [source]);
 
+
+  const applySyncProgress = useCallback((data: {
+    deploy?: {
+      syncing?: boolean;
+      rebuildRunning?: boolean;
+      progress?: {
+        active?: boolean;
+        percent?: number;
+        label?: string;
+      } | null;
+    };
+    backgroundBusy?: boolean;
+    rebuild?: { started?: boolean; alreadyRunning?: boolean } | null;
+  }) => {
+    const prog = data.deploy?.progress;
+    const busy =
+      Boolean(prog?.active) ||
+      Boolean(data.deploy?.syncing) ||
+      Boolean(data.deploy?.rebuildRunning) ||
+      Boolean(data.backgroundBusy) ||
+      Boolean(data.rebuild?.started || data.rebuild?.alreadyRunning);
+    if (prog?.active) {
+      setSyncing(true);
+      setSyncProgress({
+        percent: Math.max(0, Math.min(100, Number(prog.percent) || 0)),
+        label: String(prog.label || "同步中"),
+      });
+      return true;
+    }
+    if (busy) {
+      setSyncing(true);
+      setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中" });
+      return true;
+    }
+    setSyncing(false);
+    setSyncProgress(null);
+    return false;
+  }, []);
+
   const loadFlow = useCallback(async (force = false) => {
     const hadReal =
       sectorsRef.current.length >= 20 &&
@@ -210,6 +256,10 @@ export function HomeApp({
         cache: "no-store",
       });
       const data = await res.json();
+      const stillSyncing = applySyncProgress(data);
+      if (force && stillSyncing) {
+        // 觸發後開始輪詢進度（見下方 effect）
+      }
       if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
       const next = (data.sectors as SectorFlow[]).map(migrateSectorIfNeeded);
       const nextReal = isRealFlowPayload({
@@ -252,7 +302,31 @@ export function HomeApp({
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [applySyncProgress]);
+
+  // 背景同步中：輪詢進度%，完成後隱藏 label
+  useEffect(() => {
+    if (!syncing) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch("/api/flow", { cache: "no-store" });
+        const data = await res.json();
+        if (cancelled) return;
+        applySyncProgress(data);
+      } catch {
+        /* ignore poll errors */
+      }
+    };
+    const id = window.setInterval(() => {
+      void tick();
+    }, 1500);
+    void tick();
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [syncing, applySyncProgress]);
 
   const loadStocks = useCallback(async (force = false) => {
     setStocksLoading(true);
@@ -387,30 +461,42 @@ export function HomeApp({
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                if (boardMode === "stock") void loadStocks(true);
-                else void loadFlow(true);
-              }}
-              disabled={
-                boardMode === "stock"
+            <div className="flex flex-col items-end gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (boardMode === "stock") void loadStocks(true);
+                  else {
+                    setSyncing(true);
+                    setSyncProgress({ percent: 1, label: "同步中" });
+                    void loadFlow(true);
+                  }
+                }}
+                disabled={
+                  boardMode === "stock"
+                    ? stocksLoading
+                    : syncing ||
+                      (refreshing && sectors.length === 0) ||
+                      (loadState === "loading" && sectors.length === 0)
+                }
+                className="border border-border bg-[var(--panel)] px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-[var(--mk-anchor)] hover:text-foreground disabled:opacity-50"
+              >
+                {boardMode === "stock"
                   ? stocksLoading
-                  : (refreshing && sectors.length === 0) ||
-                    (loadState === "loading" && sectors.length === 0)
-              }
-              className="border border-border bg-[var(--panel)] px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-[var(--mk-anchor)] hover:text-foreground disabled:opacity-50"
-            >
-              {boardMode === "stock"
-                ? stocksLoading
-                  ? "讀取中…"
-                  : "重新整理個股"
-                : refreshing && sectors.length === 0
-                  ? "讀取中…"
-                  : refreshing
-                    ? "已觸發更新"
-                    : "觸發背景更新"}
-            </button>
+                    ? "讀取中…"
+                    : "重新整理個股"
+                  : syncing
+                    ? "同步中…"
+                    : refreshing && sectors.length === 0
+                      ? "讀取中…"
+                      : "觸發背景更新"}
+              </button>
+              {syncProgress ? (
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {syncProgress.label} {syncProgress.percent}%
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="inline-flex border border-border bg-muted/30 p-0.5">

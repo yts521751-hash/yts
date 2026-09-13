@@ -24,6 +24,13 @@ import {
   type QuoteRow,
 } from "@/lib/tw-market";
 import { warmSectorKlineCaches } from "@/lib/sector-kline";
+import {
+  beginRebuildProgress,
+  finishRebuildProgress,
+  getRebuildProgress,
+  progressInRange,
+  setRebuildProgress,
+} from "@/lib/rebuild-progress";
 import { computeFearGauge } from "@/lib/fear-gauge";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -258,8 +265,10 @@ export async function rebuildFlowPayload(options?: {
   promote?: boolean;
 }): Promise<FlowPayload> {
   await writeDeployMeta({ syncing: true, lastError: null });
+  beginRebuildProgress("同步資金流");
   try {
     const needDays = options?.days ?? 20;
+    setRebuildProgress({ percent: 5, label: "抓取交易日" });
     const tradingDaysRaw = await listRecentTradingDays(needDays, 50);
     const clock = taipeiClock();
     // 18:00 前不用「今天」未定稿日，避免晨間／盤中覆蓋上個交易日結果
@@ -286,6 +295,10 @@ export async function rebuildFlowPayload(options?: {
         quotes: new Map(bundle.quotes.map((q) => [q.code, q])),
         insti,
         indexChangePct: bundle.indexChangePct,
+      });
+      setRebuildProgress({
+        percent: progressInRange(8, 32, dayData.length, tradingDays.length),
+        label: `同步資金流 ${dayData.length}/${tradingDays.length}`,
       });
       await sleep(100);
     }
@@ -359,16 +372,35 @@ export async function rebuildFlowPayload(options?: {
     try {
       const { ensureQuoteHistory } = await import("@/lib/turnover");
       const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
-      await ensureQuoteHistory(HISTORY_TRADING_DAYS);
-      await warmSectorKlineCaches(HISTORY_TRADING_DAYS, universe);
+      setRebuildProgress({ percent: 45, label: "補齊歷史報價" });
+      await ensureQuoteHistory(HISTORY_TRADING_DAYS, {
+        onProgress: (done, need) => {
+          setRebuildProgress({
+            percent: progressInRange(45, 72, done, need),
+            label: `補齊歷史報價 ${done}/${need}`,
+          });
+        },
+      });
+      setRebuildProgress({ percent: 75, label: "重算產業 K 線" });
+      await warmSectorKlineCaches(HISTORY_TRADING_DAYS, universe, {
+        onProgress: (done, total) => {
+          setRebuildProgress({
+            percent: progressInRange(75, 98, done, total),
+            label: `重算產業 K 線 ${done}/${total}`,
+          });
+        },
+      });
     } catch (err) {
       console.warn("[rebuild] kline warm failed:", err);
     }
 
+    await writeDeployMeta({ syncing: false, lastError: null });
+    finishRebuildProgress(true);
     return { ...payload, deploySlot: doPromote ? "active" : "staging" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await writeDeployMeta({ syncing: false, lastError: message });
+    finishRebuildProgress(false, message);
     throw err;
   }
 }
@@ -474,6 +506,7 @@ export async function getDeployStatus() {
   return {
     ...meta,
     rebuildRunning: isRebuildRunning(),
+    progress: getRebuildProgress(),
     dailyClose,
   };
 }
