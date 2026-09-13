@@ -260,6 +260,92 @@ async function fetchTwseIndexCloses(options?: {
   };
 }
 
+const TPEX_INDEX_SERIES = "wind-tpex-trading-index.json";
+
+/**
+ * 櫃買「日成交量值指數」官方收盤（雲端無本機合成快取時的備援；比 Yahoo ^TWOII 可靠）
+ */
+async function fetchTpexIndexCloses(options?: {
+  force?: boolean;
+}): Promise<{
+  closes: number[];
+  asOf: string;
+  changePct: number;
+  source: string;
+} | null> {
+  type Point = { date: string; close: number };
+  type Series = { points: Point[]; updatedAt: string };
+  if (!options?.force) {
+    const cached = await readCacheFile<Series>(TPEX_INDEX_SERIES);
+    if (cached?.points && cached.points.length >= 40 && cached.updatedAt) {
+      const age = Date.now() - Date.parse(cached.updatedAt);
+      if (Number.isFinite(age) && age >= 0 && age < 6 * 60 * 60 * 1000) {
+        const pts = cached.points;
+        const last = pts[pts.length - 1];
+        const prev = pts[pts.length - 2] ?? last;
+        return {
+          closes: pts.map((p) => p.close),
+          asOf: last.date,
+          changePct:
+            prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+          source: "tpex-tradingIndex-cache",
+        };
+      }
+    }
+  }
+
+  const points: Point[] = [];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const url =
+      `https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingIndex` +
+      `?date=${y}%2F${m}%2F01&id=&response=json`;
+    try {
+      const payload =
+        (await fetchJsonViaCurl<{
+          tables?: Array<{ data?: Array<Array<string | number>> }>;
+        }>(url)) ??
+        (await fetchJson<{
+          tables?: Array<{ data?: Array<Array<string | number>> }>;
+        }>(url));
+      const rows = payload?.tables?.[0]?.data ?? [];
+      for (const row of rows) {
+        const iso = rocDateToIso(String(row[0] ?? ""));
+        const close = parseTwseNum(String(row[4] ?? ""));
+        if (!iso || close == null || close <= 0) continue;
+        points.push({ date: iso, close });
+      }
+    } catch {
+      /* next month */
+    }
+  }
+
+  const byDate = new Map<string, number>();
+  for (const p of points) byDate.set(p.date, p.close);
+  const ordered = [...byDate.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, close]) => ({ date, close }));
+  if (ordered.length < 40) return null;
+
+  await writeCacheFile(TPEX_INDEX_SERIES, {
+    points: ordered,
+    updatedAt: new Date().toISOString(),
+  } satisfies Series);
+
+  const last = ordered[ordered.length - 1];
+  const prev = ordered[ordered.length - 2] ?? last;
+  return {
+    closes: ordered.map((p) => p.close),
+    asOf: last.date,
+    changePct:
+      prev.close > 0 ? ((last.close - prev.close) / prev.close) * 100 : 0,
+    source: "tpex-tradingIndex",
+  };
+}
+
 type TpexSeries = {
   points: { ymd: string; close: number; changePct: number }[];
   updatedAt: string;
@@ -568,7 +654,7 @@ export async function computeWindPayload(options?: {
           options?.twseDayChangePct ?? 0,
         );
 
-  // 櫃買：優先本機上櫃股成交加權合成。Yahoo ^TWOII 圖表近期失真（單日可達 -7%），不當作主來源。
+  // 櫃買：本機合成 → 櫃買官方 tradingIndex →（謹慎）Yahoo；避免雲端無快取時全日漲跌／BIAS 變 0
   let tpex: WindReading;
   try {
     const syn = await buildTpexSyntheticCloses({
@@ -585,24 +671,48 @@ export async function computeWindPayload(options?: {
         syn.source,
       );
     } else {
-      const twoii = await fetchYahooCloses("^TWOII");
-      const yahooOk =
-        twoii &&
-        Math.abs(twoii.changePct) <= 5 &&
-        twoii.closes.length >= 40;
-      tpex = yahooOk
-        ? readingFromCloses(
-            "tpex",
-            "上櫃（櫃買）",
-            twoii.closes,
-            twoii.changePct,
-            twoii.asOf,
-            "yahoo-TWOII",
-          )
-        : fallbackReading("tpex", "上櫃（櫃買加權）", 0);
+      const official = await fetchTpexIndexCloses({ force: options?.force });
+      if (official) {
+        tpex = readingFromCloses(
+          "tpex",
+          "上櫃（櫃買加權）",
+          official.closes,
+          official.changePct,
+          official.asOf,
+          official.source,
+        );
+      } else {
+        const twoii = await fetchYahooCloses("^TWOII");
+        const yahooOk =
+          twoii &&
+          Math.abs(twoii.changePct) <= 5 &&
+          twoii.closes.length >= 40;
+        tpex = yahooOk
+          ? readingFromCloses(
+              "tpex",
+              "上櫃（櫃買）",
+              twoii.closes,
+              twoii.changePct,
+              twoii.asOf,
+              "yahoo-TWOII",
+            )
+          : fallbackReading("tpex", "上櫃（櫃買加權）", 0);
+      }
     }
   } catch {
-    tpex = fallbackReading("tpex", "上櫃（櫃買加權）", 0);
+    const official = await fetchTpexIndexCloses({ force: true }).catch(
+      () => null,
+    );
+    tpex = official
+      ? readingFromCloses(
+          "tpex",
+          "上櫃（櫃買加權）",
+          official.closes,
+          official.changePct,
+          official.asOf,
+          official.source,
+        )
+      : fallbackReading("tpex", "上櫃（櫃買加權）", 0);
   }
 
   const payload: WindPayload = {
@@ -635,9 +745,28 @@ export function requestWindRebuild(reason: string) {
   return { started: true, alreadyRunning: false };
 }
 
+function isBrokenReading(r: WindReading | undefined): boolean {
+  if (!r) return true;
+  return (
+    (!r.close || r.close <= 0) &&
+    String(r.source || "").includes("fallback")
+  );
+}
+
 export async function getWindPayload(): Promise<WindPayload> {
   const cached = await readCacheFile<WindPayload>(CACHE);
   if (cached?.twse && cached?.tpex && cached.builtAt) {
+    const broken =
+      isBrokenReading(cached.twse) || isBrokenReading(cached.tpex);
+    if (broken) {
+      // 快取裡上市／上櫃指標已壞（全日 0）→ 立刻重算，勿再餵空數字
+      const fixed = await computeWindPayload({
+        force: true,
+        allowNetwork: false,
+      });
+      requestWindRebuild("repair-broken");
+      return fixed;
+    }
     const age = Date.now() - Date.parse(cached.builtAt);
     // 超過 30 分鐘觸發背景刷新，但仍先回舊快取，避免請求掛住
     if (!Number.isFinite(age) || age >= 1000 * 60 * 30) {
@@ -645,7 +774,7 @@ export async function getWindPayload(): Promise<WindPayload> {
     }
     return cached;
   }
-  // 無快取：先用本機行情快速算一版，再背景補齊歷史
+  // 無快取：先用本機行情／官方指數快速算一版，再背景補齊歷史
   const quick = await computeWindPayload({
     force: true,
     allowNetwork: false,

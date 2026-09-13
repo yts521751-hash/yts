@@ -127,6 +127,9 @@ function WindDial({ reading }: { reading: WindReading }) {
         reading.source.includes("tpex-turnover-weighted")
           ? " · 櫃買指數為上櫃股成交加權合成（非 Yahoo）"
           : ""}
+        {reading.source.includes("tradingIndex")
+          ? " · 櫃買指數取自櫃買中心日成交量值指數"
+          : ""}
         {reading.source.includes("FMTQIK")
           ? " · 加權指數取自證交所 FMTQIK"
           : ""}
