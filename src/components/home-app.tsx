@@ -127,130 +127,12 @@ export function HomeApp({
   );
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  /** 本機同步工作階段：點擊後到真正完成前，進度列一律顯示 */
+  /** 前景同步中：進度列由本機狀態驅動，串流只更新％ */
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
     percent: number;
     label: string;
   } | null>(null);
-  /** 使用者觸發的同步工作階段（與 server 輪詢解耦） */
-  const syncSessionRef = useRef(false);
-  /** force 請求是否已結束（成功或失敗） */
-  const syncForceDoneRef = useRef(false);
-  /** 是否已從伺服器看過 active／busy */
-  const syncSeenBusyRef = useRef(false);
-  /** 連續幾次輪詢都閒置（避免偶發空回應提早關） */
-  const syncIdleStreakRef = useRef(0);
-  const syncStartedAtRef = useRef(0);
-
-  const endSyncSession = useCallback((final?: { percent: number; label: string }) => {
-    if (final) setSyncProgress(final);
-    syncSessionRef.current = false;
-    syncForceDoneRef.current = false;
-    syncSeenBusyRef.current = false;
-    syncIdleStreakRef.current = 0;
-    // 稍留完成態再隱藏
-    window.setTimeout(() => {
-      if (syncSessionRef.current) return;
-      setSyncing(false);
-      setSyncProgress(null);
-    }, final ? 900 : 0);
-  }, []);
-
-  const startSyncSession = useCallback(() => {
-    syncSessionRef.current = true;
-    syncForceDoneRef.current = false;
-    syncSeenBusyRef.current = false;
-    syncIdleStreakRef.current = 0;
-    syncStartedAtRef.current = Date.now();
-    setSyncing(true);
-    setSyncProgress({ percent: 1, label: "開始同步…" });
-  }, []);
-
-  /** 只更新進度數字；工作階段未結束前絕不隱藏 */
-  const ingestProgress = useCallback(
-    (data: {
-      busy?: boolean;
-      rebuildRunning?: boolean;
-      backgroundBusy?: boolean;
-      progress?: {
-        active?: boolean;
-        percent?: number;
-        label?: string;
-        error?: string | null;
-      } | null;
-      deploy?: {
-        syncing?: boolean;
-        rebuildRunning?: boolean;
-        progress?: {
-          active?: boolean;
-          percent?: number;
-          label?: string;
-          error?: string | null;
-        } | null;
-      };
-      rebuild?: { started?: boolean; alreadyRunning?: boolean } | null;
-    }) => {
-      if (!syncSessionRef.current) return;
-
-      const prog = data.progress ?? data.deploy?.progress ?? null;
-      const busy =
-        Boolean(prog?.active) ||
-        Boolean(data.busy) ||
-        Boolean(data.rebuildRunning) ||
-        Boolean(data.deploy?.syncing) ||
-        Boolean(data.deploy?.rebuildRunning) ||
-        Boolean(data.backgroundBusy) ||
-        Boolean(data.rebuild?.started || data.rebuild?.alreadyRunning);
-
-      if (busy || prog?.active) {
-        syncSeenBusyRef.current = true;
-        syncIdleStreakRef.current = 0;
-        const percent = Math.max(
-          1,
-          Math.min(100, Number(prog?.percent) || 1),
-        );
-        const label = String(prog?.label || "同步中");
-        setSyncing(true);
-        setSyncProgress((prev) => ({
-          // 百分比只增不減，避免輪詢抖動
-          percent: Math.max(prev?.percent ?? 1, percent),
-          label,
-        }));
-        return;
-      }
-
-      // 伺服器回報閒置：工作階段未就緒前一律保留本機進度列
-      if (!syncForceDoneRef.current) {
-        setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中…" });
-        return;
-      }
-
-      // force 已回來且看過 busy：連續 2 次閒置才結束（防抖）
-      if (syncSeenBusyRef.current) {
-        syncIdleStreakRef.current += 1;
-        if (syncIdleStreakRef.current >= 2) {
-          endSyncSession({
-            percent: 100,
-            label: prog?.error ? "同步失敗" : "同步完成",
-          });
-        }
-        return;
-      }
-
-      // force 回來但從未看到 busy（極短／失敗）：至少顯示 1.5s 再關
-      const shownMs = Date.now() - (syncStartedAtRef.current || 0);
-      if (shownMs < 1500) {
-        setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中…" });
-        return;
-      }
-      endSyncSession({
-        percent: Number(prog?.percent) >= 100 ? 100 : 100,
-        label: prog?.error ? "同步失敗" : "同步完成",
-      });
-    },
-    [endSyncSession],
-  );
 
   useEffect(() => {
     try {
@@ -323,17 +205,14 @@ export function HomeApp({
     sourceRef.current = source;
   }, [source]);
 
-  const loadFlow = useCallback(async (force = false) => {
+  const loadFlow = useCallback(async () => {
     const hadReal =
       sectorsRef.current.length >= 20 &&
       !String(sourceRef.current).includes("demo");
-    // 已有正確畫面時靜默核對，不要打「讀取中／背景更新中」
-    if (force || !hadReal) setRefreshing(true);
-    if (force) setError(null);
+    // 已有正確畫面時靜默核對，不要打「讀取中」
+    if (!hadReal) setRefreshing(true);
     try {
-      const res = await fetch(`/api/flow${force ? "?force=1" : ""}`, {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/flow", { cache: "no-store" });
       const data = await readResponseJson<{
         ok?: boolean;
         error?: string;
@@ -341,17 +220,7 @@ export function HomeApp({
         source?: string;
         sectors?: SectorFlow[];
         brief?: MarketBrief;
-        deploy?: Parameters<typeof ingestProgress>[0]["deploy"];
-        backgroundBusy?: boolean;
-        rebuild?: Parameters<typeof ingestProgress>[0]["rebuild"];
-      }>(res, "資金流同步失敗");
-      if (force) {
-        // force 回應只負責帶進度；完成判定交給輪詢
-        ingestProgress(data);
-        syncForceDoneRef.current = true;
-      } else if (syncSessionRef.current) {
-        ingestProgress(data);
-      }
+      }>(res, "資金流載入失敗");
       if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
       const next = (data.sectors as SectorFlow[]).map(migrateSectorIfNeeded);
       const nextReal = isRealFlowPayload({
@@ -362,11 +231,12 @@ export function HomeApp({
       });
 
       // 有真實收盤資料時，拒絕被 demo／半套結果蓋掉
-      if (hadReal && !nextReal) {
-        if (force) setError(String(data.error || "背景更新尚未完成，仍顯示上個交易日資料"));
-        return;
-      }
-      if (hadReal && nextReal && next.length < Math.floor(sectorsRef.current.length * 0.6)) {
+      if (hadReal && !nextReal) return;
+      if (
+        hadReal &&
+        nextReal &&
+        next.length < Math.floor(sectorsRef.current.length * 0.6)
+      ) {
         return;
       }
 
@@ -390,47 +260,85 @@ export function HomeApp({
       });
     } catch (e) {
       setLoadState((s) => (s === "ready" ? "ready" : "error"));
-      // force 同步失敗也要顯示（含伺服器回 HTML／冷啟動），不能只在無資料時提示
-      if (force || !hadReal) {
+      if (!hadReal) {
         setError(e instanceof Error ? e.message : "載入失敗");
-      }
-      if (force && syncSessionRef.current) {
-        // 請求失敗仍繼續輪詢進度（背景可能已啟動）；標記 force 已結束
-        syncForceDoneRef.current = true;
       }
     } finally {
       setRefreshing(false);
     }
-  }, [ingestProgress]);
+  }, []);
 
-  // 本機同步工作階段：輕量輪詢 /api/progress，只更新％，完成前不關 UI
-  useEffect(() => {
-    if (!syncing || !syncSessionRef.current) return;
-    let cancelled = false;
-    const tick = async () => {
-      if (!syncSessionRef.current) return;
-      try {
-        const res = await fetch("/api/progress", { cache: "no-store" });
-        const data = await readResponseJson<{
-          busy?: boolean;
-          rebuildRunning?: boolean;
-          progress?: Parameters<typeof ingestProgress>[0]["progress"];
-        }>(res, "進度查詢失敗");
-        if (cancelled || !syncSessionRef.current) return;
-        ingestProgress(data);
-      } catch {
-        /* 輪詢失敗不關進度列 */
+  /** 前景同步：同一條 /api/sync 串流推進度，跑完再刷新畫面 */
+  const runForegroundSync = useCallback(async () => {
+    if (syncing) return;
+    setError(null);
+    setSyncing(true);
+    setSyncProgress({ percent: 1, label: "開始同步…" });
+    let ok = false;
+    let errMsg: string | null = null;
+    try {
+      const res = await fetch("/api/sync", { cache: "no-store" });
+      if (!res.ok || !res.body) {
+        throw new Error(`同步請求失敗（HTTP ${res.status}）`);
       }
-    };
-    const id = window.setInterval(() => {
-      void tick();
-    }, 1000);
-    void tick();
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [syncing, ingestProgress]);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let msg: {
+            type?: string;
+            percent?: number;
+            label?: string;
+            ok?: boolean;
+            error?: string;
+          };
+          try {
+            msg = JSON.parse(trimmed);
+          } catch {
+            continue;
+          }
+          if (msg.type === "progress") {
+            const percent = Math.max(
+              1,
+              Math.min(100, Number(msg.percent) || 1),
+            );
+            const label = String(msg.label || "同步中");
+            setSyncProgress((prev) => ({
+              percent: Math.max(prev?.percent ?? 1, percent),
+              label,
+            }));
+          } else if (msg.type === "done") {
+            ok = Boolean(msg.ok);
+            errMsg = msg.error ? String(msg.error) : null;
+            setSyncProgress({
+              percent: 100,
+              label: ok ? "同步完成" : "同步失敗",
+            });
+          }
+        }
+      }
+      if (!ok && errMsg) throw new Error(errMsg);
+      if (!ok) throw new Error("同步未完成");
+      await loadFlow();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "同步失敗";
+      setError(message);
+      setSyncProgress({ percent: 100, label: "同步失敗" });
+    } finally {
+      window.setTimeout(() => {
+        setSyncing(false);
+        setSyncProgress(null);
+      }, 800);
+    }
+  }, [syncing, loadFlow]);
 
   const loadStocks = useCallback(async (force = false) => {
     setStocksLoading(true);
@@ -463,7 +371,7 @@ export function HomeApp({
   }, []);
 
   useEffect(() => {
-    void loadFlow(false);
+    void loadFlow();
   }, [loadFlow]);
 
   useEffect(() => {
@@ -537,29 +445,30 @@ export function HomeApp({
       />
       {syncing || syncProgress ? (
         <div
-          className="sticky top-0 z-50 border-b-2 px-4 py-3 shadow-md sm:px-6"
+          className="fixed inset-x-0 top-0 z-[100] border-b-2 px-4 py-3 shadow-lg sm:px-6"
           style={{
-            borderColor: "var(--mk-anchor)",
-            background: "color-mix(in oklab, var(--mk-anchor) 22%, var(--panel))",
+            borderColor: "#1e3a5f",
+            background: "#dbe7f5",
+            color: "#0f172a",
           }}
           role="status"
           aria-live="polite"
         >
           <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-2">
             <div className="flex items-center justify-between gap-3 text-sm sm:text-base">
-              <span className="font-semibold tracking-tight text-foreground">
+              <span className="font-bold tracking-tight">
                 正在同步資料… {syncProgress?.percent ?? 0}%
               </span>
-              <span className="max-w-[55%] truncate text-xs text-foreground/80 sm:text-sm">
+              <span className="max-w-[55%] truncate text-xs opacity-80 sm:text-sm">
                 {syncProgress?.label || "請稍候"}
               </span>
             </div>
-            <div className="h-3 overflow-hidden rounded-sm bg-black/20 dark:bg-white/25">
+            <div className="h-3 overflow-hidden rounded-sm bg-black/20">
               <div
                 className="h-full rounded-sm transition-[width] duration-300"
                 style={{
                   width: `${Math.max(4, syncProgress?.percent ?? 0)}%`,
-                  background: "var(--mk-anchor)",
+                  background: "#1e3a5f",
                 }}
               />
             </div>
@@ -606,10 +515,7 @@ export function HomeApp({
                 type="button"
                 onClick={() => {
                   if (boardMode === "stock") void loadStocks(true);
-                  else {
-                    startSyncSession();
-                    void loadFlow(true);
-                  }
+                  else void runForegroundSync();
                 }}
                 disabled={
                   boardMode === "stock"
@@ -628,7 +534,7 @@ export function HomeApp({
                     ? `同步中 ${syncProgress?.percent ?? 0}%`
                     : refreshing && sectors.length === 0
                       ? "讀取中…"
-                      : "補齊／更新歷史資料"}
+                      : "同步資料"}
               </button>
             </div>
           </div>
@@ -677,7 +583,7 @@ export function HomeApp({
                 <button
                   type="button"
                   className="mt-3 rounded-lg border px-3 py-1.5 text-xs"
-                  onClick={() => void loadFlow(false)}
+                  onClick={() => void loadFlow()}
                 >
                   再試一次
                 </button>

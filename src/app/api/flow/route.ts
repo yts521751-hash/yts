@@ -3,7 +3,6 @@ import {
   getActiveFlowPayload,
   getDeployStatus,
 } from "@/lib/build-flow";
-import { requestHistoryBackfill } from "@/lib/history-backfill";
 import { getScheduleInfo } from "@/lib/scheduler";
 import {
   MARKET_BRIEF,
@@ -21,36 +20,24 @@ export const maxDuration = 30;
 /**
  * 灰度讀取：永遠回 active。
  * 僅在完全沒有真實快取時才用示範資料，並明確標示 isDemo／source。
- * force=1 觸發「全量歷史補齊＋日終大包」（背景執行，不阻塞回應）。
+ * 手動同步請打 /api/sync（前景串流進度），此處不再背景更新。
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const force = searchParams.get("force") === "1";
   const fallback = searchParams.get("fallback") !== "0";
   const schedule = getScheduleInfo();
-
-  let rebuild: { started: boolean; alreadyRunning: boolean } | null = null;
-  if (force) {
-    // 手動觸發：先補滿歷史報價，再跑日終大包（產業 K／均線／個股／風度）
-    rebuild = requestHistoryBackfill("api-force");
-  }
 
   try {
     const payload = await getActiveFlowPayload();
     const deploy = await getDeployStatus();
 
     if (!payload?.sectors?.length) {
-      if (!rebuild?.alreadyRunning && !deploy.rebuildRunning) {
-        // 空快取暖機同樣走全量補齊，避免只建 20 日資金流
-        rebuild = requestHistoryBackfill("api-empty-warmup");
-      }
       if (!fallback) {
         return NextResponse.json(
           {
             ok: false,
-            error: "尚無 active 快取，背景同步中",
-            syncing: true,
-            rebuild,
+            error: "尚無 active 快取，請點「同步資料」補齊",
+            syncing: false,
             schedule,
             deploy,
           },
@@ -59,7 +46,7 @@ export async function GET(req: Request) {
       }
       return NextResponse.json({
         ok: false,
-        error: "尚無真實快取，背景灰度同步中；暫顯示示範資料（非證交所即時）",
+        error: "尚無真實快取；暫顯示示範資料。請點「同步資料」補齊歷史。",
         brief: { ...MARKET_BRIEF, isDemo: true },
         sectors: SECTORS,
         tradingDays: [],
@@ -67,8 +54,7 @@ export async function GET(req: Request) {
         isDemo: true,
         dataProvenance: "demo-not-exchange",
         builtAt: new Date().toISOString(),
-        syncing: true,
-        rebuild,
+        syncing: false,
         schedule,
         deploy,
         meta: {
@@ -82,11 +68,7 @@ export async function GET(req: Request) {
     }
 
     const sectors = payload.sectors.map(migrateSectorIfNeeded);
-    // 已有真實板塊資料就視為可立即閱讀；背景重建不打擾畫面。
-    const backgroundBusy =
-      deploy.syncing ||
-      deploy.rebuildRunning ||
-      Boolean(rebuild?.started || rebuild?.alreadyRunning);
+    const backgroundBusy = deploy.syncing || deploy.rebuildRunning;
     return NextResponse.json({
       ok: true,
       ...payload,
@@ -96,7 +78,6 @@ export async function GET(req: Request) {
       dataProvenance: "twse+tpex-public",
       syncing: false,
       backgroundBusy,
-      rebuild,
       schedule,
       deploy,
       meta: {

@@ -20,10 +20,13 @@ export type RebuildProgress = {
 
 const PROGRESS_CACHE = "rebuild-progress.json";
 
+type ProgressListener = (progress: RebuildProgress) => void;
+
 type Bag = typeof globalThis & {
   __jinchaoRebuildProgress?: RebuildProgress;
   __jinchaoRebuildProgressWrite?: Promise<void> | null;
   __jinchaoRebuildProgressTimer?: ReturnType<typeof setTimeout> | null;
+  __jinchaoRebuildProgressListeners?: Set<ProgressListener>;
 };
 
 const IDLE: RebuildProgress = {
@@ -89,6 +92,22 @@ export async function readRebuildProgress(): Promise<RebuildProgress> {
   return { ...mem };
 }
 
+function listeners(): Set<ProgressListener> {
+  const g = globalThis as Bag;
+  if (!g.__jinchaoRebuildProgressListeners) {
+    g.__jinchaoRebuildProgressListeners = new Set();
+  }
+  return g.__jinchaoRebuildProgressListeners;
+}
+
+/** 前景串流同步用：每次進度變更立刻通知訂閱者 */
+export function subscribeRebuildProgress(fn: ProgressListener): () => void {
+  listeners().add(fn);
+  return () => {
+    listeners().delete(fn);
+  };
+}
+
 export function setRebuildProgress(
   patch: Partial<Omit<RebuildProgress, "updatedAt">>,
   opts?: { immediate?: boolean },
@@ -99,9 +118,23 @@ export function setRebuildProgress(
     cur.percent = Math.max(0, Math.min(100, Math.round(cur.percent)));
   }
   schedulePersist(Boolean(opts?.immediate));
+  const snapshot = { ...cur };
+  for (const fn of listeners()) {
+    try {
+      fn(snapshot);
+    } catch {
+      /* ignore listener errors */
+    }
+  }
 }
 
 export function beginRebuildProgress(label = "開始同步") {
+  const cur = bag();
+  // 已在同步中：只改標籤，不要把百分比打回 1%（前景串流會抖）
+  if (cur.active) {
+    setRebuildProgress({ label, error: null }, { immediate: true });
+    return;
+  }
   setRebuildProgress(
     {
       active: true,

@@ -61,38 +61,58 @@ export async function runHistoryBackfill(reason: string) {
   }
 }
 
-/** 背景單飛：首頁「觸發背景更新」／手動補歷史用 */
-export function requestHistoryBackfill(reason: string): {
-  started: boolean;
-  alreadyRunning: boolean;
-} {
+function backfillBag() {
   const g = globalThis as typeof globalThis & {
     __jinliuHistoryBackfill?: { running: boolean };
   };
   if (!g.__jinliuHistoryBackfill) g.__jinliuHistoryBackfill = { running: false };
-  if (g.__jinliuHistoryBackfill.running) {
-    // 已在跑：只回傳旗標，不要重開假進度（收尾瞬間 active=false 仍 running 時會卡在 1%）
+  return g.__jinliuHistoryBackfill;
+}
+
+/**
+ * 前景同步（單飛）：同一請求內跑完，進度靠 rebuild-progress 訂閱推送。
+ * 已在跑時回傳 alreadyRunning，呼叫端改訂閱現有進度即可。
+ */
+export async function runHistoryBackfillExclusive(reason: string): Promise<{
+  alreadyRunning: boolean;
+  result?: Awaited<ReturnType<typeof runHistoryBackfill>>;
+}> {
+  const bag = backfillBag();
+  if (bag.running) {
+    return { alreadyRunning: true };
+  }
+  bag.running = true;
+  try {
+    const result = await runHistoryBackfill(reason);
+    return { alreadyRunning: false, result };
+  } finally {
+    bag.running = false;
+  }
+}
+
+/** @deprecated 保留給空快取暖機；首頁改走 /api/sync 前景串流 */
+export function requestHistoryBackfill(reason: string): {
+  started: boolean;
+  alreadyRunning: boolean;
+} {
+  const bag = backfillBag();
+  if (bag.running) {
     return { started: false, alreadyRunning: true };
   }
-  g.__jinliuHistoryBackfill.running = true;
-  // 立刻標記進度，避免首屏輪詢在延後啟動前把 UI 清掉
+  bag.running = true;
   beginRebuildProgress("補齊歷史報價");
-  // 延後啟動重活，先讓 /api/flow 回完 JSON，避免 Render 冷啟動／記憶體尖峰把本次請求打成 HTML 502
   setTimeout(() => {
     void runHistoryBackfill(reason)
       .catch((err) => {
         console.error(`[backfill] failed (${reason}):`, err);
       })
       .finally(() => {
-        g.__jinliuHistoryBackfill!.running = false;
+        bag.running = false;
       });
   }, 50);
   return { started: true, alreadyRunning: false };
 }
 
 export function isHistoryBackfillRunning(): boolean {
-  const g = globalThis as typeof globalThis & {
-    __jinliuHistoryBackfill?: { running: boolean };
-  };
-  return Boolean(g.__jinliuHistoryBackfill?.running);
+  return Boolean(backfillBag().running);
 }
