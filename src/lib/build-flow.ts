@@ -28,6 +28,7 @@ import {
   beginRebuildProgress,
   finishRebuildProgress,
   getRebuildProgress,
+  readRebuildProgress,
   progressInRange,
   setRebuildProgress,
 } from "@/lib/rebuild-progress";
@@ -416,6 +417,7 @@ export function requestBackgroundRebuild(
   const bag = rebuildBag();
   if (bag.running) return { started: false, alreadyRunning: true };
   bag.running = true;
+  beginRebuildProgress("同步中");
   const promote =
     opts?.promote ??
     (reason.startsWith("cron:") || reason.includes("18:")
@@ -506,7 +508,7 @@ export async function getDeployStatus() {
   return {
     ...meta,
     rebuildRunning: isRebuildRunning(),
-    progress: getRebuildProgress(),
+    progress: await readRebuildProgress(),
     dailyClose,
   };
 }

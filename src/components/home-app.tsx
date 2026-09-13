@@ -133,6 +133,10 @@ export function HomeApp({
     percent: number;
     label: string;
   } | null>(null);
+  /** 使用者剛觸發：force 回來前不要被空輪詢清掉進度 */
+  const syncHoldRef = useRef(false);
+  /** 是否已見過 active 進度（用來判斷真正完成） */
+  const syncSeenActiveRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -226,7 +230,10 @@ export function HomeApp({
       Boolean(data.deploy?.rebuildRunning) ||
       Boolean(data.backgroundBusy) ||
       Boolean(data.rebuild?.started || data.rebuild?.alreadyRunning);
+
     if (prog?.active) {
+      syncSeenActiveRef.current = true;
+      syncHoldRef.current = false;
       setSyncing(true);
       setSyncProgress({
         percent: Math.max(0, Math.min(100, Number(prog.percent) || 0)),
@@ -234,11 +241,23 @@ export function HomeApp({
       });
       return true;
     }
+
     if (busy) {
+      syncHoldRef.current = false;
       setSyncing(true);
       setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中" });
       return true;
     }
+
+    // force 請求尚未回來時，保留畫面上的進度，避免被空輪詢清掉
+    if (syncHoldRef.current && !syncSeenActiveRef.current) {
+      setSyncing(true);
+      setSyncProgress((prev) => prev ?? { percent: 1, label: "同步中" });
+      return true;
+    }
+
+    syncHoldRef.current = false;
+    syncSeenActiveRef.current = false;
     setSyncing(false);
     setSyncProgress(null);
     return false;
@@ -467,6 +486,8 @@ export function HomeApp({
                 onClick={() => {
                   if (boardMode === "stock") void loadStocks(true);
                   else {
+                    syncHoldRef.current = true;
+                    syncSeenActiveRef.current = false;
                     setSyncing(true);
                     setSyncProgress({ percent: 1, label: "同步中" });
                     void loadFlow(true);
@@ -486,15 +507,26 @@ export function HomeApp({
                     ? "讀取中…"
                     : "重新整理個股"
                   : syncing
-                    ? "同步中…"
+                    ? `同步中 ${syncProgress?.percent ?? 0}%`
                     : refreshing && sectors.length === 0
                       ? "讀取中…"
                       : "觸發背景更新"}
               </button>
               {syncProgress ? (
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  {syncProgress.label} {syncProgress.percent}%
-                </span>
+                <div className="min-w-[10rem] rounded border border-[var(--mk-anchor)]/40 bg-[var(--mk-anchor)]/10 px-2 py-1 text-right">
+                  <div className="text-[11px] font-medium text-foreground">
+                    同步進度 {syncProgress.percent}%
+                  </div>
+                  <div className="text-[10px] tabular-nums text-muted-foreground">
+                    {syncProgress.label}
+                  </div>
+                  <div className="mt-1 h-1 overflow-hidden rounded bg-muted">
+                    <div
+                      className="h-full bg-[var(--mk-anchor)] transition-[width] duration-300"
+                      style={{ width: `${syncProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
               ) : null}
             </div>
           </div>

@@ -1,6 +1,11 @@
 /**
- * 背景重建進度（記憶體）。供首頁輪詢顯示百分比；完成後 idle。
+ * 背景重建進度。記憶體 + .cache 落盤，讓多實例／輪詢也能讀到百分比。
  */
+
+import {
+  readCacheFile,
+  writeCacheFile,
+} from "@/lib/tw-market";
 
 export type RebuildProgress = {
   /** 是否正在背景同步 */
@@ -13,8 +18,12 @@ export type RebuildProgress = {
   error: string | null;
 };
 
+const PROGRESS_CACHE = "rebuild-progress.json";
+
 type Bag = typeof globalThis & {
   __jinchaoRebuildProgress?: RebuildProgress;
+  __jinchaoRebuildProgressWrite?: Promise<void> | null;
+  __jinchaoRebuildProgressTimer?: ReturnType<typeof setTimeout> | null;
 };
 
 const IDLE: RebuildProgress = {
@@ -33,44 +42,98 @@ function bag(): RebuildProgress {
   return g.__jinchaoRebuildProgress;
 }
 
+function persistNow() {
+  const g = globalThis as Bag;
+  if (g.__jinchaoRebuildProgressTimer) {
+    clearTimeout(g.__jinchaoRebuildProgressTimer);
+    g.__jinchaoRebuildProgressTimer = null;
+  }
+  const snapshot = { ...bag() };
+  g.__jinchaoRebuildProgressWrite = writeCacheFile(
+    PROGRESS_CACHE,
+    snapshot,
+  ).catch((err) => {
+    console.warn("[rebuild-progress] persist failed:", err);
+  });
+}
+
+/** 進度更新節流寫盤；開始／結束會立刻落盤 */
+function schedulePersist(immediate = false) {
+  if (immediate) {
+    persistNow();
+    return;
+  }
+  const g = globalThis as Bag;
+  if (g.__jinchaoRebuildProgressTimer) return;
+  g.__jinchaoRebuildProgressTimer = setTimeout(() => {
+    g.__jinchaoRebuildProgressTimer = null;
+    persistNow();
+  }, 250);
+}
+
 export function getRebuildProgress(): RebuildProgress {
   return { ...bag() };
 }
 
+/** API 輪詢用：記憶體與磁碟取較新／進行中的狀態（跨實例） */
+export async function readRebuildProgress(): Promise<RebuildProgress> {
+  const mem = bag();
+  const disk = await readCacheFile<RebuildProgress>(PROGRESS_CACHE);
+  if (!disk || typeof disk.percent !== "number") return { ...mem };
+
+  const diskNewer = (disk.updatedAt || 0) >= (mem.updatedAt || 0);
+  if (disk.active || (diskNewer && !mem.active)) {
+    if (disk.active) Object.assign(mem, disk);
+    return { ...IDLE, ...disk };
+  }
+  return { ...mem };
+}
+
 export function setRebuildProgress(
   patch: Partial<Omit<RebuildProgress, "updatedAt">>,
+  opts?: { immediate?: boolean },
 ) {
   const cur = bag();
   Object.assign(cur, patch, { updatedAt: Date.now() });
   if (typeof cur.percent === "number") {
     cur.percent = Math.max(0, Math.min(100, Math.round(cur.percent)));
   }
+  schedulePersist(Boolean(opts?.immediate));
 }
 
 export function beginRebuildProgress(label = "開始同步") {
-  setRebuildProgress({
-    active: true,
-    percent: 1,
-    label,
-    error: null,
-  });
+  setRebuildProgress(
+    {
+      active: true,
+      percent: 1,
+      label,
+      error: null,
+    },
+    { immediate: true },
+  );
 }
 
 export function finishRebuildProgress(ok: boolean, error?: string | null) {
   if (ok) {
-    setRebuildProgress({
-      active: false,
-      percent: 100,
-      label: "同步完成",
-      error: null,
-    });
+    setRebuildProgress(
+      {
+        active: false,
+        percent: 100,
+        label: "同步完成",
+        error: null,
+      },
+      { immediate: true },
+    );
   } else {
-    setRebuildProgress({
-      active: false,
-      percent: bag().percent,
-      label: "同步失敗",
-      error: error ?? "同步失敗",
-    });
+    setRebuildProgress(
+      {
+        active: false,
+        percent: bag().percent,
+        label: "同步失敗",
+        error: error ?? "同步失敗",
+      },
+      { immediate: true },
+    );
   }
 }
 
