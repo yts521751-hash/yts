@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { SectorDetail } from "@/components/sector-detail";
 import {
@@ -44,6 +44,23 @@ export type InitialFlowProps = {
   isDemo?: boolean;
 } | null;
 
+/** 同一瀏覽器分頁內跨路由保活，避免從風度／成交頁返回又重抓蓋掉正確收盤資料 */
+let sessionFlow: FlowClientSnapshot | null = null;
+
+function isRealFlowPayload(data: {
+  ok?: boolean;
+  isDemo?: boolean;
+  source?: unknown;
+  sectors?: unknown[];
+}) {
+  return Boolean(
+    data.ok &&
+      !data.isDemo &&
+      !String(data.source ?? "").includes("demo") &&
+      (data.sectors?.length ?? 0) >= 20,
+  );
+}
+
 export function HomeApp({
   initialFlow = null,
 }: {
@@ -55,24 +72,33 @@ export function HomeApp({
   const [flowPeriod, setFlowPeriod] = useState<RankPeriod>("day");
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
+  const seed =
+    sessionFlow?.sectors && sessionFlow.sectors.length >= 20
+      ? sessionFlow
+      : initialFlow?.sectors && initialFlow.sectors.length >= 20
+        ? {
+            sectors: initialFlow.sectors,
+            brief: initialFlow.brief,
+            source: initialFlow.source || "ssr",
+          }
+        : null;
+
   const [sectors, setSectors] = useState<SectorFlow[]>(
-    () => initialFlow?.sectors?.map(migrateSectorIfNeeded) ?? [],
+    () => seed?.sectors.map(migrateSectorIfNeeded) ?? [],
   );
   const [stocks, setStocks] = useState<StockFlowRankRow[]>([]);
   const [stocksDate, setStocksDate] = useState("");
   const [stocksError, setStocksError] = useState<string | null>(null);
   const [stocksLoading, setStocksLoading] = useState(false);
   const [brief, setBrief] = useState<MarketBrief | null>(
-    () => initialFlow?.brief ?? null,
+    () => seed?.brief ?? null,
   );
-  const [source, setSource] = useState(() => initialFlow?.source ?? "");
-  const [syncing, setSyncing] = useState(false);
+  const [source, setSource] = useState(() => seed?.source ?? "");
   const [loadState, setLoadState] = useState<LoadState>(
-    () => (initialFlow?.sectors?.length ? "ready" : "loading"),
+    () => (seed?.sectors?.length ? "ready" : "loading"),
   );
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [fromClientCache, setFromClientCache] = useState(false);
 
   useEffect(() => {
     try {
@@ -87,24 +113,41 @@ export function HomeApp({
       document.documentElement.dataset.textsize = ts;
       document.documentElement.classList.toggle("dark", preferDark);
 
-      // SSR 已帶資料則靜默核對即可；否則才用本機快取先畫
-      if (initialFlow?.sectors?.length && initialFlow.brief) {
-        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, {
+      // SSR 真實資料才寫入 session／本機；避免把 demo／空殼蓋掉分頁內已有的正確收盤
+      if (
+        initialFlow?.sectors &&
+        initialFlow.sectors.length >= 20 &&
+        initialFlow.brief &&
+        !initialFlow.isDemo &&
+        !String(initialFlow.source || "").includes("demo")
+      ) {
+        const snap: FlowClientSnapshot = {
           sectors: initialFlow.sectors,
           brief: initialFlow.brief,
           source: initialFlow.source || "ssr",
-        });
+        };
+        sessionFlow = snap;
+        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, snap);
       }
 
-      if (!initialFlow?.sectors?.length) {
+      // 已有 session／SSR 種子就不要再用可能更舊的 localStorage 覆蓋
+      if (
+        !initialFlow?.sectors?.length &&
+        (sessionFlow?.sectors?.length ?? 0) < 20
+      ) {
         const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
         if (cached?.sectors && cached.sectors.length >= 20) {
           const next = cached.sectors.map(migrateSectorIfNeeded);
+          const snap: FlowClientSnapshot = {
+            sectors: next,
+            brief: cached.brief,
+            source: cached.source || "client-cache",
+          };
+          sessionFlow = snap;
           setSectors(next);
           setBrief(cached.brief);
           setSource(cached.source || "client-cache");
           setLoadState("ready");
-          setFromClientCache(true);
         }
       }
       const cachedStocks = readClientCache<StocksClientSnapshot>(
@@ -119,9 +162,22 @@ export function HomeApp({
     }
   }, []);
 
+  const sectorsRef = useRef(sectors);
+  const sourceRef = useRef(source);
+  useEffect(() => {
+    sectorsRef.current = sectors;
+  }, [sectors]);
+  useEffect(() => {
+    sourceRef.current = source;
+  }, [source]);
+
   const loadFlow = useCallback(async (force = false) => {
-    setRefreshing(true);
-    setError(null);
+    const hadReal =
+      sectorsRef.current.length >= 20 &&
+      !String(sourceRef.current).includes("demo");
+    // 已有正確畫面時靜默核對，不要打「讀取中／背景更新中」
+    if (force || !hadReal) setRefreshing(true);
+    if (force) setError(null);
     try {
       const res = await fetch(`/api/flow${force ? "?force=1" : ""}`, {
         cache: "no-store",
@@ -129,20 +185,35 @@ export function HomeApp({
       const data = await res.json();
       if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
       const next = (data.sectors as SectorFlow[]).map(migrateSectorIfNeeded);
+      const nextReal = isRealFlowPayload({
+        ok: data.ok,
+        isDemo: data.isDemo,
+        source: data.source,
+        sectors: next,
+      });
+
+      // 有真實收盤資料時，拒絕被 demo／半套結果蓋掉
+      if (hadReal && !nextReal) {
+        if (force) setError(String(data.error || "背景更新尚未完成，仍顯示上個交易日資料"));
+        return;
+      }
+      if (hadReal && nextReal && next.length < Math.floor(sectorsRef.current.length * 0.6)) {
+        return;
+      }
+
       setSectors(next);
       setBrief(data.brief as MarketBrief);
       setSource(String(data.source ?? ""));
-      setSyncing(Boolean(data.syncing));
       setLoadState("ready");
-      setFromClientCache(false);
-      if (!data.ok && data.error) setError(String(data.error));
-      // 真實資料才寫入本機（示範資料不覆蓋，避免永久卡在 demo）
-      if (data.ok && !data.isDemo && !String(data.source ?? "").includes("demo")) {
-        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, {
+      if (!data.ok && data.error && !hadReal) setError(String(data.error));
+      if (nextReal) {
+        const snap: FlowClientSnapshot = {
           sectors: next,
           brief: data.brief as MarketBrief,
           source: String(data.source ?? ""),
-        });
+        };
+        sessionFlow = snap;
+        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, snap);
       }
       setSelected((prev) => {
         if (!prev) return prev;
@@ -150,7 +221,7 @@ export function HomeApp({
       });
     } catch (e) {
       setLoadState((s) => (s === "ready" ? "ready" : "error"));
-      setError(e instanceof Error ? e.message : "載入失敗");
+      if (!hadReal) setError(e instanceof Error ? e.message : "載入失敗");
     } finally {
       setRefreshing(false);
     }
@@ -191,11 +262,6 @@ export function HomeApp({
     void loadStocks(false);
   }, [boardMode, stocks.length, stocksLoading, loadStocks]);
 
-  useEffect(() => {
-    if (!syncing) return;
-    const t = setInterval(() => void loadFlow(false), 8000);
-    return () => clearInterval(t);
-  }, [syncing, loadFlow]);
 
   const onTextSize = (s: TextSize) => {
     setTextSize(s);
@@ -293,7 +359,8 @@ export function HomeApp({
               disabled={
                 boardMode === "stock"
                   ? stocksLoading
-                  : refreshing || loadState === "loading"
+                  : (refreshing && sectors.length === 0) ||
+                    (loadState === "loading" && sectors.length === 0)
               }
               className="border border-border bg-[var(--panel)] px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-[var(--mk-anchor)] hover:text-foreground disabled:opacity-50"
             >
@@ -301,10 +368,10 @@ export function HomeApp({
                 ? stocksLoading
                   ? "讀取中…"
                   : "重新整理個股"
-                : refreshing || loadState === "loading"
+                : refreshing && sectors.length === 0
                   ? "讀取中…"
-                  : syncing
-                    ? "背景更新中…"
+                  : refreshing
+                    ? "已觸發更新"
                     : "觸發背景更新"}
             </button>
           </div>
