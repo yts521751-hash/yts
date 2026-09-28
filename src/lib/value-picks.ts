@@ -51,7 +51,7 @@ const CACHE = "value-picks-latest.json";
 const MIN_EPS_YOY = 50;
 const MAX_FORWARD_PE = 35;
 /** 取成交較熱的普通股當候選，兼顧涵蓋與抓取時間 */
-const CANDIDATE_LIMIT = 400;
+const CANDIDATE_LIMIT = 300;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -100,7 +100,7 @@ export async function buildValuePicks(options?: {
       nextYearEps == null ||
       nextYearEps <= 0 ||
       baseEps == null ||
-      baseEps === 0 ||
+      baseEps <= 0 ||
       epsYoy == null
     ) {
       continue;
