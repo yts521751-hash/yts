@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Gauge, Home, Newspaper, BarChart3 } from "lucide-react";
+import { Activity, Gauge, Home, BarChart3, Gem } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
@@ -10,7 +10,7 @@ const ITEMS = [
   { href: "/ma", label: "均線", icon: Activity },
   { href: "/wind", label: "風度", icon: Gauge },
   { href: "/turnover", label: "成交", icon: BarChart3 },
-  { href: "/news", label: "新聞", icon: Newspaper },
+  { href: "/value", label: "價值", icon: Gem },
 ] as const;
 
 export function MobileNav() {

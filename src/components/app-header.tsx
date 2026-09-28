@@ -104,7 +104,7 @@ export function AppHeader({
                 ["/ma", "均線掃描"],
                 ["/wind", "風度"],
                 ["/turnover", "成交排行"],
-                ["/news", "熱議新聞"],
+                ["/value", "價值選股"],
               ] as const
             ).map(([href, label]) => (
               <Link

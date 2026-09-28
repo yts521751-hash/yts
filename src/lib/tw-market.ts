@@ -490,6 +490,7 @@ export async function loadMergedQuotesDay(
         };
         await writeCacheFile(name, bundle);
         invalidateTradingDaysMemo();
+        invalidateDayQuotesMemo(ymd);
         return bundle;
       }
       // 櫃買仍失敗就先用舊快取，避免整日空白
@@ -523,6 +524,7 @@ export async function loadMergedQuotesDay(
   };
   await writeCacheFile(name, bundle);
   invalidateTradingDaysMemo();
+  invalidateDayQuotesMemo(ymd);
   return bundle;
 }
 
@@ -541,6 +543,14 @@ const TRADING_DAYS_MEMO_MS = 60_000;
 /** 寫入新的 quotes 日檔後必須清掉，否則會一直回傳補價前的短清單 */
 export function invalidateTradingDaysMemo() {
   tradingDaysMemo = null;
+}
+
+/** 日報價記憶體快取：寫入／修補 quotes 日檔後必須清掉對應 ymd */
+const dayQuotesMemo = new Map<string, Map<string, QuoteRow>>();
+
+export function invalidateDayQuotesMemo(ymd?: string) {
+  if (ymd) dayQuotesMemo.delete(ymd);
+  else dayQuotesMemo.clear();
 }
 
 /**
@@ -645,15 +655,31 @@ export async function listRecentTradingDays(
   return days;
 }
 
-const dayQuotesMemo = new Map<string, Map<string, QuoteRow>>();
-
 export async function getCachedDayQuotes(
   ymd: string,
 ): Promise<Map<string, QuoteRow> | null> {
   const hit = dayQuotesMemo.get(ymd);
-  if (hit) return hit;
+  if (hit && !looksLikeTwseOnly([...hit.values()])) return hit;
+  // 記憶體內是「只有上市」的舊快照 → 丟掉並走修補路徑
+  if (hit) dayQuotesMemo.delete(ymd);
+
   const cached = await readCacheFile<DayQuoteCache>(dayCacheName(ymd));
   if (!cached?.quotes?.length) return null;
+
+  // 舊日檔缺櫃買時主動補齊，避免成交排行／金流漏掉上櫃股
+  if (looksLikeTwseOnly(cached.quotes)) {
+    const repaired = await loadMergedQuotesDay(ymd, { force: false });
+    if (repaired?.quotes?.length && !looksLikeTwseOnly(repaired.quotes)) {
+      const map = new Map(repaired.quotes.map((q) => [q.code, q]));
+      if (dayQuotesMemo.size > 120) {
+        const first = dayQuotesMemo.keys().next().value;
+        if (first) dayQuotesMemo.delete(first);
+      }
+      dayQuotesMemo.set(ymd, map);
+      return map;
+    }
+  }
+
   const map = new Map(cached.quotes.map((q) => [q.code, q]));
   // 僅保留最近 ~100 日，避免長駐記憶體無限長
   if (dayQuotesMemo.size > 120) {

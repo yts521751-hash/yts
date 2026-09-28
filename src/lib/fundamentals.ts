@@ -1,7 +1,7 @@
 /**
  * 個股基本面補強（公開資訊，非寫死）：
  * - 最近月營收 YoY：證交所／櫃買 OpenAPI 月營收
- * - EPS 成長率：優先取全市場法人報告共識（Cnyes／FactSet 各家預估平均 feMean），
+ * - EPS 成長率：優先取全市場法人報告共識（Cnyes／FactSet 各家預估中位數 feMedian），
  *   再回退 Yahoo 共識、最後才用公開財報近四季年增推估
  */
 
@@ -18,11 +18,11 @@ export type StockFundamentals = {
   revenueYoy: number | null;
   /** 營收資料年月 */
   revenueMonth: string | null;
-  /** 市場共識下一年平均 EPS */
+  /** 市場共識下一年 EPS（法人預估中位數） */
   nextYearEps: number | null;
-  /** 基準 EPS（本年度共識或近四季） */
+  /** 基準 EPS（本年度共識中位數或近四季） */
   baseEps: number | null;
-  /** EPS 成長率 %＝(下一年平均 − 基準)／|基準| */
+  /** EPS 成長率 %＝(下一年中位數 − 基準)／|基準| */
   epsGrowth: number | null;
   epsSource: string | null;
 };
@@ -179,11 +179,23 @@ async function getYahooAuth(): Promise<YahooAuth | null> {
 type CnyesEpsRow = {
   financialYear?: number;
   feMean?: number | null;
+  feMedian?: number | null;
   numEst?: number | null;
   rateDate?: string | null;
 };
 
-/** 全市場法人／外資預估 EPS 平均（Cnyes 轉發 FactSet estimateProfit） */
+function cnyesEpsValue(row: CnyesEpsRow): number | null {
+  // 價值選股以「多家法人中位數」為準；缺中位數再退平均
+  if (typeof row.feMedian === "number" && Number.isFinite(row.feMedian)) {
+    return row.feMedian;
+  }
+  if (typeof row.feMean === "number" && Number.isFinite(row.feMean)) {
+    return row.feMean;
+  }
+  return null;
+}
+
+/** 全市場法人／外資預估 EPS 中位數（Cnyes 轉發 FactSet estimateProfit） */
 async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
   const symbol = `TWS:${code}:STOCK`;
   const url =
@@ -199,13 +211,12 @@ async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
         statusCode?: number;
         data?: CnyesEpsRow[] | null;
       }>(url));
-    const rows = (payload?.data ?? []).filter(
-      (r) =>
-        typeof r.financialYear === "number" &&
-        typeof r.feMean === "number" &&
-        Number.isFinite(r.feMean) &&
-        (r.numEst == null || r.numEst > 0),
-    );
+    const rows = (payload?.data ?? []).filter((r) => {
+      if (typeof r.financialYear !== "number") return false;
+      if (cnyesEpsValue(r) == null) return false;
+      if (r.numEst != null && r.numEst <= 0) return false;
+      return true;
+    });
     if (rows.length < 2) return null;
 
     const byYear = new Map<number, CnyesEpsRow>();
@@ -242,19 +253,21 @@ async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
       next = best.next;
     }
 
-    const nextYearEps = next.feMean!;
-    const baseEps = cur.feMean!;
+    const nextYearEps = cnyesEpsValue(next)!;
+    const baseEps = cnyesEpsValue(cur)!;
     if (!baseEps) return null;
     const epsGrowth = round1(
       ((nextYearEps - baseEps) / Math.abs(baseEps)) * 100,
     );
     const nCur = cur.numEst ?? 0;
     const nNext = next.numEst ?? 0;
+    const usedMedian =
+      typeof next.feMedian === "number" && typeof cur.feMedian === "number";
     return {
       nextYearEps: round2(nextYearEps),
       baseEps: round2(baseEps),
       epsGrowth,
-      epsSource: `cnyes-factset-mean:${code}:fy${cur.financialYear}->${next.financialYear}:n=${nCur}/${nNext}`,
+      epsSource: `cnyes-factset-${usedMedian ? "median" : "mean"}:${code}:fy${cur.financialYear}->${next.financialYear}:n=${nCur}/${nNext}`,
     };
   } catch {
     return null;
@@ -424,8 +437,8 @@ export async function enrichStockFundamentals(
   const needEps = uniq.filter((code) => {
     const entry = epsCache.byCode[code];
     if (!entry?.epsSource) return true;
-    // 舊版 Yahoo／財報推估快取改抓全市場法人共識平均
-    if (!entry.epsSource.startsWith("cnyes-factset-mean:")) return true;
+    // 舊版 Yahoo／平均／財報推估快取改抓全市場法人共識中位數
+    if (!entry.epsSource.startsWith("cnyes-factset-median:")) return true;
     if (!epsFresh) return true;
     return false;
   });
@@ -434,7 +447,7 @@ export async function enrichStockFundamentals(
     const auth = await getYahooAuth();
     await mapPool(needEps, 4, async (code) => {
       const market = industry?.byCode?.[code]?.market;
-      // 優先：全市場法人報告共識平均（FactSet via Cnyes）
+      // 優先：全市場法人報告共識中位數（FactSet via Cnyes）
       let eps = await fetchCnyesFactsetEps(code);
       if (!eps && auth) eps = await fetchYahooEps(code, market, auth);
       if (!eps) eps = await fetchFinmindTtmGrowth(code);

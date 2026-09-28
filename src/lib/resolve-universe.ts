@@ -8,6 +8,7 @@ import {
   type SectorDef,
   type SectorMember,
 } from "@/lib/sector-universe";
+import { isCommonStock } from "@/lib/stock-filter";
 import { discoverAutoThemes, loadAutoThemes } from "@/lib/theme-discovery";
 import {
   ACTIVE_FLOW_CACHE,
@@ -96,7 +97,7 @@ export async function resolveActiveUniverse(input: {
   let auto = await loadAutoThemes();
   if (input.newsTitles?.length) {
     const hot: SectorMember[] = [...input.quotes.values()]
-      .filter((q) => /^\d{4}$/.test(q.code) && q.turnover > 0)
+      .filter((q) => isCommonStock(q.code, q.name) && q.turnover > 0)
       .sort((a, b) => b.turnover - a.turnover)
       .slice(0, 80)
       .map((q) => ({ code: q.code, name: q.name }));

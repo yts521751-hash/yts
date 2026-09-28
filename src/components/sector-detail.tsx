@@ -181,6 +181,7 @@ export function SectorDetail({
           <thead>
             <tr className="text-left text-[11px] text-muted-foreground">
               <th className="px-2 py-1.5 font-medium">代號／名稱</th>
+              <th className="px-2 py-1.5 text-right font-medium">股價</th>
               <th className="px-2 py-1.5 text-right font-medium">
                 {stockPeriod === "day"
                   ? "成交"
@@ -222,6 +223,9 @@ export function SectorDetail({
                     <div className="text-[11px] tabular-nums text-muted-foreground">
                       {s.code}
                     </div>
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">
+                    {s.close != null && s.close > 0 ? s.close.toFixed(s.close >= 100 ? 0 : 2) : "—"}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">
                     {formatYi(amt)}

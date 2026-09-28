@@ -1,3 +1,4 @@
+import { isCommonStock } from "@/lib/stock-filter";
 import {
   listCachedTradingDays,
   listRecentTradingDays,
@@ -37,10 +38,6 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const LIVE_TTL_MS = 3_000;
 let liveMemo: { at: number; payload: TurnoverPayload } | null = null;
 
-function isCommonStock(code: string) {
-  return /^\d{4}$/.test(code);
-}
-
 function taipeiSession() {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Taipei",
@@ -67,7 +64,7 @@ function rankFromQuotes(
   inSession: boolean,
 ): TurnoverPayload {
   const rows = [...map.values()]
-    .filter((q) => isCommonStock(q.code) && q.turnover > 0)
+    .filter((q) => isCommonStock(q.code, q.name) && q.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
     .slice(0, want)
     .map((q, i) => ({

@@ -400,7 +400,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                     )}
                     title={
                       s.nextYearEps != null && s.baseEps != null
-                        ? `法人共識平均 EPS ${s.nextYearEps} / 本年度 ${s.baseEps}`
+                        ? `法人共識中位數 EPS ${s.nextYearEps} / 本年度 ${s.baseEps}`
                         : undefined
                     }
                   >

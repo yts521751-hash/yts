@@ -33,6 +33,7 @@ export type DailyCloseMeta = {
     wind: boolean;
     ma: boolean;
     turnoverClose: boolean;
+    valuePicks: boolean;
   };
 };
 
@@ -67,6 +68,7 @@ export async function runDailyClosePackage(reason: string): Promise<DailyCloseMe
     wind: false,
     ma: false,
     turnoverClose: false,
+    valuePicks: false,
   };
   let asOf: string | null = null;
 
@@ -143,6 +145,21 @@ export async function runDailyClosePackage(reason: string): Promise<DailyCloseMe
   });
   artifacts.turnoverClose = Boolean(
     turnoverStep.ok && turnoverStep.value?.rows?.length,
+  );
+
+  // 6) 價值選股（法人 EPS 中位數 YoY＋前瞻本益比）
+  const valueStep = await step("value-picks", async () => {
+    const { buildValuePicks } = await import("@/lib/value-picks");
+    return buildValuePicks({ force: true });
+  });
+  steps.push({
+    name: valueStep.name,
+    ok: valueStep.ok,
+    detail: valueStep.detail,
+    ms: valueStep.ms,
+  });
+  artifacts.valuePicks = Boolean(
+    valueStep.ok && valueStep.value?.rows != null,
   );
 
   const meta: DailyCloseMeta = {

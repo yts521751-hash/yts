@@ -25,15 +25,17 @@ export interface StockFlow {
   d20: number;
   /** 當日漲跌幅 % */
   changePct: number;
+  /** 最新收盤／成交價 */
+  close?: number;
   /** 最近月營收年增率 %（證交所／櫃買公開月營收） */
   revenueYoy?: number | null;
   /** 營收資料年月 */
   revenueMonth?: string | null;
-  /** 法人共識 EPS 成長率 %（各家外資預估平均） */
+  /** 法人共識 EPS 成長率 %（各家外資預估中位數） */
   epsGrowth?: number | null;
-  /** 下一年法人預估 EPS 平均 */
+  /** 下一年法人預估 EPS 中位數 */
   nextYearEps?: number | null;
-  /** 本年度法人預估 EPS 平均（或財報基準） */
+  /** 本年度法人預估 EPS 中位數（或財報基準） */
   baseEps?: number | null;
 }
 

@@ -10,6 +10,7 @@ import {
   instiSharesToYi,
   signedFlowFromQuote,
 } from "@/lib/money-flow";
+import { isCommonStock } from "@/lib/stock-filter";
 import {
   getCachedDayInsti,
   getCachedDayQuotes,
@@ -47,10 +48,6 @@ export type StockFlowPayload = {
 const CACHE = "flow-stocks-latest.json";
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
-
-function isCommonStock(code: string) {
-  return /^\d{4}$/.test(code);
-}
 
 function flowForQuote(
   q: QuoteRow | undefined,
@@ -106,7 +103,7 @@ export async function buildStockFlowRanking(
   if (!latestQuotes?.size) return null;
 
   const candidates = [...latestQuotes.values()]
-    .filter((q) => isCommonStock(q.code) && q.turnover > 0)
+    .filter((q) => isCommonStock(q.code, q.name) && q.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
     .slice(0, Math.max(want * 2, 80))
     .map((q) => q.code);

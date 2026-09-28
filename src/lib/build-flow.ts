@@ -163,7 +163,10 @@ function computeSectors(dayData: DayBundle[], universe: SectorDef[]): SectorFlow
       .filter(Boolean) as Rich[];
 
     const stocks: StockFlow[] = stocksRich
-      .map(({ pxNow: _a, pxOld: _b, ...rest }) => rest)
+      .map(({ pxNow, pxOld: _b, ...rest }) => ({
+        ...rest,
+        close: round2(pxNow),
+      }))
       .sort((a, b) => b.dayFlow - a.dayFlow);
 
     const dayAmt = stocks.reduce((s, x) => s + x.dayAmt, 0);
