@@ -153,8 +153,9 @@ export function ValuePicksClient({
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           篩選明年 EPS 年增率（多家法人預估中位數）大於{" "}
-          {data?.criteria.minEpsYoy ?? 50}%，且前瞻本益比（股價 ÷
-          明年 EPS 中位數）低於 {data?.criteria.maxForwardPe ?? 35} 的個股。
+          {data?.criteria.minEpsYoy ?? 50}%，前瞻本益比（股價 ÷ 明年 EPS
+          中位數）低於 {data?.criteria.maxForwardPe ?? 35}，且當日一般成交金額
+          達 {data?.criteria.minDayAmtYi ?? 10} 億以上的個股。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           EPS 來源：Cnyes／FactSet 法人共識中位數
@@ -183,7 +184,7 @@ export function ValuePicksClient({
           </div>
         ) : !rows.length ? (
           <p className="mt-10 text-center text-sm text-muted-foreground">
-            目前沒有同時符合「明年 EPS YoY &gt; 50%」與「前瞻本益比 &lt; 35」的標的。
+            目前沒有同時符合「明年 EPS YoY &gt; 50%」、「前瞻本益比 &lt; 35」與「成交 ≥ 10 億」的標的。
           </p>
         ) : (
           <>

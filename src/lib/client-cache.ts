@@ -43,5 +43,5 @@ export const CLIENT_CACHE_KEYS = {
   /** v4：一般成交口徑（扣零股／鉅額／盤後定價）＋日終快照 */
   turnover: "jinliu:cache:turnover:v4",
   ma: "jinliu:cache:ma-screener:v5",
-  value: "jinliu:cache:value-picks:v1",
+  value: "jinliu:cache:value-picks:v2",
 } as const;

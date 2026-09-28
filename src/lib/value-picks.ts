@@ -1,9 +1,10 @@
 /**
- * 價值選股：明年 EPS YoY（法人中位數）> 50%，且前瞻本益比 < 35。
- * 前瞻本益比 = 股價 ÷ 明年 EPS 中位數。
+ * 價值選股：明年 EPS YoY（法人中位數）> 50%，前瞻本益比 < 35，
+ * 且當日一般成交金額 ≥ 10 億。
  */
 
 import { enrichStockFundamentals } from "@/lib/fundamentals";
+import { applyRegularTurnover } from "@/lib/regular-turnover";
 import { isCommonStock } from "@/lib/stock-filter";
 import {
   getCachedDayQuotes,
@@ -19,7 +20,7 @@ export type ValuePickRow = {
   name: string;
   close: number;
   changePct: number;
-  /** 當日成交（億） */
+  /** 當日一般成交（億） */
   dayAmt: number;
   /** 明年 EPS（法人中位數） */
   nextYearEps: number;
@@ -44,12 +45,14 @@ export type ValuePicksPayload = {
   criteria: {
     minEpsYoy: number;
     maxForwardPe: number;
+    minDayAmtYi: number;
   };
 };
 
 const CACHE = "value-picks-latest.json";
 const MIN_EPS_YOY = 50;
 const MAX_FORWARD_PE = 35;
+const MIN_DAY_AMT_YI = 10;
 /** 取成交較熱的普通股當候選，兼顧涵蓋與抓取時間 */
 const CANDIDATE_LIMIT = 300;
 
@@ -67,7 +70,13 @@ export async function buildValuePicks(options?: {
     const cached = await readValuePicksCache();
     if (cached?.rows && cached.builtAt) {
       const age = Date.now() - Date.parse(cached.builtAt);
-      if (Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000) {
+      // 舊快照若沒有成交門檻，視為失效
+      if (
+        Number.isFinite(age) &&
+        age >= 0 &&
+        age < 20 * 60 * 60 * 1000 &&
+        cached.criteria?.minDayAmtYi === MIN_DAY_AMT_YI
+      ) {
         return { ...cached, source: "cache" };
       }
     }
@@ -79,18 +88,27 @@ export async function buildValuePicks(options?: {
   const quotes = await getCachedDayQuotes(ymd);
   if (!quotes?.size) return null;
 
+  const regular = await applyRegularTurnover(quotes, ymd, {
+    force: Boolean(options?.force),
+  });
+
   const candidates = [...quotes.values()]
-    .filter((q) => isCommonStock(q.code, q.name) && q.close > 0 && q.turnover > 0)
-    .sort((a, b) => b.turnover - a.turnover)
+    .filter((q) => isCommonStock(q.code, q.name) && q.close > 0)
+    .map((q) => ({
+      q,
+      dayAmtYi: (regular.get(q.code) ?? q.turnover) / 1e8,
+    }))
+    .filter((x) => x.dayAmtYi >= MIN_DAY_AMT_YI)
+    .sort((a, b) => b.dayAmtYi - a.dayAmtYi)
     .slice(0, CANDIDATE_LIMIT);
 
   const fund = await enrichStockFundamentals(
-    candidates.map((q) => q.code),
+    candidates.map((x) => x.q.code),
     { force: Boolean(options?.force) },
   );
 
   const rows: Omit<ValuePickRow, "rank">[] = [];
-  for (const q of candidates) {
+  for (const { q, dayAmtYi } of candidates) {
     const f = fund.get(q.code);
     if (!f) continue;
     const nextYearEps = f.nextYearEps;
@@ -107,10 +125,13 @@ export async function buildValuePicks(options?: {
     }
     if (epsYoy <= MIN_EPS_YOY) continue;
     const forwardPe = q.close / nextYearEps;
-    if (!Number.isFinite(forwardPe) || forwardPe <= 0 || forwardPe >= MAX_FORWARD_PE) {
+    if (
+      !Number.isFinite(forwardPe) ||
+      forwardPe <= 0 ||
+      forwardPe >= MAX_FORWARD_PE
+    ) {
       continue;
     }
-    // 只要法人共識（中位數優先；缺中位數時 mean 後援）；排除 Yahoo／財報推估
     if (!f.epsSource?.startsWith("cnyes-factset-")) continue;
 
     rows.push({
@@ -118,7 +139,7 @@ export async function buildValuePicks(options?: {
       name: q.name.trim() || q.code,
       close: round2(q.close),
       changePct: round2(q.changePct),
-      dayAmt: round1(q.turnover / 1e8),
+      dayAmt: round1(dayAmtYi),
       nextYearEps: round2(nextYearEps),
       baseEps: round2(baseEps),
       epsYoy: round1(epsYoy),
@@ -139,7 +160,11 @@ export async function buildValuePicks(options?: {
     builtAt: new Date().toISOString(),
     source: "rebuilt",
     scanned: candidates.length,
-    criteria: { minEpsYoy: MIN_EPS_YOY, maxForwardPe: MAX_FORWARD_PE },
+    criteria: {
+      minEpsYoy: MIN_EPS_YOY,
+      maxForwardPe: MAX_FORWARD_PE,
+      minDayAmtYi: MIN_DAY_AMT_YI,
+    },
   };
   await writeCacheFile(CACHE, payload);
   return payload;

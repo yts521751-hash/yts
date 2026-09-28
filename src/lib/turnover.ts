@@ -39,7 +39,7 @@ const CACHE = "turnover-ranking-latest.json";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 const AMOUNT_BASIS =
-  "一般成交金額（證交所總成交 − 盤後定價 − 零股 − 鉅額；對齊 Yahoo／媒體常見口徑）";
+  "一般成交金額（上市／上櫃總成交 − 盤後定價 − 零股 − 鉅額；對齊 Yahoo／媒體常見口徑）";
 
 const SESSION_NOTE =
   "每日收盤後隨日終大包更新（約 18:00／18:30／19:00），不做盤中即時輪詢";
