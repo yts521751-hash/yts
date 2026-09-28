@@ -220,16 +220,69 @@ export async function loadTurnoverExclusions(
 /** @deprecated 使用 loadTurnoverExclusions */
 export const loadTwseTurnoverExclusions = loadTurnoverExclusions;
 
+/** 是否已有當日排除額快取（不打交易所） */
+export async function hasTurnoverExclusionsCache(ymd: string): Promise<boolean> {
+  const cached = await readCacheFile<ExclusionCache>(exclusionCacheName(ymd));
+  return Boolean(cached?.byCode && cached.ymd === ymd);
+}
+
+/**
+ * 並行暖機多日排除額（寫入 turnover-exclude-*.json）。
+ * 個股金流重建前呼叫，避免逐日串行打 TWSE／TPEx。
+ */
+export async function warmTurnoverExclusions(
+  ymds: string[],
+  options?: { forceLatest?: string; concurrency?: number },
+): Promise<{ warmed: number; skipped: number }> {
+  const concurrency = Math.max(1, options?.forceLatest ? 4 : options?.concurrency ?? 4);
+  const unique = [...new Set(ymds.filter(Boolean))];
+  let warmed = 0;
+  let skipped = 0;
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, Math.max(1, unique.length)) }, async () => {
+      while (i < unique.length) {
+        const idx = i++;
+        const ymd = unique[idx];
+        const force = options?.forceLatest === ymd;
+        if (!force && (await hasTurnoverExclusionsCache(ymd))) {
+          skipped += 1;
+          continue;
+        }
+        try {
+          const map = await loadTurnoverExclusions(ymd, { force });
+          if (map.size) warmed += 1;
+          else skipped += 1;
+        } catch (err) {
+          console.warn(`[regular-turnover] warm ${ymd} failed`, err);
+          skipped += 1;
+        }
+      }
+    }),
+  );
+  return { warmed, skipped };
+}
+
 /**
  * 將報價 map 的成交金額改為「一般成交」口徑。
  * 不會改到小於 0。
+ * `skipNetwork`：無排除快取時直接用總成交（SSR／頁面不應卡交易所）。
  */
 export async function applyRegularTurnover(
   quotes: Map<string, { code: string; turnover: number }>,
   ymd: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; skipNetwork?: boolean },
 ): Promise<Map<string, number>> {
-  const excl = await loadTurnoverExclusions(ymd, options);
+  let excl: Map<string, number>;
+  if (options?.skipNetwork && !options?.force) {
+    if (await hasTurnoverExclusionsCache(ymd)) {
+      excl = await loadTurnoverExclusions(ymd);
+    } else {
+      excl = new Map();
+    }
+  } else {
+    excl = await loadTurnoverExclusions(ymd, options);
+  }
   const regular = new Map<string, number>();
   for (const q of quotes.values()) {
     const cut = excl.get(q.code) ?? 0;

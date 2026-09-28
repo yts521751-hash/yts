@@ -2,6 +2,8 @@
  * 個股資金流排行：與板塊相同公式（80% 成交×漲跌 + 20% 法人），
  * 先取當日成交熱門股，再彙總近 5／20 日。
  * 成交金額採「一般成交」口徑（與成值頁相同：總成交 − 盤後定價 − 零股 − 鉅額）。
+ *
+ * 讀取策略（對齊風度）：有快照就秒回；重算單飛丟背景；缺快取時前景等一次單飛。
  */
 
 import type { StockFlow } from "@/lib/types";
@@ -11,7 +13,10 @@ import {
   instiSharesToYi,
   signedFlowFromQuote,
 } from "@/lib/money-flow";
-import { applyRegularTurnover } from "@/lib/regular-turnover";
+import {
+  applyRegularTurnover,
+  warmTurnoverExclusions,
+} from "@/lib/regular-turnover";
 import { isCommonStock } from "@/lib/stock-filter";
 import {
   getCachedDayInsti,
@@ -52,8 +57,23 @@ export type StockFlowPayload = {
 const CACHE = "flow-stocks-latest.json";
 const AMOUNT_BASIS =
   "一般成交金額（上市／上櫃總成交 − 盤後定價 − 零股 − 鉅額；對齊 Yahoo／媒體常見口徑）";
+const CACHE_TTL_MS = 20 * 60 * 60 * 1000;
+const REBUILD_DAY_CONCURRENCY = 4;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function flowBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuStockFlow?: {
+      rebuilding: boolean;
+      promise: Promise<StockFlowPayload | null> | null;
+    };
+  };
+  if (!g.__jinliuStockFlow) {
+    g.__jinliuStockFlow = { rebuilding: false, promise: null };
+  }
+  return g.__jinliuStockFlow;
+}
 
 function flowForQuote(
   q: QuoteRow | undefined,
@@ -71,39 +91,98 @@ function hasRegularBasis(cached: StockFlowPayload): boolean {
   return cached.amountBasis === AMOUNT_BASIS;
 }
 
+function cacheAgeMs(cached: StockFlowPayload): number {
+  return Date.now() - Date.parse(cached.builtAt || "");
+}
+
+function isFreshCache(cached: StockFlowPayload): boolean {
+  const age = cacheAgeMs(cached);
+  return Number.isFinite(age) && age >= 0 && age < CACHE_TTL_MS;
+}
+
+async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let i = 0;
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, Math.max(1, items.length)) },
+      async () => {
+        while (i < items.length) {
+          const idx = i++;
+          out[idx] = await fn(items[idx]);
+        }
+      },
+    ),
+  );
+  return out;
+}
+
+function slicePayload(
+  payload: StockFlowPayload,
+  want: number,
+  source: StockFlowPayload["source"],
+): StockFlowPayload {
+  return {
+    ...payload,
+    rows: payload.rows.slice(0, want),
+    source,
+  };
+}
+
+/** 快取命中後背景補基本面，不挡首屏 */
+function enrichFundamentalsInBackground(cached: StockFlowPayload) {
+  const needFund = cached.rows.some(
+    (r) => r.revenueYoy == null && r.epsGrowth == null,
+  );
+  if (!needFund) return;
+  void (async () => {
+    try {
+      const rows = cached.rows.map((r) => ({ ...r }));
+      const fund = await enrichStockFundamentals(rows.map((r) => r.code));
+      let changed = false;
+      for (const row of rows) {
+        const f = fund.get(row.code);
+        if (!f) continue;
+        row.revenueYoy = f.revenueYoy;
+        row.revenueMonth = f.revenueMonth;
+        row.epsGrowth = f.epsGrowth;
+        row.nextYearEps = f.nextYearEps;
+        row.baseEps = f.baseEps;
+        changed = true;
+      }
+      if (changed) {
+        await writeCacheFile(CACHE, {
+          ...cached,
+          rows,
+          amountBasis: cached.amountBasis || AMOUNT_BASIS,
+        });
+      }
+    } catch (err) {
+      console.error("[stock-flow] fundamentals enrich on cache failed", err);
+    }
+  })();
+}
+
+/**
+ * 實際重算（寫入 flow-stocks-latest）。
+ * force 時連最新日排除額一併重抓；平常重建仍用已快取的 turnover-exclude。
+ */
 export async function buildStockFlowRanking(
   limit = 50,
   options?: { force?: boolean },
 ): Promise<StockFlowPayload | null> {
   const want = Math.min(100, Math.max(10, limit));
+  const force = Boolean(options?.force);
 
-  if (!options?.force) {
+  if (!force) {
     const cached = await readCacheFile<StockFlowPayload>(CACHE);
-    if (cached?.rows?.length && hasRegularBasis(cached)) {
-      const age = Date.now() - Date.parse(cached.builtAt || "");
-      // 日終大包寫入後，盤中／夜間都直接讀快照（約 20 小時）；只有 force 或過期才重算
-      if (Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000) {
-        const rows = cached.rows;
-        const needFund = rows.some((r) => r.revenueYoy == null && r.epsGrowth == null);
-        if (needFund) {
-          try {
-            const fund = await enrichStockFundamentals(rows.map((r) => r.code));
-            for (const row of rows) {
-              const f = fund.get(row.code);
-              if (!f) continue;
-              row.revenueYoy = f.revenueYoy;
-              row.revenueMonth = f.revenueMonth;
-              row.epsGrowth = f.epsGrowth;
-              row.nextYearEps = f.nextYearEps;
-              row.baseEps = f.baseEps;
-            }
-            await writeCacheFile(CACHE, { ...cached, rows });
-          } catch (err) {
-            console.error("[stock-flow] fundamentals enrich on cache failed", err);
-          }
-        }
-        return { ...cached, rows, source: "cache" };
-      }
+    if (cached?.rows?.length && hasRegularBasis(cached) && isFreshCache(cached)) {
+      enrichFundamentalsInBackground(cached);
+      return slicePayload(cached, want, "cache");
     }
   }
 
@@ -113,8 +192,14 @@ export async function buildStockFlowRanking(
   const latestQuotes = await getCachedDayQuotes(days[0]);
   if (!latestQuotes?.size) return null;
 
+  // 先並行暖機近月排除額，避免逐日串行打交易所
+  await warmTurnoverExclusions(days, {
+    forceLatest: force ? days[0] : undefined,
+    concurrency: 4,
+  });
+
   const latestRegular = await applyRegularTurnover(latestQuotes, days[0], {
-    force: Boolean(options?.force),
+    force,
   });
 
   const candidates = [...latestQuotes.values()]
@@ -135,30 +220,36 @@ export async function buildStockFlowRanking(
     regular: Map<string, number>;
     insti: Map<string, InstiRow>;
   };
-  const snaps: DaySnap[] = [];
-  for (const ymd of days) {
-    const quotes = await getCachedDayQuotes(ymd);
-    if (!quotes?.size) continue;
-    const filtered = new Map<string, QuoteRow>();
-    for (const code of watch) {
-      const q = quotes.get(code);
-      if (q) filtered.set(code, q);
-    }
-    // 最新日已算過；其餘日用快取排除額（缺檔才打 API）
-    const regular =
-      ymd === days[0]
-        ? latestRegular
-        : await applyRegularTurnover(filtered, ymd);
-    const instiAll = await getCachedDayInsti(ymd);
-    const insti = new Map<string, InstiRow>();
-    if (instiAll) {
+
+  const snapResults = await mapPool(
+    days,
+    REBUILD_DAY_CONCURRENCY,
+    async (ymd): Promise<DaySnap | null> => {
+      const quotes = await getCachedDayQuotes(ymd);
+      if (!quotes?.size) return null;
+      const filtered = new Map<string, QuoteRow>();
       for (const code of watch) {
-        const row = instiAll.get(code);
-        if (row) insti.set(code, row);
+        const q = quotes.get(code);
+        if (q) filtered.set(code, q);
       }
-    }
-    snaps.push({ ymd, quotes: filtered, regular, insti });
-  }
+      const regular =
+        ymd === days[0]
+          ? latestRegular
+          : await applyRegularTurnover(filtered, ymd);
+      const instiAll = await getCachedDayInsti(ymd);
+      const insti = new Map<string, InstiRow>();
+      if (instiAll) {
+        for (const code of watch) {
+          const row = instiAll.get(code);
+          if (row) insti.set(code, row);
+        }
+      }
+      return { ymd, quotes: filtered, regular, insti };
+    },
+  );
+  // 必須保留「最新日」在 snaps[0]；缺則整批作廢，避免用到較舊日當當日
+  if (!snapResults[0]) return null;
+  const snaps = snapResults.filter((s): s is DaySnap => Boolean(s));
   if (snaps.length < 5) return null;
 
   const latest = snaps[0];
@@ -253,7 +344,7 @@ export async function buildStockFlowRanking(
   try {
     const fund = await enrichStockFundamentals(
       top.map((r) => r.code),
-      { force: Boolean(options?.force) },
+      { force },
     );
     for (const row of top) {
       const f = fund.get(row.code);
@@ -279,4 +370,82 @@ export async function buildStockFlowRanking(
   };
   await writeCacheFile(CACHE, payload);
   return payload;
+}
+
+/** 單飛重算：併發 GET／日終／force 共用同一 promise */
+export function buildStockFlowRankingSingleFlight(
+  limit = 50,
+  options?: { force?: boolean },
+): Promise<StockFlowPayload | null> {
+  const bag = flowBag();
+  if (bag.promise) return bag.promise;
+  bag.rebuilding = true;
+  bag.promise = buildStockFlowRanking(limit, options)
+    .catch((err) => {
+      console.error("[stock-flow] rebuild failed", err);
+      return null;
+    })
+    .finally(() => {
+      bag.rebuilding = false;
+      bag.promise = null;
+    });
+  return bag.promise;
+}
+
+/** 背景重建；不阻塞 HTTP */
+export function requestStockFlowRebuild(
+  reason: string,
+  options?: { force?: boolean; limit?: number },
+): { started: boolean; alreadyRunning: boolean } {
+  const bag = flowBag();
+  if (bag.rebuilding || bag.promise) {
+    return { started: false, alreadyRunning: true };
+  }
+  console.log(`[stock-flow] background rebuild (${reason})`);
+  void buildStockFlowRankingSingleFlight(options?.limit ?? 50, {
+    force: Boolean(options?.force),
+  }).then((p) => {
+    console.log(
+      `[stock-flow] background rebuild ${p?.rows?.length ? "ok" : "empty"} (${reason})`,
+    );
+  });
+  return { started: true, alreadyRunning: false };
+}
+
+export function isStockFlowRebuilding(): boolean {
+  return flowBag().rebuilding || Boolean(flowBag().promise);
+}
+
+/**
+ * HTTP 讀取：有快照秒回（含舊口徑）；過期／缺一般成交口徑 → 背景重算。
+ * 完全無快取時才前景等單飛一次。
+ */
+export async function getStockFlowRanking(
+  limit = 50,
+  options?: { force?: boolean },
+): Promise<StockFlowPayload | null> {
+  const want = Math.min(100, Math.max(10, limit));
+  const force = Boolean(options?.force);
+  const cached = await readCacheFile<StockFlowPayload>(CACHE);
+
+  if (cached?.rows?.length) {
+    const needsRebuild =
+      force || !hasRegularBasis(cached) || !isFreshCache(cached);
+    if (needsRebuild) {
+      requestStockFlowRebuild(
+        force
+          ? "api-force"
+          : !hasRegularBasis(cached)
+            ? "amount-basis"
+            : "stale-cache",
+        { force, limit: want },
+      );
+    } else {
+      enrichFundamentalsInBackground(cached);
+    }
+    return slicePayload(cached, want, "cache");
+  }
+
+  // 無快取：前景等單飛（日終／暖機應已寫好；此為冷啟動保底）
+  return buildStockFlowRankingSingleFlight(want, { force });
 }

@@ -20,8 +20,9 @@ export async function membersWithTurnover(
   const days = await listCachedTradingDays(1, 40);
   const ymd = days[0] ?? null;
   const quotes = ymd ? ((await getCachedDayQuotes(ymd)) ?? new Map()) : new Map();
+  // SSR／頁面路徑：無排除額快取時用總成交，不打交易所
   const regular = ymd
-    ? await applyRegularTurnover(quotes, ymd)
+    ? await applyRegularTurnover(quotes, ymd, { skipNetwork: true })
     : new Map<string, number>();
 
   const enriched: SectorMemberView[] = members.map((m) => {

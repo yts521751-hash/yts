@@ -121,7 +121,12 @@ export async function readSectorKlineCache(
 export async function buildSectorKline(
   sectorId: string,
   days = HISTORY_TRADING_DAYS,
-  options?: { force?: boolean; def?: SectorDef },
+  options?: {
+    force?: boolean;
+    def?: SectorDef;
+    /** 僅日終／暖機可開；HTTP 請求路徑勿開，避免卡 gap-sync */
+    allowEnsureHistory?: boolean;
+  },
 ): Promise<SectorKlinePayload | null> {
   const id = normalizeSectorId(sectorId);
   const def = options?.def ?? (await lookupSectorDef(id));
@@ -151,12 +156,14 @@ export async function buildSectorKline(
     }
   }
 
-  // 缺快取時先補報價再掃（深度依 HISTORY_TRADING_DAYS，約 60 日）
-  try {
-    const { ensureQuoteHistory } = await import("@/lib/turnover");
-    await ensureQuoteHistory(Math.max(days, HISTORY_TRADING_DAYS));
-  } catch {
-    /* 補價失敗仍嘗試用現有快取 */
+  // 缺快取時可選擇補報價再掃（僅暖機／日終）；API／SSR 只用既有日檔
+  if (options?.allowEnsureHistory) {
+    try {
+      const { ensureQuoteHistory } = await import("@/lib/turnover");
+      await ensureQuoteHistory(Math.max(days, HISTORY_TRADING_DAYS));
+    } catch {
+      /* 補價失敗仍嘗試用現有快取 */
+    }
   }
   const tradingDays = await listCachedTradingDays(
     days,
@@ -299,7 +306,11 @@ export async function warmSectorKlineCaches(
   const force = Boolean(options?.force);
   await mapPool(list, 4, async (def) => {
     try {
-      await buildSectorKline(def.id, days, { force, def });
+      await buildSectorKline(def.id, days, {
+        force,
+        def,
+        allowEnsureHistory: true,
+      });
     } catch (err) {
       console.warn(`[kline] warm ${def.id} failed:`, err);
     } finally {

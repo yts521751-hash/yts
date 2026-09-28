@@ -259,13 +259,15 @@ export async function buildMaScreener(options?: {
   }
 
   const defs = await listIndustryDefs();
-  // 均線掃描只需約 10～60 根；依 HISTORY_TRADING_DAYS（近 60 日）補報價
-  try {
-    const { ensureQuoteHistory } = await import("@/lib/turnover");
-    const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
-    await ensureQuoteHistory(HISTORY_TRADING_DAYS);
-  } catch {
-    /* ignore */
+  // 日終／明確 skipDiskCache 暖機才補報價歷史；HTTP 短超時路徑勿卡 gap-sync
+  if (options?.skipDiskCache || options?.forceRebuildMissing) {
+    try {
+      const { ensureQuoteHistory } = await import("@/lib/turnover");
+      const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+      await ensureQuoteHistory(HISTORY_TRADING_DAYS);
+    } catch {
+      /* ignore */
+    }
   }
   const shouldFillMissing =
     Boolean(options?.forceRebuildMissing) || defs.length > 0;
@@ -282,6 +284,7 @@ export async function buildMaScreener(options?: {
         payload = await buildSectorKline(def.id, HISTORY_TRADING_DAYS, {
           def,
           force: true,
+          allowEnsureHistory: Boolean(options?.skipDiskCache),
         }).catch(() => null);
       }
       if (!payload?.candles?.length) return null;

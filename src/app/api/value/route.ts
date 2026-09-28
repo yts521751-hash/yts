@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { buildValuePicks, readValuePicksCache } from "@/lib/value-picks";
+import {
+  getValuePicksSingleFlight,
+  readValuePicksCache,
+  requestValuePicksRebuild,
+} from "@/lib/value-picks";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -8,12 +12,34 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const force = searchParams.get("force") === "1";
   try {
-    let data = force ? null : await readValuePicksCache();
-    if (!data?.rows) {
-      data = await buildValuePicks({ force: true });
-    } else if (force) {
-      data = await buildValuePicks({ force: true });
+    const cached = await readValuePicksCache();
+    if (cached?.rows && !force) {
+      const age = Date.now() - Date.parse(cached.builtAt || "");
+      const fresh =
+        Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000;
+      if (!fresh) {
+        requestValuePicksRebuild("stale-cache");
+      }
+      return NextResponse.json({
+        ok: true,
+        ...cached,
+        source: "cache",
+      });
     }
+
+    if (force && cached?.rows) {
+      const rebuild = requestValuePicksRebuild("api-force");
+      return NextResponse.json({
+        ok: true,
+        ...cached,
+        source: "cache",
+        syncing: true,
+        rebuild,
+      });
+    }
+
+    // 無快取：前景單飛建一次（不帶 force，沿用既有 EPS／排除額快取）
+    const data = await getValuePicksSingleFlight({ force: false });
     if (!data) {
       return NextResponse.json(
         { ok: false, error: "尚無價值選股資料（請先同步報價）" },

@@ -246,10 +246,21 @@ async function runDailyClosePackageUnlocked(
     asOf = flowStep.value.brief?.date ?? null;
   }
 
-  // 2) 個股資金流排行（只吃 .cache 報價／法人，force 重算後寫 flow-stocks-latest）
+  // 2) 個股資金流排行（先暖機近月排除額，再 force 重算寫 flow-stocks-latest）
   const stocksStep = await step("stocks", async () => {
+    const { listCachedTradingDays } = await import("@/lib/tw-market");
+    const { warmTurnoverExclusions } = await import("@/lib/regular-turnover");
     const { buildStockFlowRanking } = await import("@/lib/stock-flow");
-    return buildStockFlowRanking(50, { force: true });
+    const days = await listCachedTradingDays(25, 60);
+    if (days.length) {
+      await warmTurnoverExclusions(days, {
+        forceLatest: days[0],
+        concurrency: 4,
+      });
+    }
+    const payload = await buildStockFlowRanking(50, { force: true });
+    await flushUploadsSafe();
+    return payload;
   });
   steps.push({
     name: stocksStep.name,

@@ -63,6 +63,64 @@ export async function readValuePicksCache(): Promise<ValuePicksPayload | null> {
   return readCacheFile<ValuePicksPayload>(CACHE);
 }
 
+function valueBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuValuePicks?: {
+      rebuilding: boolean;
+      promise: Promise<ValuePicksPayload | null> | null;
+    };
+  };
+  if (!g.__jinliuValuePicks) {
+    g.__jinliuValuePicks = { rebuilding: false, promise: null };
+  }
+  return g.__jinliuValuePicks;
+}
+
+function buildValuePicksSingleFlight(options?: {
+  force?: boolean;
+}): Promise<ValuePicksPayload | null> {
+  const bag = valueBag();
+  if (bag.promise) return bag.promise;
+  bag.rebuilding = true;
+  bag.promise = buildValuePicks(options)
+    .catch((err) => {
+      console.error("[value-picks] rebuild failed", err);
+      return null;
+    })
+    .finally(() => {
+      bag.rebuilding = false;
+      bag.promise = null;
+    });
+  return bag.promise;
+}
+
+/** 背景重建價值選股；不阻塞 HTTP */
+export function requestValuePicksRebuild(reason: string): {
+  started: boolean;
+  alreadyRunning: boolean;
+} {
+  const bag = valueBag();
+  if (bag.rebuilding || bag.promise) {
+    return { started: false, alreadyRunning: true };
+  }
+  console.log(`[value-picks] background rebuild (${reason})`);
+  void buildValuePicksSingleFlight({
+    force: reason === "api-force" || reason === "daily-close",
+  }).then((p) => {
+    console.log(
+      `[value-picks] background rebuild ${p?.rows != null ? "ok" : "empty"} (${reason})`,
+    );
+  });
+  return { started: true, alreadyRunning: false };
+}
+
+/** 前景／背景共用的單飛重建 */
+export function getValuePicksSingleFlight(options?: {
+  force?: boolean;
+}): Promise<ValuePicksPayload | null> {
+  return buildValuePicksSingleFlight(options);
+}
+
 export async function buildValuePicks(options?: {
   force?: boolean;
 }): Promise<ValuePicksPayload | null> {

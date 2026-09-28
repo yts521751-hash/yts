@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p ${PORT:-43127}",
     "lint": "eslint",
-    "test": "npx --yes tsx --test src/lib/gap-sync.test.ts src/lib/r2-cache.test.ts"
+    "test": "npx --yes tsx --test src/lib/gap-sync.test.ts src/lib/r2-cache.test.ts src/lib/stock-flow.test.ts"
   },
   "engines": {
     "node": ">=20"
