@@ -214,7 +214,8 @@ export async function fillTradingDayGaps(options?: {
           need,
           skipped: existing.length + depthSkipped,
           fetched: fetched + depthFetched,
-          missingTotal: missing.length,
+          // 深度回補時用 need 當分母，避免一直顯示「1/1」卻其實在往回抓數十根
+          missingTotal: Math.max(missing.length, need),
           currentYmd: meta?.currentYmd,
           phase: "fetch",
         });

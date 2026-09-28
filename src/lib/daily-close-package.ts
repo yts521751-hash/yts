@@ -86,9 +86,24 @@ async function ensureHydrated() {
   }
 }
 
+function dailyCloseBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuDailyClose?: {
+      running: boolean;
+      /** 單飛佇列：boot 暖機與手動 sync 共用，避免並行重算 */
+      tail: Promise<unknown>;
+    };
+  };
+  if (!g.__jinliuDailyClose) {
+    g.__jinliuDailyClose = { running: false, tail: Promise.resolve() };
+  }
+  return g.__jinliuDailyClose;
+}
+
 /**
  * 執行日終大包：先缺口補日 →（可略過）flow 定稿與衍生快照。
  * 任一步失敗不阻断後續（meta 會標示），避免單一資料源拖垮整晚同步。
+ * 與 requestDailyClosePackage／手動 sync 共用單飛，避免 boot+按鈕並行打爆。
  */
 export async function runDailyClosePackage(
   reason: string,
@@ -96,6 +111,23 @@ export async function runDailyClosePackage(
     /** 略過「已是最新」短路，強制重算衍生 */
     force?: boolean;
     /** 呼叫端已做過缺口補日時可跳過 */
+    skipGapFill?: boolean;
+  },
+): Promise<DailyCloseMeta> {
+  const bag = dailyCloseBag();
+  const run = () => runDailyClosePackageUnlocked(reason, options);
+  const next = bag.tail.then(run, run);
+  bag.tail = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
+
+async function runDailyClosePackageUnlocked(
+  reason: string,
+  options?: {
+    force?: boolean;
     skipGapFill?: boolean;
   },
 ): Promise<DailyCloseMeta> {
@@ -174,6 +206,7 @@ export async function runDailyClosePackage(
       gap: gapMeta,
     };
     await writeCacheFile(DAILY_CLOSE_META_CACHE, skippedMeta).catch(() => null);
+    await flushUploadsSafe();
     console.log(
       `[daily-close] skip (${reason}): package current asOf=${prevMeta!.asOf} ` +
         `gapFetched=${gapMeta?.fetched ?? 0}`,
@@ -293,6 +326,7 @@ export async function runDailyClosePackage(
     gap: gapMeta,
   };
   await writeCacheFile(DAILY_CLOSE_META_CACHE, meta).catch(() => null);
+  await flushUploadsSafe();
 
   const okCount = steps.filter((s) => s.ok).length;
   console.log(
@@ -301,6 +335,16 @@ export async function runDailyClosePackage(
       `ms=${steps.map((s) => `${s.name}:${s.ms}`).join(",")}`,
   );
   return meta;
+}
+
+async function flushUploadsSafe() {
+  try {
+    const { flushCacheSideEffects } = await import("@/lib/tw-market");
+    await flushCacheSideEffects();
+    console.log(`[daily-close] cache side-effects flushed`);
+  } catch (err) {
+    console.warn("[daily-close] r2 flush:", err);
+  }
 }
 
 export async function readDailyCloseMeta(): Promise<DailyCloseMeta | null> {
@@ -312,20 +356,17 @@ export function requestDailyClosePackage(reason: string): {
   started: boolean;
   alreadyRunning: boolean;
 } {
-  const g = globalThis as typeof globalThis & {
-    __jinliuDailyClose?: { running: boolean };
-  };
-  if (!g.__jinliuDailyClose) g.__jinliuDailyClose = { running: false };
-  if (g.__jinliuDailyClose.running) {
+  const bag = dailyCloseBag();
+  if (bag.running) {
     return { started: false, alreadyRunning: true };
   }
-  g.__jinliuDailyClose.running = true;
+  bag.running = true;
   void runDailyClosePackage(reason)
     .catch((err) => {
       console.error(`[daily-close] background failed (${reason}):`, err);
     })
     .finally(() => {
-      g.__jinliuDailyClose!.running = false;
+      bag.running = false;
     });
   return { started: true, alreadyRunning: false };
 }

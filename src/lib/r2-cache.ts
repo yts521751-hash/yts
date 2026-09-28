@@ -31,6 +31,8 @@ let client: S3Client | null = null;
 let cachedConfig: R2Config | null | undefined;
 let hydratePromise: Promise<{ downloaded: number; skipped: number }> | null =
   null;
+/** 進行中的 write-through 上傳；sync 結束前必須 flush，避免 Free 休眠丟上傳 */
+const pendingUploads = new Set<Promise<boolean>>();
 
 function trimSlash(s: string) {
   return s.replace(/^\/+|\/+$/g, "");
@@ -136,6 +138,23 @@ export async function uploadCacheFileToR2(
   }
 }
 
+/** 追蹤背景上傳，供 sync 結束 flush */
+export function trackR2Upload(p: Promise<boolean>): Promise<boolean> {
+  pendingUploads.add(p);
+  void p.finally(() => {
+    pendingUploads.delete(p);
+  });
+  return p;
+}
+
+/** 等待目前所有 write-through 上傳結束（成功或失敗都算） */
+export async function flushR2Uploads(): Promise<{ pending: number }> {
+  const batch = [...pendingUploads];
+  if (!batch.length) return { pending: 0 };
+  await Promise.allSettled(batch);
+  return { pending: batch.length };
+}
+
 /** 從 R2 讀取 JSON 字串；沒有或不存在回 null */
 export async function downloadCacheFileFromR2(
   name: string,
@@ -204,7 +223,7 @@ async function exists(filePath: string) {
 
 /**
  * 開機還原：把 R2 上的快取拉到本機 CACHE_DIR（已存在的檔案略過）。
- * 單飛；可重複呼叫。
+ * 單飛；完成後清掉 promise，讓後續 sync 可再對帳（例如首跑 hydrate 時 R2 仍空）。
  */
 export async function hydrateCacheFromR2(
   cacheDir: string,
@@ -237,7 +256,7 @@ export async function hydrateCacheFromR2(
       );
       return { downloaded, skipped };
     })().finally(() => {
-      // 允許之後手動再 hydrate（例如 force）
+      hydratePromise = null;
     });
   }
   const result = await hydratePromise;

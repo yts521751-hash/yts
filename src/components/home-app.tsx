@@ -318,9 +318,16 @@ export function HomeApp({
           } else if (msg.type === "done") {
             ok = Boolean(msg.ok);
             errMsg = msg.error ? String(msg.error) : null;
+            const skipped = Boolean(
+              (msg as { skippedCurrent?: boolean }).skippedCurrent,
+            );
             setSyncProgress({
               percent: 100,
-              label: ok ? "同步完成" : "同步失敗",
+              label: !ok
+                ? "同步失敗"
+                : skipped
+                  ? "資料已是最新"
+                  : "同步完成",
             });
           }
         }

@@ -387,6 +387,8 @@ export async function readCacheFile<T>(name: string): Promise<T | null> {
 }
 
 /** 原子寫入：先寫 tmp 再 rename，避免半成品被讀到；有 R2 時一併上傳 */
+const pendingCacheSideEffects = new Set<Promise<unknown>>();
+
 export async function writeCacheFile(name: string, data: unknown) {
   await mkdir(CACHE_DIR, { recursive: true });
   const target = path.join(CACHE_DIR, name);
@@ -394,12 +396,27 @@ export async function writeCacheFile(name: string, data: unknown) {
   const body = JSON.stringify(data);
   await writeFile(tmp, body, "utf8");
   await rename(tmp, target);
-  void import("@/lib/r2-cache")
-    .then(({ uploadCacheFileToR2, isR2Enabled }) => {
-      if (!isR2Enabled()) return;
-      return uploadCacheFileToR2(name, body);
-    })
-    .catch(() => null);
+  const side = (async () => {
+    const { uploadCacheFileToR2, isR2Enabled, trackR2Upload } = await import(
+      "@/lib/r2-cache"
+    );
+    if (!isR2Enabled()) return;
+    await trackR2Upload(uploadCacheFileToR2(name, body));
+  })().catch(() => null);
+  pendingCacheSideEffects.add(side);
+  void side.finally(() => pendingCacheSideEffects.delete(side));
+}
+
+/** 等待 writeCacheFile 引發的 R2 上傳都結束（sync 收尾用） */
+export async function flushCacheSideEffects() {
+  const batch = [...pendingCacheSideEffects];
+  if (batch.length) await Promise.allSettled(batch);
+  try {
+    const { flushR2Uploads, isR2Enabled } = await import("@/lib/r2-cache");
+    if (isR2Enabled()) await flushR2Uploads();
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function readDeployMeta(): Promise<DeployMeta> {

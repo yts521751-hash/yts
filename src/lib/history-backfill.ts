@@ -1,5 +1,10 @@
 import "server-only";
 import {
+  artifactsComplete,
+  isPackageUpToDate,
+  resolveSyncTargetYmd,
+} from "@/lib/gap-sync";
+import {
   beginRebuildProgress,
   finishRebuildProgress,
   progressInRange,
@@ -7,6 +12,7 @@ import {
 } from "@/lib/rebuild-progress";
 import {
   getCacheDir,
+  getLatestCachedTradingDay,
   HISTORY_TRADING_DAYS,
   invalidateTradingDaysMemo,
   listCachedTradingDays,
@@ -15,8 +21,10 @@ import {
 /**
  * 增量歷史／日終同步（寫入 CACHE_DIR，有 R2 時 write-through）：
  * 1) 先 hydrate R2（若啟用）
- * 2) 只補水位之後缺的交易日報價／法人（已有日檔略過）
- * 3) 日終大包：若已對齊最新交易日且 artifacts 齊則略過重算
+ * 2) 若水位已到目標日且日終大包 artifacts 齊 → 直接略過（第二下同步應極快）
+ * 3) 只補水位之後缺的交易日報價／法人（已有日檔略過）
+ * 4) 日終大包：若已對齊最新交易日且 artifacts 齊則略過重算
+ * 5) flush R2 上傳，避免 Free 休眠丟掉 snapshot
  */
 export async function runHistoryBackfill(reason: string) {
   console.log(`[backfill] start (${reason}) cache=${getCacheDir()}`);
@@ -27,11 +35,56 @@ export async function runHistoryBackfill(reason: string) {
       const { hydrateCacheFromR2, isR2Enabled } = await import("@/lib/r2-cache");
       if (isR2Enabled()) {
         setRebuildProgress({ percent: 2, label: "自 R2 還原快取" });
-        await hydrateCacheFromR2(getCacheDir());
+        const hydrated = await hydrateCacheFromR2(getCacheDir());
         invalidateTradingDaysMemo();
+        console.log(
+          `[backfill] r2 hydrate: downloaded=${hydrated.downloaded} skipped=${hydrated.skipped} total=${hydrated.total}`,
+        );
       }
     } catch (err) {
       console.warn("[backfill] r2 hydrate:", err);
+    }
+
+    const { readDailyCloseMeta } = await import("@/lib/daily-close-package");
+    const target = resolveSyncTargetYmd();
+    const latestQuote = await getLatestCachedTradingDay();
+    const prevMeta = await readDailyCloseMeta();
+
+    // 快路徑：水位已到目標且大包齊 → 不跑缺口補日、不重算衍生
+    if (
+      latestQuote &&
+      latestQuote >= target &&
+      isPackageUpToDate(prevMeta, latestQuote)
+    ) {
+      const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);
+      setRebuildProgress({ percent: 100, label: "資料已是最新" });
+      finishRebuildProgress(true);
+      console.log(
+        `[backfill] skip-current (${reason}): asOf=${prevMeta!.asOf} ` +
+          `watermark=${latestQuote} target=${target} quoteDays=${quoteDays.length}`,
+      );
+      try {
+        const { flushCacheSideEffects } = await import("@/lib/tw-market");
+        await flushCacheSideEffects();
+      } catch {
+        /* ignore */
+      }
+      return {
+        meta: {
+          ...prevMeta!,
+          skipped: true,
+          reason: `backfill:${reason}:skip-current`,
+        },
+        quoteDays: quoteDays.length,
+        target: HISTORY_TRADING_DAYS,
+        gap: {
+          watermark: latestQuote,
+          targetYmd: target,
+          missing: 0,
+          fetched: 0,
+          skipped: quoteDays.length,
+        },
+      };
     }
 
     const { fillTradingDayGaps } = await import("@/lib/turnover");
@@ -75,10 +128,21 @@ export async function runHistoryBackfill(reason: string) {
     });
 
     const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);
+
+    try {
+      const { flushCacheSideEffects } = await import("@/lib/tw-market");
+      setRebuildProgress({ percent: 99, label: "寫入 R2 快照" });
+      await flushCacheSideEffects();
+      console.log(`[backfill] cache side-effects flushed`);
+    } catch (err) {
+      console.warn("[backfill] r2 flush:", err);
+    }
+
     finishRebuildProgress(true);
     const skipNote = meta.skipped ? " skipped-current" : "";
     console.log(
-      `[backfill] done (${reason}) quoteDays=${quoteDays.length} asOf=${meta.asOf ?? "—"}${skipNote}`,
+      `[backfill] done (${reason}) quoteDays=${quoteDays.length} asOf=${meta.asOf ?? "—"}${skipNote} ` +
+        `artifactsComplete=${artifactsComplete(meta.artifacts)}`,
     );
     return {
       meta,

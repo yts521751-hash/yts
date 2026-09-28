@@ -528,11 +528,13 @@ export async function getDeployStatus() {
   );
   const cacheDir = getCacheDir();
   const { isR2Enabled } = await import("@/lib/r2-cache");
-  // 未掛持久碟／未接 R2 時通常落在容器內 /.cache，重發佈會清空
+  const localDiskPersistent = cacheDir.startsWith("/data/");
+  const r2Enabled = isR2Enabled();
+  // 可跨 redeploy 存活：掛了 /data 碟，或有設 CACHE_DIR，或 R2 啟用（仍須 hydrate 成功）
   const cachePersistent =
-    cacheDir.startsWith("/data/") ||
+    localDiskPersistent ||
     Boolean(process.env.CACHE_DIR?.trim()) ||
-    isR2Enabled();
+    r2Enabled;
   return {
     ...meta,
     rebuildRunning:
@@ -542,8 +544,16 @@ export async function getDeployStatus() {
     dailyClose,
     cacheDir,
     cachePersistent,
-    r2Enabled: isR2Enabled(),
+    /** 本機路徑在容器專案目錄內＝無 Render Disk，休眠／重發會清空 */
+    localCacheEphemeral: !localDiskPersistent,
+    r2Enabled,
     quoteDays: quoteDays.length,
     quoteDaysTarget: HISTORY_TRADING_DAYS,
+    quoteWatermark: quoteDays[0] ?? null,
+    syncTargetYmd: (await import("@/lib/gap-sync")).resolveSyncTargetYmd(),
+    packageUpToDate: (await import("@/lib/gap-sync")).isPackageUpToDate(
+      dailyClose,
+      quoteDays[0] ?? null,
+    ),
   };
 }
