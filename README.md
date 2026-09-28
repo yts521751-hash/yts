@@ -18,7 +18,7 @@
 - **產業日線深度**：報價歷史預設拉到約 **60 根**（夠算 MA5／MA10；縮短同步時間）
 - **08:50** 開盤前輕量暖機；各頁（含成交排行）以日終大包快照為主
 - **本機快取**：瀏覽器也先畫上次資料再背景核對，減少冷啟動空白
-- **持久快照（`CACHE_DIR`）**：正式環境請掛磁碟到 `/data/cache`，與程式發佈分離；重發佈後歷史日檔仍在，每天同步只補缺日／當日
+- **持久快照**：本機寫 `.cache`／`CACHE_DIR`；可接 **Cloudflare R2**（免費額度）在 redeploy 後自動還原，步驟見 [R2_SETUP.md](./R2_SETUP.md)；亦可掛磁碟到 `/data/cache`
 - 字級、淺／深色
 
 ## 資料來源
@@ -58,7 +58,7 @@ npm run build && npm run start
 - `Dockerfile` + `fly.toml` → Fly.io；可選 GitHub Secret `FLY_API_TOKEN` 自動部署
 - `.github/workflows/ci.yml` → 每次推送驗證 `npm run build`
 
-步驟與注意事項見 [DEPLOY.md](./DEPLOY.md)。
+步驟與注意事項見 [DEPLOY.md](./DEPLOY.md)。R2 外掛快取逐步設定見 [R2_SETUP.md](./R2_SETUP.md)。
 
 ## API
 

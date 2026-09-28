@@ -124,11 +124,23 @@ export function startScheduler() {
   if (b.started) return;
   b.started = true;
 
-  void import("@/lib/tw-market")
-    .then(({ getCacheDir }) => {
-      console.log(`[cache] dir=${getCacheDir()}`);
-    })
-    .catch(() => null);
+  void (async () => {
+    try {
+      const { getCacheDir } = await import("@/lib/tw-market");
+      const { hydrateCacheFromR2, isR2Enabled } = await import("@/lib/r2-cache");
+      console.log(
+        `[cache] dir=${getCacheDir()} r2=${isR2Enabled() ? "on" : "off"}`,
+      );
+      if (isR2Enabled()) {
+        const result = await hydrateCacheFromR2(getCacheDir());
+        console.log(
+          `[cache] r2 hydrate: downloaded=${result.downloaded} skipped=${result.skipped}`,
+        );
+      }
+    } catch (e) {
+      console.error("[cache] r2 hydrate failed", e);
+    }
+  })();
   b.tasks = [];
 
   const state = ensureState();
@@ -216,8 +228,17 @@ export function startScheduler() {
     console.log(`[scheduler] news cron: ${newsExpr} (${TZ})`);
   }
 
-  // 啟動時：缺日終大包／缺 active 就背景補包（不阻塞 HTTP）
+  // 啟動時：先等 R2 hydrate，再檢查缺日終大包／缺 active 就背景補包
   void (async () => {
+    try {
+      const { getCacheDir } = await import("@/lib/tw-market");
+      const { hydrateCacheFromR2, isR2Enabled } = await import("@/lib/r2-cache");
+      if (isR2Enabled()) {
+        await hydrateCacheFromR2(getCacheDir());
+      }
+    } catch (e) {
+      console.error("[scheduler] r2 hydrate before warm failed", e);
+    }
     try {
       const { getActiveFlowPayload } = await import("@/lib/build-flow");
       const { readDailyCloseMeta, requestDailyClosePackage } = await import(

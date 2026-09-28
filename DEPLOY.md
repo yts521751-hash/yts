@@ -54,7 +54,7 @@ fly deploy
 
 ## 五、環境變數（可選）
 
-見 `.env.example`：`SYNC_DISABLED`、`SYNC_TZ`、`SYNC_CRON`。雲端後台加同名環境變數即可，不必把密鑰寫進 repo。
+見 `.env.example`：`SYNC_DISABLED`、`SYNC_TZ`、`SYNC_CRON`，以及 R2 相關。雲端後台加同名環境變數即可，不必把密鑰寫進 repo。
 
 ## 六、快取與重發佈（重要）
 
@@ -63,16 +63,18 @@ fly deploy
 | 環境 | 建議 |
 |------|------|
 | 本機 | 可不設 → 預設專案內 `.cache`（已 gitignore） |
-| Fly | `fly volumes create jinliu_cache --region nrt --size 1`，`fly.toml` 已掛 `/data/cache`，`CACHE_DIR=/data/cache` |
-| Render | 見下方「Render 掛 Disk」；需 **Starter** 以上 |
+| **免費持久（推薦）** | **Cloudflare R2**：見 [R2_SETUP.md](./R2_SETUP.md)；設好四個必填變數即可，Free Render 也能用 |
+| Fly | 可加 R2；或 `fly volumes` 掛 `/data/cache` |
+| Render | Free：用 R2；付費可另掛 Disk（見下方） |
 
 行為：
 
-- **已有的歷史日檔不會因重發佈被清掉**（只要掛了持久碟）。
-- 日終／背景同步會**跳過已存在的交易日**，只補缺日與當日，不必每天重抓整段歷史。
-- 開機 log 會印 `[cache] dir=...`，可確認是否指到磁碟。
+- 有 **R2** 時：寫入會上傳；開機 hydrate 還原；本機缺檔會從 R2 拉回。
+- 有 **持久碟** 時：歷史日檔不會因重發佈被清掉。
+- 日終／背景同步會**跳過已存在的交易日**，只補缺日與當日。
+- 開機 log：`[cache] dir=... r2=on|off`；hydrate：`[r2] hydrate done: ...`。
 
-未掛持久碟時，每次 deploy 仍會從空快取冷啟動（資料會短暫不完整，直到大包跑完）。
+未掛碟、也未設 R2 時，每次 deploy 仍從空快取冷啟動。
 
 ### Render 掛 Disk（逐步）
 

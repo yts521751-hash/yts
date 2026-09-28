@@ -527,10 +527,12 @@ export async function getDeployStatus() {
     () => [] as string[],
   );
   const cacheDir = getCacheDir();
-  // 未掛持久碟時通常落在容器內 /.cache 或 /app/.cache，重發佈會清空
+  const { isR2Enabled } = await import("@/lib/r2-cache");
+  // 未掛持久碟／未接 R2 時通常落在容器內 /.cache，重發佈會清空
   const cachePersistent =
     cacheDir.startsWith("/data/") ||
-    Boolean(process.env.CACHE_DIR?.trim());
+    Boolean(process.env.CACHE_DIR?.trim()) ||
+    isR2Enabled();
   return {
     ...meta,
     rebuildRunning:
@@ -540,6 +542,7 @@ export async function getDeployStatus() {
     dailyClose,
     cacheDir,
     cachePersistent,
+    r2Enabled: isR2Enabled(),
     quoteDays: quoteDays.length,
     quoteDaysTarget: HISTORY_TRADING_DAYS,
   };

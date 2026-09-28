@@ -365,20 +365,41 @@ export type DeployMeta = {
 };
 
 export async function readCacheFile<T>(name: string): Promise<T | null> {
+  const localPath = path.join(CACHE_DIR, name);
   try {
-    return JSON.parse(await readFile(path.join(CACHE_DIR, name), "utf8")) as T;
+    return JSON.parse(await readFile(localPath, "utf8")) as T;
+  } catch {
+    /* fall through to R2 */
+  }
+  try {
+    const { downloadCacheFileFromR2, isR2Enabled } = await import(
+      "@/lib/r2-cache"
+    );
+    if (!isR2Enabled()) return null;
+    const remote = await downloadCacheFileFromR2(name);
+    if (!remote) return null;
+    await mkdir(path.dirname(localPath), { recursive: true });
+    await writeFile(localPath, remote, "utf8");
+    return JSON.parse(remote) as T;
   } catch {
     return null;
   }
 }
 
-/** 原子寫入：先寫 tmp 再 rename，避免半成品被讀到 */
+/** 原子寫入：先寫 tmp 再 rename，避免半成品被讀到；有 R2 時一併上傳 */
 export async function writeCacheFile(name: string, data: unknown) {
   await mkdir(CACHE_DIR, { recursive: true });
   const target = path.join(CACHE_DIR, name);
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(tmp, JSON.stringify(data), "utf8");
+  const body = JSON.stringify(data);
+  await writeFile(tmp, body, "utf8");
   await rename(tmp, target);
+  void import("@/lib/r2-cache")
+    .then(({ uploadCacheFileToR2, isR2Enabled }) => {
+      if (!isR2Enabled()) return;
+      return uploadCacheFileToR2(name, body);
+    })
+    .catch(() => null);
 }
 
 export async function readDeployMeta(): Promise<DeployMeta> {
