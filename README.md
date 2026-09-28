@@ -14,32 +14,35 @@
 - **產業均線掃描**：找出站上五日／十日線的官方產業指數（`/ma`）；篩選含「兩線之上」
 - **價值選股**：明年 EPS YoY（法人中位數）&gt; 50%，前瞻本益比（股價÷明年 EPS）&lt; 35，且當日一般成交 ≥ 10 億（`/value`）
 - **波動情緒**：參考 CBOE VIX 與台股近約 20 日實現波動（非當日漲跌）
-- **定時／灰度（日終大包）**：週一至週五 **18:00／18:30／19:00** 一次向證交所／櫃買拉齊網站會用的盤後資料（資金流、近約 **60 個交易日**報價／法人、產業 K 線、個股資金流、風度、均線掃描、收盤成交排行、價值選股），寫入 `.cache` 快照；之後各頁開頁**只讀快照**，不再為了載入去打交易所
-- **產業日線深度**：報價歷史預設拉到約 **60 根**（夠算 MA5／MA10；縮短同步時間）
+- **定時／灰度（日終大包）**：週一至週五 **18:00／18:30／19:00** 採**增量缺口同步**——只向證交所／櫃買補「水位之後」缺的交易日，已有 `quotes-*`／`insti-*` 略過；若日終大包已對齊最新交易日且 artifacts 齊則略過衍生重算。手動「同步資料」同邏輯。
+- **產業日線深度**：報價歷史預設約 **60 根**（夠算 MA5／MA10）
 - **08:50** 開盤前輕量暖機；各頁（含成交排行）以日終大包快照為主
 - **本機快取**：瀏覽器也先畫上次資料再背景核對，減少冷啟動空白
-- **持久快照**：本機寫 `.cache`／`CACHE_DIR`；可接 **Cloudflare R2**（免費額度）在 redeploy 後自動還原，步驟見 [R2_SETUP.md](./R2_SETUP.md)；亦可掛磁碟到 `/data/cache`
+- **持久快照**：本機寫 `.cache`／`CACHE_DIR`；可接 **Cloudflare R2**（網站功能所需快取皆 write-through／hydrate），redeploy 後自動還原，步驟見 [R2_SETUP.md](./R2_SETUP.md)；亦可掛磁碟到 `/data/cache`
 - 字級、淺／深色
 
 ## 資料來源
 
 臺灣證券交易所、證券櫃檯買賣中心公開資料（非寫死）。API 會標 `dataProvenance: twse+tpex-public`；僅在完全沒有快取時才回示範資料並標 `isDemo: true`。
 
-### 日終大包與讀取路徑
+### 日終大包與讀取路徑（皆經 R2 write-through／hydrate）
 
-| 資料 | 18:00 大包寫入 | 開頁讀取 |
-|------|----------------|----------|
-| 板塊資金流 | `flow-active.json`（灰度自 staging） | `/`、`/api/flow` |
-| 日報價／法人 | `quotes-*.json`、`insti-*.json` | 供 K 線／個股／排行重算 |
+| 資料 | 快取檔 | 開頁讀取 |
+|------|--------|----------|
+| 板塊資金流 | `flow-active.json`（及 staging／last-close） | `/`、`/api/flow` |
+| 日報價／法人 | `quotes-*.json`、`insti-*.json` | K 線／個股／排行 |
+| 一般成交排除 | `turnover-exclude-*.json` | 成交排行口徑 |
 | 產業 K 線 | `kline-*.json` | `/sectors/[id]`、均線掃描 |
 | 個股資金流 | `flow-stocks-latest.json` | `/api/stocks` |
-| 風度 | `wind-gauge-*.json` | `/wind`、`/api/wind` |
+| 風度 | `wind-gauge-*.json`、指數序列 | `/wind`、`/api/wind` |
 | 均線掃描 | `ma-screener-active.json` | `/ma`、`/api/ma-screener` |
 | 價值選股 | `value-picks-latest.json` | `/value`、`/api/value` |
-| 成交排行 | `turnover-ranking-latest.json`（一般成交口徑） | `/turnover`、`/api/turnover` |
-| 大包索引 | `daily-close-meta.json` | deploy 狀態／除錯 |
+| 成交排行 | `turnover-ranking-latest.json` | `/turnover`、`/api/turnover` |
+| 基本面 | `fundamentals-*.json` | 個股／價值選股 |
+| 產業／主題 | `industry-map.json`、`auto-themes.json` | 板塊宇宙 |
+| 大包索引 | `daily-close-meta.json` | deploy／同步短路 |
 
-編排程式：`src/lib/daily-close-package.ts`（排程 `runSync` 呼叫）。
+編排程式：`src/lib/daily-close-package.ts`；缺口邏輯：`src/lib/gap-sync.ts`／`fillTradingDayGaps`。
 ## 本機執行
 
 ```bash

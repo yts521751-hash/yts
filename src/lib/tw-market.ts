@@ -626,6 +626,26 @@ export async function getLatestCachedTradingDay(): Promise<string | null> {
   return days[0] ?? null;
 }
 
+/** 本機 CACHE_DIR 全部 quotes-YYYYMMDD.json 的 ymd（新→舊） */
+export async function listAllCachedQuoteYmds(): Promise<string[]> {
+  try {
+    const files = await readdir(CACHE_DIR);
+    return files
+      .map((f) => /^quotes-(\d{8})\.json$/.exec(f)?.[1])
+      .filter((ymd): ymd is string => Boolean(ymd))
+      .sort((a, b) => b.localeCompare(a));
+  } catch {
+    return [];
+  }
+}
+
+export type TradingDayProgressMeta = {
+  skipped: number;
+  fetched: number;
+  missingTotal?: number;
+  currentYmd?: string;
+};
+
 /**
  * 向後抓取足夠的交易日報價（上市＋上櫃合併），寫入 CACHE_DIR。
  * 已有日檔會直接沿用，只補缺日——持久碟上歷史不必每天重抓。
@@ -636,7 +656,12 @@ export async function listRecentTradingDays(
   lookbackCalendar = HISTORY_CALENDAR_LOOKBACK,
   options?: {
     cacheOnly?: boolean;
-    onProgress?: (done: number, need: number) => void;
+    /** 可選第三參：略過／新抓統計（進度 UI） */
+    onProgress?: (
+      done: number,
+      need: number,
+      meta?: TradingDayProgressMeta,
+    ) => void;
   },
 ): Promise<string[]> {
   if (options?.cacheOnly) return listCachedTradingDays(need, lookbackCalendar);
@@ -645,6 +670,8 @@ export async function listRecentTradingDays(
   const cursor = new Date();
   cursor.setHours(12, 0, 0, 0);
   let wrote = false;
+  let skipped = 0;
+  let fetched = 0;
 
   for (let i = 0; i < lookbackCalendar && days.length < need; i++) {
     const ymd = toYmd(cursor);
@@ -659,16 +686,26 @@ export async function listRecentTradingDays(
     if (cached?.quotes?.length) {
       // 已有日檔就計入深度（即使舊檔偏上市）；缺日才打交易所
       days.push(ymd);
-      options?.onProgress?.(days.length, need);
+      skipped++;
+      options?.onProgress?.(days.length, need, {
+        skipped,
+        fetched,
+        currentYmd: ymd,
+      });
     } else {
       const bundle = await loadMergedQuotesDay(ymd);
       if (bundle?.quotes?.length) {
         days.push(ymd);
         wrote = true;
+        fetched++;
       }
       await sleep(220);
+      options?.onProgress?.(days.length, need, {
+        skipped,
+        fetched,
+        currentYmd: ymd,
+      });
     }
-    options?.onProgress?.(days.length, need);
     cursor.setDate(cursor.getDate() - 1);
   }
 

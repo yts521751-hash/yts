@@ -114,12 +114,13 @@ fly secrets set \
 
 | 時機 | 行為 |
 |------|------|
-| 寫快取 | 先寫本機 `CACHE_DIR`／`.cache`，再非同步上傳同名物件到 R2 |
+| 寫快取 | 先寫本機 `CACHE_DIR`／`.cache`，再非同步上傳同名物件到 R2（含日檔、日終大包、K 線、風度、均線、價值選股、成交排行、基本面等網站功能所需檔） |
 | 讀快取 | 本機有檔直接用；沒有則從 R2 下載寫回本機再回傳 |
 | 開機 | `hydrateCacheFromR2`：列出 prefix 下物件，缺檔才下載（略過已存在） |
-| 未設定 R2 | 完全不連線，行為與以前相同 |
+| 手動「同步資料」／18:00 cron | **增量缺口**：以本機（通常已自 R2 hydrate）最新 `quotes-*` 為水位，只抓水位→目標交易日的缺日；已有日檔略過。日終衍生快照若 `daily-close-meta` 已對齊且 artifacts 齊則略過重算 |
+| 未設定 R2 | 完全不連線，行為與以前相同（仍做本機缺口同步） |
 
-物件 Key 形如：`jinliu-cache/flow-active.json`、`jinliu-cache/quotes-20260327.json` …
+物件 Key 形如：`jinliu-cache/flow-active.json`、`jinliu-cache/quotes-20260327.json`、`jinliu-cache/value-picks-latest.json` …
 
 ---
 

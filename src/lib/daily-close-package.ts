@@ -1,5 +1,16 @@
 import "server-only";
-import { readCacheFile, writeCacheFile } from "@/lib/tw-market";
+import {
+  artifactsComplete,
+  isPackageUpToDate,
+  resolveSyncTargetYmd,
+  toCompactYmd,
+} from "@/lib/gap-sync";
+import {
+  getLatestCachedTradingDay,
+  invalidateTradingDaysMemo,
+  readCacheFile,
+  writeCacheFile,
+} from "@/lib/tw-market";
 
 /**
  * 日終大包（Daily Close Package）
@@ -8,6 +19,7 @@ import { readCacheFile, writeCacheFile } from "@/lib/tw-market";
  * - 平日 18:00／18:30／19:00 一次向證交所／櫃買把「網站會用到的盤後資料」拉齊寫入 .cache
  * - 之後各頁（資金流、個股、產業 K、均線、風度）只讀這批快照，不再為了開頁去打交易所
  * - 成交排行改為日終快照（一般成交口徑），不再盤中即時輪詢
+ * - 增量：先補水位之後缺日；若 active 大包已對齊最新交易日且 artifacts 齊則略過重算
  *
  * 快照仍拆成多個 cache 檔（較好增量更新／灰度），但由本模組統一編排與寫入 meta 索引。
  */
@@ -35,6 +47,15 @@ export type DailyCloseMeta = {
     turnoverClose: boolean;
     valuePicks: boolean;
   };
+  /** 本次是否略過衍生重算（已是最新） */
+  skipped?: boolean;
+  gap?: {
+    watermark: string | null;
+    target: string;
+    missing: number;
+    fetched: number;
+    skippedExisting: number;
+  };
 };
 
 async function step<T>(
@@ -52,14 +73,114 @@ async function step<T>(
   }
 }
 
+async function ensureHydrated() {
+  try {
+    const { getCacheDir } = await import("@/lib/tw-market");
+    const { hydrateCacheFromR2, isR2Enabled } = await import("@/lib/r2-cache");
+    if (isR2Enabled()) {
+      await hydrateCacheFromR2(getCacheDir());
+      invalidateTradingDaysMemo();
+    }
+  } catch (err) {
+    console.warn("[daily-close] r2 hydrate skipped:", err);
+  }
+}
+
 /**
- * 執行日終大包：flow 定稿 → 報價／K 線已在 flow 內預熱 → 個股／風度／均線／收盤成交排行。
+ * 執行日終大包：先缺口補日 →（可略過）flow 定稿與衍生快照。
  * 任一步失敗不阻断後續（meta 會標示），避免單一資料源拖垮整晚同步。
  */
-export async function runDailyClosePackage(reason: string): Promise<DailyCloseMeta> {
+export async function runDailyClosePackage(
+  reason: string,
+  options?: {
+    /** 略過「已是最新」短路，強制重算衍生 */
+    force?: boolean;
+    /** 呼叫端已做過缺口補日時可跳過 */
+    skipGapFill?: boolean;
+  },
+): Promise<DailyCloseMeta> {
   console.log(`[daily-close] start (${reason})`);
+  await ensureHydrated();
 
   const steps: DailyCloseMeta["steps"] = [];
+  let gapMeta: DailyCloseMeta["gap"];
+
+  if (!options?.skipGapFill) {
+    const gapStep = await step("gap-fill", async () => {
+      const { fillTradingDayGaps } = await import("@/lib/turnover");
+      const {
+        beginRebuildProgress,
+        setRebuildProgress,
+        progressInRange,
+      } = await import("@/lib/rebuild-progress");
+      beginRebuildProgress("補缺交易日");
+      return fillTradingDayGaps({
+        onProgress: (p) => {
+          const label =
+            p.missingTotal > 0
+              ? `補缺交易日 ${p.fetched}/${p.missingTotal}（已有略過 ${p.skipped}）`
+              : p.phase === "done"
+                ? `交易日已齊（略過 ${p.skipped}）`
+                : `檢查交易日缺口（已有 ${p.skipped}）`;
+          setRebuildProgress({
+            percent: progressInRange(3, 38, p.done, Math.max(p.need, 1)),
+            label,
+          });
+        },
+      });
+    });
+    steps.push({
+      name: gapStep.name,
+      ok: gapStep.ok,
+      detail: gapStep.detail,
+      ms: gapStep.ms,
+    });
+    if (gapStep.ok && gapStep.value) {
+      gapMeta = {
+        watermark: gapStep.value.watermark,
+        target: gapStep.value.target,
+        missing: gapStep.value.missing.length,
+        fetched: gapStep.value.fetched,
+        skippedExisting: gapStep.value.skipped,
+      };
+    }
+  }
+
+  const latestQuote = await getLatestCachedTradingDay();
+  const prevMeta = await readDailyCloseMeta();
+  const target = resolveSyncTargetYmd();
+
+  if (
+    !options?.force &&
+    latestQuote &&
+    latestQuote >= target &&
+    isPackageUpToDate(prevMeta, latestQuote)
+  ) {
+    const skippedMeta: DailyCloseMeta = {
+      asOf: prevMeta!.asOf,
+      builtAt: prevMeta!.builtAt,
+      reason: `${reason}:skip-current`,
+      steps: [
+        ...steps,
+        {
+          name: "skip",
+          ok: true,
+          detail: `已是最新 asOf=${prevMeta!.asOf}，略過衍生重算`,
+          ms: 0,
+        },
+      ],
+      artifacts: prevMeta!.artifacts,
+      skipped: true,
+      gap: gapMeta,
+    };
+    await writeCacheFile(DAILY_CLOSE_META_CACHE, skippedMeta).catch(() => null);
+    console.log(
+      `[daily-close] skip (${reason}): package current asOf=${prevMeta!.asOf} ` +
+        `gapFetched=${gapMeta?.fetched ?? 0}`,
+    );
+    return skippedMeta;
+  }
+
   const artifacts: DailyCloseMeta["artifacts"] = {
     flow: false,
     quotesWarm: false,
@@ -168,12 +289,15 @@ export async function runDailyClosePackage(reason: string): Promise<DailyCloseMe
     reason,
     steps,
     artifacts,
+    skipped: false,
+    gap: gapMeta,
   };
   await writeCacheFile(DAILY_CLOSE_META_CACHE, meta).catch(() => null);
 
   const okCount = steps.filter((s) => s.ok).length;
   console.log(
     `[daily-close] done (${reason}): ${okCount}/${steps.length} ok asOf=${asOf ?? "—"} ` +
+      `complete=${artifactsComplete(artifacts)} target=${target} ` +
       `ms=${steps.map((s) => `${s.name}:${s.ms}`).join(",")}`,
   );
   return meta;
@@ -204,4 +328,10 @@ export function requestDailyClosePackage(reason: string): {
       g.__jinliuDailyClose!.running = false;
     });
   return { started: true, alreadyRunning: false };
+}
+
+/** @deprecated 使用 gap-sync.toCompactYmd */
+export function metaAsOfYmd(asOf: string | null | undefined): string | null {
+  if (!asOf) return null;
+  return toCompactYmd(asOf);
 }
