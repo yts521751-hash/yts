@@ -133,6 +133,8 @@ export function startScheduler() {
       );
       if (isR2Enabled()) {
         const result = await hydrateCacheFromR2(getCacheDir());
+        const { invalidateTradingDaysMemo } = await import("@/lib/tw-market");
+        invalidateTradingDaysMemo();
         console.log(
           `[cache] r2 hydrate: downloaded=${result.downloaded} skipped=${result.skipped}`,
         );
@@ -250,7 +252,9 @@ export function startScheduler() {
         !meta?.artifacts?.flow ||
         !meta.artifacts.stocks ||
         !meta.artifacts.ma ||
-        !meta.artifacts.wind;
+        !meta.artifacts.wind ||
+        !meta.artifacts.turnoverClose ||
+        !meta.artifacts.valuePicks;
       if (!active || packageThin) {
         console.log(
           `[scheduler] boot package warm (active=${Boolean(active)} thin=${packageThin})`,

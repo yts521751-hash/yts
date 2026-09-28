@@ -1,15 +1,28 @@
 import { isCommonStock } from "@/lib/stock-filter";
 import { applyRegularTurnover } from "@/lib/regular-turnover";
 import {
+  findMissingTradingDays,
+  listWeekdaysBetween,
+  resolveSyncTargetYmd,
+  type GapFillProgress,
+  type GapFillResult,
+} from "@/lib/gap-sync";
+import {
+  listAllCachedQuoteYmds,
   listCachedTradingDays,
   listRecentTradingDays,
   getCachedDayQuotes,
+  getLatestCachedTradingDay,
+  loadMergedInstiDay,
+  loadMergedQuotesDay,
   readCacheFile,
   writeCacheFile,
   ymdToIso,
+  invalidateTradingDaysMemo,
   HISTORY_CALENDAR_LOOKBACK,
   HISTORY_TRADING_DAYS,
   type QuoteRow,
+  type TradingDayProgressMeta,
 } from "@/lib/tw-market";
 
 export type TurnoverRow = {
@@ -129,23 +142,148 @@ export async function buildTurnoverRanking(
   return payload;
 }
 
-/** 補齊報價日檔到近約 60 個交易日（HISTORY_TRADING_DAYS） */
-export async function ensureQuoteHistory(
-  needDays = HISTORY_TRADING_DAYS,
-  options?: { onProgress?: (done: number, need: number) => void },
-) {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 只補「水位之後 → 同步目標日」的缺日報價／法人；已有日檔略過。
+ * 若歷史深度不足 HISTORY_TRADING_DAYS，再往回補到目標根數（仍跳過已存在檔）。
+ */
+export async function fillTradingDayGaps(options?: {
+  needDays?: number;
+  onProgress?: (p: GapFillProgress) => void;
+}): Promise<GapFillResult> {
+  const needDays = options?.needDays ?? HISTORY_TRADING_DAYS;
   const lookback = Math.max(
     HISTORY_CALENDAR_LOOKBACK,
     Math.ceil(needDays * 2.2),
   );
-  const have = await listCachedTradingDays(needDays, lookback);
-  if (have.length >= needDays) {
-    options?.onProgress?.(have.length, needDays);
-    return have;
-  }
-  return listRecentTradingDays(needDays, lookback, {
-    onProgress: options?.onProgress,
+  const target = resolveSyncTargetYmd();
+  const existing = await listAllCachedQuoteYmds();
+  const existingSet = new Set(existing);
+  const watermark = existing[0] ?? null;
+
+  // 水位之後的缺日（含目標日）；無水位則先不列全窗，交給深度回補
+  const afterWatermark = watermark
+    ? listWeekdaysBetween(watermark, target, needDays + 10)
+    : listWeekdaysBetween(null, target, needDays);
+  const missing = findMissingTradingDays(existingSet, afterWatermark);
+
+  options?.onProgress?.({
+    done: 0,
+    need: Math.max(missing.length, 1),
+    skipped: existingSet.size,
+    fetched: 0,
+    missingTotal: missing.length,
+    phase: missing.length ? "fetch" : "scan",
   });
+
+  let fetched = 0;
+  for (let i = 0; i < missing.length; i++) {
+    const ymd = missing[i];
+    options?.onProgress?.({
+      done: i,
+      need: missing.length,
+      skipped: existing.length,
+      fetched,
+      missingTotal: missing.length,
+      currentYmd: ymd,
+      phase: "fetch",
+    });
+    const quotes = await loadMergedQuotesDay(ymd);
+    if (quotes?.quotes?.length) {
+      fetched++;
+      existingSet.add(ymd);
+      await loadMergedInstiDay(ymd);
+      await sleep(180);
+    } else {
+      await sleep(120);
+    }
+  }
+
+  // 深度不足或水位未到目標：往回補（listRecentTradingDays 會跳過已有檔）
+  let quoteDays = await listCachedTradingDays(needDays, lookback);
+  let depthFetched = 0;
+  let depthSkipped = 0;
+  if (quoteDays.length < needDays || (quoteDays[0] ?? "") < target) {
+    quoteDays = await listRecentTradingDays(needDays, lookback, {
+      onProgress: (done, need, meta?: TradingDayProgressMeta) => {
+        depthSkipped = meta?.skipped ?? depthSkipped;
+        depthFetched = meta?.fetched ?? depthFetched;
+        options?.onProgress?.({
+          done,
+          need,
+          skipped: existing.length + depthSkipped,
+          fetched: fetched + depthFetched,
+          missingTotal: missing.length,
+          currentYmd: meta?.currentYmd,
+          phase: "fetch",
+        });
+      },
+    });
+  }
+
+  // 近月法人檔：有 quotes 就確保 insti（已有檔略過）
+  quoteDays = await listCachedTradingDays(needDays, lookback);
+  for (const ymd of quoteDays.slice(0, 25)) {
+    await loadMergedInstiDay(ymd);
+  }
+
+  const totalFetched = fetched + depthFetched;
+  if (totalFetched > 0) invalidateTradingDaysMemo();
+  quoteDays = await listCachedTradingDays(needDays, lookback);
+  const skipped = Math.max(0, quoteDays.length - totalFetched);
+
+  options?.onProgress?.({
+    done: Math.max(missing.length, quoteDays.length),
+    need: Math.max(missing.length, needDays),
+    skipped,
+    fetched: totalFetched,
+    missingTotal: missing.length,
+    phase: "done",
+  });
+
+  return {
+    watermark,
+    target,
+    missing,
+    fetched: totalFetched,
+    skipped,
+    quoteDays,
+    didFetch: totalFetched > 0,
+  };
 }
 
-export type { QuoteRow };
+/**
+ * 補齊報價日檔到近約 60 個交易日，且水位必須涵蓋同步目標日。
+ * 已有 ≥60 檔但最新日落後時仍會只補缺口（不再 early-exit）。
+ */
+export async function ensureQuoteHistory(
+  needDays = HISTORY_TRADING_DAYS,
+  options?: {
+    onProgress?: (
+      done: number,
+      need: number,
+      meta?: TradingDayProgressMeta,
+    ) => void;
+  },
+) {
+  const result = await fillTradingDayGaps({
+    needDays,
+    onProgress: (p) => {
+      options?.onProgress?.(p.done, p.need, {
+        skipped: p.skipped,
+        fetched: p.fetched,
+        missingTotal: p.missingTotal,
+        currentYmd: p.currentYmd,
+      });
+    },
+  });
+  return result.quoteDays;
+}
+
+/** 目前報價水位（最新 quotes 日） */
+export async function getQuoteWatermark(): Promise<string | null> {
+  return getLatestCachedTradingDay();
+}
+
+export type { QuoteRow, GapFillResult, GapFillProgress };

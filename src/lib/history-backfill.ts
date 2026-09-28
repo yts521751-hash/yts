@@ -8,52 +8,90 @@ import {
 import {
   getCacheDir,
   HISTORY_TRADING_DAYS,
+  invalidateTradingDaysMemo,
   listCachedTradingDays,
 } from "@/lib/tw-market";
 
 /**
- * 全量歷史補齊（與發佈無關，寫入 CACHE_DIR）：
- * 1) 報價日檔補到近約 60 個交易日（已有日檔會跳過）
- * 2) 跑日終大包（資金流、產業 K、個股、風度、均線掃描…）
- *
- * 之後每天同步只需補缺日／當日。
+ * 增量歷史／日終同步（寫入 CACHE_DIR，有 R2 時 write-through）：
+ * 1) 先 hydrate R2（若啟用）
+ * 2) 只補水位之後缺的交易日報價／法人（已有日檔略過）
+ * 3) 日終大包：若已對齊最新交易日且 artifacts 齊則略過重算
  */
 export async function runHistoryBackfill(reason: string) {
   console.log(`[backfill] start (${reason}) cache=${getCacheDir()}`);
-  beginRebuildProgress("補齊歷史報價");
+  beginRebuildProgress("檢查交易日缺口");
 
   try {
-    const { ensureQuoteHistory } = await import("@/lib/turnover");
+    try {
+      const { hydrateCacheFromR2, isR2Enabled } = await import("@/lib/r2-cache");
+      if (isR2Enabled()) {
+        setRebuildProgress({ percent: 2, label: "自 R2 還原快取" });
+        await hydrateCacheFromR2(getCacheDir());
+        invalidateTradingDaysMemo();
+      }
+    } catch (err) {
+      console.warn("[backfill] r2 hydrate:", err);
+    }
+
+    const { fillTradingDayGaps } = await import("@/lib/turnover");
     const before = await listCachedTradingDays(HISTORY_TRADING_DAYS);
     setRebuildProgress({
       percent: 5,
-      label: `歷史報價 ${before.length}/${HISTORY_TRADING_DAYS}`,
+      label: `水位檢查（本機 ${before.length} 日）`,
     });
 
-    await ensureQuoteHistory(HISTORY_TRADING_DAYS, {
-      onProgress: (done, need) => {
+    const gap = await fillTradingDayGaps({
+      needDays: HISTORY_TRADING_DAYS,
+      onProgress: (p) => {
+        const label =
+          p.missingTotal > 0
+            ? `補缺交易日 ${Math.min(p.fetched, p.missingTotal)}/${p.missingTotal}（略過已有 ${p.skipped}）`
+            : p.phase === "done"
+              ? `交易日已齊（略過已有 ${p.skipped}）`
+              : `檢查缺口（已有 ${p.skipped} 日）`;
         setRebuildProgress({
-          percent: progressInRange(5, 40, done, need),
-          label: `補齊歷史報價 ${done}/${need}`,
+          percent: progressInRange(5, 40, p.done, Math.max(p.need, 1)),
+          label,
         });
       },
     });
 
-    const after = await listCachedTradingDays(HISTORY_TRADING_DAYS);
     console.log(
-      `[backfill] quotes: ${before.length} → ${after.length} (target ${HISTORY_TRADING_DAYS})`,
+      `[backfill] gaps: watermark=${gap.watermark ?? "—"} target=${gap.target} ` +
+        `missing=${gap.missing.length} fetched=${gap.fetched} skipped≈${gap.skipped}`,
     );
 
-    setRebuildProgress({ percent: 42, label: "日終大包（含產業 K／均線）" });
+    setRebuildProgress({
+      percent: 42,
+      label:
+        gap.fetched > 0
+          ? "日終大包（含產業 K／均線）"
+          : "檢查日終大包是否最新",
+    });
     const { runDailyClosePackage } = await import("@/lib/daily-close-package");
-    const meta = await runDailyClosePackage(`backfill:${reason}`);
+    const meta = await runDailyClosePackage(`backfill:${reason}`, {
+      skipGapFill: true,
+    });
 
     const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);
     finishRebuildProgress(true);
+    const skipNote = meta.skipped ? " skipped-current" : "";
     console.log(
-      `[backfill] done (${reason}) quoteDays=${quoteDays.length} asOf=${meta.asOf ?? "—"}`,
+      `[backfill] done (${reason}) quoteDays=${quoteDays.length} asOf=${meta.asOf ?? "—"}${skipNote}`,
     );
-    return { meta, quoteDays: quoteDays.length, target: HISTORY_TRADING_DAYS };
+    return {
+      meta,
+      quoteDays: quoteDays.length,
+      target: HISTORY_TRADING_DAYS,
+      gap: {
+        watermark: gap.watermark,
+        targetYmd: gap.target,
+        missing: gap.missing.length,
+        fetched: gap.fetched,
+        skipped: gap.skipped,
+      },
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finishRebuildProgress(false, message);
@@ -100,7 +138,7 @@ export function requestHistoryBackfill(reason: string): {
     return { started: false, alreadyRunning: true };
   }
   bag.running = true;
-  beginRebuildProgress("補齊歷史報價");
+  beginRebuildProgress("檢查交易日缺口");
   setTimeout(() => {
     void runHistoryBackfill(reason)
       .catch((err) => {

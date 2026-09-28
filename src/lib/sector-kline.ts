@@ -287,14 +287,19 @@ export async function buildSectorKline(
 export async function warmSectorKlineCaches(
   days = HISTORY_TRADING_DAYS,
   defs?: SectorDef[],
-  options?: { onProgress?: (done: number, total: number) => void },
+  options?: {
+    onProgress?: (done: number, total: number) => void;
+    /** 預設 false：快取已對齊最新報價日則略過重算 */
+    force?: boolean;
+  },
 ) {
   const list = defs?.length ? defs : [];
   let done = 0;
   const total = list.length;
+  const force = Boolean(options?.force);
   await mapPool(list, 4, async (def) => {
     try {
-      await buildSectorKline(def.id, days, { force: true, def });
+      await buildSectorKline(def.id, days, { force, def });
     } catch (err) {
       console.warn(`[kline] warm ${def.id} failed:`, err);
     } finally {

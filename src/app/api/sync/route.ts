@@ -23,6 +23,14 @@ type SyncEvent =
       error?: string;
       quoteDays?: number;
       target?: number;
+      skippedCurrent?: boolean;
+      gap?: {
+        watermark?: string | null;
+        targetYmd?: string;
+        missing?: number;
+        fetched?: number;
+        skipped?: number;
+      };
     };
 
 /**
@@ -89,12 +97,19 @@ export async function GET() {
           return;
         }
 
-        pushProgress(100, "同步完成", false);
+        const skippedCurrent = Boolean(result?.meta?.skipped);
+        pushProgress(
+          100,
+          skippedCurrent ? "資料已是最新" : "同步完成",
+          false,
+        );
         send({
           type: "done",
           ok: true,
           quoteDays: result?.quoteDays,
           target: result?.target,
+          skippedCurrent,
+          gap: result?.gap,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
