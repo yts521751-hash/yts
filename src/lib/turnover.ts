@@ -1,10 +1,11 @@
 import { isCommonStock } from "@/lib/stock-filter";
+import { applyRegularTurnover } from "@/lib/regular-turnover";
 import {
   listCachedTradingDays,
   listRecentTradingDays,
   getCachedDayQuotes,
-  loadMergedQuotesDay,
-  toYmd,
+  readCacheFile,
+  writeCacheFile,
   ymdToIso,
   HISTORY_CALENDAR_LOOKBACK,
   HISTORY_TRADING_DAYS,
@@ -25,56 +26,56 @@ export type TurnoverPayload = {
   ymd: string;
   rows: TurnoverRow[];
   builtAt: string;
-  source: "cache" | "live-refresh";
+  source: "cache" | "rebuilt";
   total: number;
-  /** 台北時間是否在盤中（09:00–13:35） */
+  /** 已不再做盤中即時；固定 false 以相容前端 */
   inSession: boolean;
   sessionNote: string;
+  /** 成交口徑說明 */
+  amountBasis: string;
 };
 
+const CACHE = "turnover-ranking-latest.json";
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** 盤中 live 結果短快取，避免前端 3 秒輪詢打爆交易所 */
-const LIVE_TTL_MS = 3_000;
-let liveMemo: { at: number; payload: TurnoverPayload } | null = null;
+const AMOUNT_BASIS =
+  "一般成交金額（證交所總成交 − 盤後定價 − 零股 − 鉅額；對齊 Yahoo／媒體常見口徑）";
 
-function taipeiSession() {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Taipei",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-    weekday: "short",
-  }).formatToParts(new Date());
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
-  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
-  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
-  const isWeekday = !["Sat", "Sun"].includes(weekday);
-  const mins = hour * 60 + minute;
-  // 08:55 起進入即時模式（開盤前預熱），至 13:35（含尾盤撮合緩衝）
-  const inSession = isWeekday && mins >= 8 * 60 + 55 && mins < 13 * 60 + 35;
-  return { hour, minute, weekday, isWeekday, inSession, mins };
-}
+const SESSION_NOTE =
+  "每日收盤後隨日終大包更新（約 18:00／18:30／19:00），不做盤中即時輪詢";
 
-function rankFromQuotes(
-  map: Map<string, QuoteRow>,
+async function rankDay(
   ymd: string,
   want: number,
   source: TurnoverPayload["source"],
-  inSession: boolean,
-): TurnoverPayload {
+  options?: { forceExclusions?: boolean },
+): Promise<TurnoverPayload | null> {
+  const map = await getCachedDayQuotes(ymd);
+  if (!map?.size) return null;
+
+  const regular = await applyRegularTurnover(map, ymd, {
+    force: Boolean(options?.forceExclusions),
+  });
+
   const rows = [...map.values()]
-    .filter((q) => isCommonStock(q.code, q.name) && q.turnover > 0)
+    .filter((q) => isCommonStock(q.code, q.name))
+    .map((q) => ({
+      q,
+      turnover: regular.get(q.code) ?? q.turnover,
+    }))
+    .filter((x) => x.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
     .slice(0, want)
-    .map((q, i) => ({
+    .map(({ q, turnover }, i) => ({
       rank: i + 1,
       code: q.code,
       name: q.name.trim(),
-      turnoverYi: round2(q.turnover / 1e8),
+      turnoverYi: round2(turnover / 1e8),
       changePct: round2(q.changePct),
       close: round2(q.close),
     }));
+
+  if (!rows.length) return null;
 
   return {
     date: ymdToIso(ymd),
@@ -83,60 +84,48 @@ function rankFromQuotes(
     builtAt: new Date().toISOString(),
     source,
     total: rows.length,
-    inSession,
-    sessionNote: inSession
-      ? "開盤預熱／盤中即時：約每 3 秒重抓證交所／櫃買公開行情並刷新表格（平日 08:55 起）"
-      : "休市／週末：維持上個交易日排行，不自動刷新；平日約 08:55 起自動改為即時",
+    inSession: false,
+    sessionNote: SESSION_NOTE,
+    amountBasis: AMOUNT_BASIS,
   };
 }
 
-/** 盤中嘗試刷新當日行情；盤後／假日只讀快取 */
+/** 讀取日終成交排行快照；缺資料或 force 時重算並寫入 */
 export async function buildTurnoverRanking(
   limit = 50,
-  options?: { live?: boolean },
+  options?: { live?: boolean; force?: boolean },
 ): Promise<TurnoverPayload | null> {
   const want = Math.min(50, Math.max(1, limit));
-  const { inSession } = taipeiSession();
+  // live 參數保留相容，但不再做盤中即時抓取
+  void options?.live;
 
-  if (options?.live && inSession && liveMemo) {
-    const age = Date.now() - liveMemo.at;
-    if (age >= 0 && age < LIVE_TTL_MS) return liveMemo.payload;
-  }
-
-  let source: TurnoverPayload["source"] = "cache";
-  let days = await listCachedTradingDays(1, 30);
-  let ymd = days[0];
-
-  if (options?.live && inSession) {
-    const today = toYmd(new Date());
-    try {
-      const fresh = await loadMergedQuotesDay(today, { force: true });
-      if (fresh?.quotes?.length) {
-        ymd = today;
-        source = "live-refresh";
-        const map = new Map(fresh.quotes.map((q) => [q.code, q]));
-        const payload = rankFromQuotes(map, ymd, want, source, inSession);
-        liveMemo = { at: Date.now(), payload };
-        return payload;
+  if (!options?.force) {
+    const cached = await readCacheFile<TurnoverPayload>(CACHE);
+    if (cached?.rows?.length) {
+      const age = Date.now() - Date.parse(cached.builtAt || "");
+      if (Number.isFinite(age) && age >= 0 && age < 36 * 60 * 60 * 1000) {
+        return {
+          ...cached,
+          rows: cached.rows.slice(0, want),
+          total: Math.min(cached.total, want),
+          source: "cache",
+          inSession: false,
+          sessionNote: SESSION_NOTE,
+          amountBasis: cached.amountBasis || AMOUNT_BASIS,
+        };
       }
-    } catch {
-      /* keep cache */
     }
   }
 
-  if (!ymd) {
-    days = await listCachedTradingDays(1, 30);
-    ymd = days[0];
-  }
+  const days = await listCachedTradingDays(1, 30);
+  const ymd = days[0];
   if (!ymd) return null;
 
-  const map = await getCachedDayQuotes(ymd);
-  if (!map?.size) return null;
-
-  const payload = rankFromQuotes(map, ymd, want, source, inSession);
-  if (options?.live && inSession) {
-    liveMemo = { at: Date.now(), payload };
-  }
+  const payload = await rankDay(ymd, want, "rebuilt", {
+    forceExclusions: Boolean(options?.force),
+  });
+  if (!payload) return null;
+  await writeCacheFile(CACHE, payload);
   return payload;
 }
 

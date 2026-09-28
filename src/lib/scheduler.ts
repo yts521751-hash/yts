@@ -89,7 +89,7 @@ async function runSync(reason: string) {
   console.log(`[scheduler] start sync (${reason}) at ${state.lastRunAt}`);
   try {
     // 日終大包：一次拉齊資金流／報價／K 線／個股／風度／均線／收盤成交排行
-    // 之後各頁只讀 .cache；盤中即時僅成交排行 live
+    // 之後各頁只讀 .cache（含成交排行日終快照）
     const { runDailyClosePackage } = await import("@/lib/daily-close-package");
     const meta = await runDailyClosePackage(reason);
     const failed = meta.steps.filter((s) => !s.ok);
@@ -158,7 +158,7 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線）；開盤前暖機 08:50；新聞每 5 分鐘；盤中僅成交排行即時`;
+  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線＋成交排行）；開盤前暖機 08:50；新聞每 5 分鐘`;
   console.log(`[scheduler] started: ${state.description}`);
 
   // 週一至週五 08:50：開盤前暖機（行情／風度），讓 09:00 後頁面有最新快取
@@ -183,7 +183,7 @@ export function startScheduler() {
           }
           try {
             const { buildTurnoverRanking } = await import("@/lib/turnover");
-            await buildTurnoverRanking(50, { live: false });
+            await buildTurnoverRanking(50, { force: true });
           } catch (e) {
             console.error("[scheduler] morning turnover warm failed", e);
           }

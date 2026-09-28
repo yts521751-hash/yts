@@ -40,8 +40,8 @@ export const CLIENT_CACHE_KEYS = {
   flow: "jinliu:cache:flow:v3",
   stocks: "jinliu:cache:stocks:v3",
   wind: "jinliu:cache:wind:v2",
-  /** v3：排除 ETF 後的成交排行 */
-  turnover: "jinliu:cache:turnover:v3",
+  /** v4：一般成交口徑（扣零股／鉅額／盤後定價）＋日終快照 */
+  turnover: "jinliu:cache:turnover:v4",
   ma: "jinliu:cache:ma-screener:v5",
   value: "jinliu:cache:value-picks:v1",
 } as const;

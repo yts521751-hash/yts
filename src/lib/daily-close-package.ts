@@ -7,7 +7,7 @@ import { readCacheFile, writeCacheFile } from "@/lib/tw-market";
  * 設計原則（依產品建議）：
  * - 平日 18:00／18:30／19:00 一次向證交所／櫃買把「網站會用到的盤後資料」拉齊寫入 .cache
  * - 之後各頁（資金流、個股、產業 K、均線、風度）只讀這批快照，不再為了開頁去打交易所
- * - 盤中唯一需要即時拉的是「成交金額排行」（turnover live）；其餘等日終同步
+ * - 成交排行改為日終快照（一般成交口徑），不再盤中即時輪詢
  *
  * 快照仍拆成多個 cache 檔（較好增量更新／灰度），但由本模組統一編排與寫入 meta 索引。
  */
@@ -132,10 +132,10 @@ export async function runDailyClosePackage(reason: string): Promise<DailyCloseMe
   });
   artifacts.ma = Boolean(maStep.ok && maStep.value?.rows?.length);
 
-  // 5) 收盤版成交排行（非 live；盤中 live 仍走 /api/turnover?live=1）
+  // 5) 收盤版成交排行（一般成交口徑；日終寫快照，盤中不再即時抓）
   const turnoverStep = await step("turnover-close", async () => {
     const { buildTurnoverRanking } = await import("@/lib/turnover");
-    return buildTurnoverRanking(50, { live: false });
+    return buildTurnoverRanking(50, { force: true });
   });
   steps.push({
     name: turnoverStep.name,

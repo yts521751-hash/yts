@@ -7,9 +7,9 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(50, Math.max(1, Number(searchParams.get("limit") || 50)));
-  const live = searchParams.get("live") === "1";
+  const force = searchParams.get("force") === "1";
   try {
-    const data = await buildTurnoverRanking(limit, { live });
+    const data = await buildTurnoverRanking(limit, { force });
     if (!data?.rows?.length) {
       return NextResponse.json(
         { ok: false, error: "尚無成交金額資料" },
