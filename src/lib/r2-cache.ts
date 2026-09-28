@@ -33,9 +33,144 @@ let hydratePromise: Promise<{ downloaded: number; skipped: number }> | null =
   null;
 /** 進行中的 write-through 上傳；sync 結束前必須 flush，避免 Free 休眠丟上傳 */
 const pendingUploads = new Set<Promise<boolean>>();
+let loggedConfigHint = false;
 
 function trimSlash(s: string) {
   return s.replace(/^\/+|\/+$/g, "");
+}
+
+/** 正規化 R2 endpoint：強制 https、去掉尾斜線、去掉誤貼的 bucket path。 */
+export function normalizeR2Endpoint(
+  raw: string,
+  accountId: string,
+): { endpoint: string; warnings: string[] } {
+  const warnings: string[] = [];
+  let endpoint = (raw || "").trim();
+  if (!endpoint && accountId) {
+    endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
+  }
+  if (!endpoint) return { endpoint: "", warnings };
+
+  // 允許使用者貼「裸 hostname」
+  if (!/^https?:\/\//i.test(endpoint)) {
+    endpoint = `https://${endpoint}`;
+  }
+  if (/^http:\/\//i.test(endpoint)) {
+    warnings.push("R2_ENDPOINT used http://; upgraded to https://");
+    endpoint = endpoint.replace(/^http:\/\//i, "https://");
+  }
+
+  try {
+    const u = new URL(endpoint);
+    // 誤把 bucket 寫進 path：https://<id>.r2.../bucket-name
+    if (u.pathname && u.pathname !== "/") {
+      warnings.push(
+        `R2_ENDPOINT had path "${u.pathname}" (bucket belongs in R2_BUCKET); stripped`,
+      );
+      u.pathname = "/";
+    }
+    u.search = "";
+    u.hash = "";
+    // hostname 應為 <account>.r2.cloudflarestorage.com 或 juris 變體
+    const host = u.hostname.toLowerCase();
+    if (
+      host.includes("r2.cloudflarestorage.com") &&
+      accountId &&
+      !host.startsWith(`${accountId.toLowerCase()}.`)
+    ) {
+      // 可能是虛擬主機式誤貼 bucket.<account>.r2...
+      const m = /^([^.]+)\.([0-9a-f]{32})\.r2\.cloudflarestorage\.com$/i.exec(
+        host,
+      );
+      if (m) {
+        warnings.push(
+          `R2_ENDPOINT looked like bucket-virtual host (${host}); using account endpoint`,
+        );
+        u.hostname = `${m[2]}.r2.cloudflarestorage.com`;
+      }
+    }
+    endpoint = u.origin;
+  } catch {
+    warnings.push("R2_ENDPOINT is not a valid URL");
+  }
+
+  return { endpoint: trimSlash(endpoint), warnings };
+}
+
+function formatR2Error(err: unknown): { msg: string; kind: string } {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code =
+    err && typeof err === "object" && "code" in err
+      ? String((err as { code?: string }).code || "")
+      : "";
+  const name =
+    err && typeof err === "object" && "name" in err
+      ? String((err as { name?: string }).name || "")
+      : "";
+
+  if (
+    /EPROTO|handshake failure|SSL alert number 40|ERR_SSL|CERT_|UNABLE_TO_VERIFY/i.test(
+      msg,
+    ) ||
+    /EPROTO/.test(code)
+  ) {
+    return {
+      kind: "tls",
+      msg: `${msg} [tls/handshake — check R2_ACCOUNT_ID / R2_ENDPOINT hostname; client uses path-style https://<account>.r2.cloudflarestorage.com/<bucket>/…]`,
+    };
+  }
+  if (/ENOTFOUND|EAI_AGAIN|getaddrinfo/i.test(msg) || /ENOTFOUND/.test(code)) {
+    return {
+      kind: "dns",
+      msg: `${msg} [dns — R2_ACCOUNT_ID or R2_ENDPOINT hostname is wrong]`,
+    };
+  }
+  if (
+    /AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|InvalidArgument/i.test(
+      msg,
+    ) ||
+    /AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch/.test(name)
+  ) {
+    return {
+      kind: "auth",
+      msg: `${msg} [auth — check R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / token bucket permission]`,
+    };
+  }
+  if (/NoSuchBucket/i.test(msg) || /NoSuchBucket/.test(name)) {
+    return {
+      kind: "bucket",
+      msg: `${msg} [bucket — check R2_BUCKET name]`,
+    };
+  }
+  if (/NoSuchKey|NotFound|404/i.test(msg) || /NoSuchKey|NotFound/.test(name)) {
+    return { kind: "missing", msg };
+  }
+  return { kind: "other", msg };
+}
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  attempts = 2,
+): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      last = err;
+      const { kind } = formatR2Error(err);
+      // TLS／auth／缺檔重試無意義；僅短暫網路錯誤再試一次
+      if (kind === "tls" || kind === "auth" || kind === "missing" || kind === "bucket" || kind === "dns") {
+        throw err;
+      }
+      if (i + 1 < attempts) {
+        await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+        continue;
+      }
+    }
+  }
+  throw last;
 }
 
 export function getR2Config(): R2Config | null {
@@ -45,14 +180,29 @@ export function getR2Config(): R2Config | null {
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim() || "";
   const bucket = process.env.R2_BUCKET?.trim() || "";
   const prefix = trimSlash(process.env.R2_PREFIX?.trim() || "jinliu-cache");
-  const endpoint =
-    process.env.R2_ENDPOINT?.trim() ||
-    (accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "");
+  const { endpoint, warnings } = normalizeR2Endpoint(
+    process.env.R2_ENDPOINT?.trim() || "",
+    accountId,
+  );
 
   if (!accountId || !accessKeyId || !secretAccessKey || !bucket || !endpoint) {
     cachedConfig = null;
     return null;
   }
+
+  if (!loggedConfigHint) {
+    loggedConfigHint = true;
+    if (accountId && !/^[0-9a-f]{32}$/i.test(accountId)) {
+      console.warn(
+        `[r2] R2_ACCOUNT_ID looks unusual (expected 32-char hex); endpoint=${endpoint}`,
+      );
+    }
+    for (const w of warnings) console.warn(`[r2] ${w}`);
+    console.log(
+      `[r2] client endpoint=${endpoint} bucket=${bucket} prefix=${prefix || "(none)"} pathStyle=true`,
+    );
+  }
+
   cachedConfig = {
     accountId,
     accessKeyId,
@@ -72,9 +222,14 @@ function getClient(): S3Client | null {
   const cfg = getR2Config();
   if (!cfg) return null;
   if (!client) {
+    // forcePathStyle：避免 SDK 走虛擬主機式
+    //   https://<bucket>.<account>.r2.cloudflarestorage.com
+    // 該 hostname 不在 R2 憑證 wildcard（*.r2.cloudflarestorage.com）內，
+    // 會在握手階段直接 EPROTO / SSL alert 40。
     client = new S3Client({
       region: "auto",
       endpoint: cfg.endpoint,
+      forcePathStyle: true,
       credentials: {
         accessKeyId: cfg.accessKeyId,
         secretAccessKey: cfg.secretAccessKey,
@@ -120,20 +275,20 @@ export async function uploadCacheFileToR2(
   const cfg = getR2Config();
   if (!s3 || !cfg) return false;
   try {
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: cfg.bucket,
-        Key: objectKey(name),
-        Body: typeof body === "string" ? Buffer.from(body, "utf8") : body,
-        ContentType: "application/json; charset=utf-8",
-      }),
+    await withRetry(`upload ${name}`, () =>
+      s3.send(
+        new PutObjectCommand({
+          Bucket: cfg.bucket,
+          Key: objectKey(name),
+          Body: typeof body === "string" ? Buffer.from(body, "utf8") : body,
+          ContentType: "application/json; charset=utf-8",
+        }),
+      ),
     );
     return true;
   } catch (err) {
-    console.error(
-      `[r2] upload failed ${name}:`,
-      err instanceof Error ? err.message : err,
-    );
+    const { msg } = formatR2Error(err);
+    console.error(`[r2] upload failed ${name}:`, msg);
     return false;
   }
 }
@@ -163,19 +318,21 @@ export async function downloadCacheFileFromR2(
   const cfg = getR2Config();
   if (!s3 || !cfg) return null;
   try {
-    const res = await s3.send(
-      new GetObjectCommand({
-        Bucket: cfg.bucket,
-        Key: objectKey(name),
-      }),
+    const res = await withRetry(`download ${name}`, () =>
+      s3.send(
+        new GetObjectCommand({
+          Bucket: cfg.bucket,
+          Key: objectKey(name),
+        }),
+      ),
     );
     const bytes = await res.Body?.transformToByteArray();
     if (!bytes?.length) return null;
     return Buffer.from(bytes).toString("utf8");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const { msg, kind } = formatR2Error(err);
     // NoSuchKey 很常見，靜默
-    if (/NoSuchKey|NotFound|404/i.test(msg)) return null;
+    if (kind === "missing") return null;
     console.error(`[r2] download failed ${name}:`, msg);
     return null;
   }
@@ -188,19 +345,26 @@ async function listAllKeys(): Promise<string[]> {
   const keys: string[] = [];
   let token: string | undefined;
   const prefix = cfg.prefix ? `${cfg.prefix}/` : "";
-  do {
-    const res = await s3.send(
-      new ListObjectsV2Command({
-        Bucket: cfg.bucket,
-        Prefix: prefix,
-        ContinuationToken: token,
-      }),
-    );
-    for (const obj of res.Contents ?? []) {
-      if (obj.Key && !obj.Key.endsWith("/")) keys.push(obj.Key);
-    }
-    token = res.IsTruncated ? res.NextContinuationToken : undefined;
-  } while (token);
+  try {
+    do {
+      const res = await withRetry("list", () =>
+        s3.send(
+          new ListObjectsV2Command({
+            Bucket: cfg.bucket,
+            Prefix: prefix,
+            ContinuationToken: token,
+          }),
+        ),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key && !obj.Key.endsWith("/")) keys.push(obj.Key);
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+  } catch (err) {
+    const { msg } = formatR2Error(err);
+    console.error(`[r2] list failed:`, msg);
+  }
   return keys;
 }
 

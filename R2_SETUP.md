@@ -145,5 +145,9 @@ await uploadLocalCacheDirToR2(getCacheDir());
 
 - **`r2=off`：** 四個必填變數有缺或拼錯；改完要重啟行程。
 - **hydrate 0、upload failed：** 檢查 Token 權限是否含該 bucket、Account ID／Bucket 名稱是否正確。
+- **`write EPROTO`／`ssl/tls alert handshake failure`／`SSL alert number 40`：**
+  - 多半是連到錯誤 hostname（虛擬主機式 `bucket.<account>.r2…` 不在 R2 憑證範圍）。程式已強制 **path-style**（`https://<ACCOUNT_ID>.r2.cloudflarestorage.com/<bucket>/…`）。
+  - 請在 Render 核對：`R2_ACCOUNT_ID` 為 Dashboard 32 字元 hex（不要用 Zone ID）；`R2_ENDPOINT` 若有設，必須是 `https://<同一 ACCOUNT_ID>.r2.cloudflarestorage.com`（**不要**含 bucket 名、不要 `http://`）。
+  - 用本機／任何機器測：`curl -Iv "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com/"` — 若這裡也握手失敗，是 Cloudflare 該 account endpoint 憑證尚未就緒（偶發，等或開 ticket），不是 Render deploy 壞掉。
 - **Secret 洩漏：** 到 R2 API Tokens 撤銷舊 token，建新的並更新環境變數。
 - **不要把金鑰 commit 進 git**；只放環境變數／`.env.local`（已 gitignore）。
