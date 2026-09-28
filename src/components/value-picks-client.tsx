@@ -14,7 +14,7 @@ import {
   readClientCache,
   writeClientCache,
 } from "@/lib/client-cache";
-import { formatPct, formatYi, signedClass } from "@/lib/format";
+import { formatPct, formatTurnoverYi, signedClass } from "@/lib/format";
 import type { ValuePickRow, ValuePicksPayload } from "@/lib/value-picks";
 import { cn } from "@/lib/utils";
 
@@ -237,7 +237,7 @@ export function ValuePicksClient({
                     <div className="rounded-lg bg-muted/40 px-2 py-1.5">
                       <div className="text-muted-foreground">成交</div>
                       <div className="mt-0.5 font-semibold tabular-nums">
-                        {formatYi(r.dayAmt)}
+                        {formatTurnoverYi(r.dayAmt)}
                       </div>
                     </div>
                   </div>
@@ -329,7 +329,7 @@ export function ValuePicksClient({
                         {r.forwardPe.toFixed(1)}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
-                        {formatYi(r.dayAmt)}
+                        {formatTurnoverYi(r.dayAmt)}
                       </td>
                     </tr>
                   ))}

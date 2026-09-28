@@ -1,6 +1,7 @@
 /**
  * 個股資金流排行：與板塊相同公式（80% 成交×漲跌 + 20% 法人），
  * 先取當日成交熱門股，再彙總近 5／20 日。
+ * 成交金額採「一般成交」口徑（與成值頁相同：總成交 − 盤後定價 − 零股 − 鉅額）。
  */
 
 import type { StockFlow } from "@/lib/types";
@@ -10,6 +11,7 @@ import {
   instiSharesToYi,
   signedFlowFromQuote,
 } from "@/lib/money-flow";
+import { applyRegularTurnover } from "@/lib/regular-turnover";
 import { isCommonStock } from "@/lib/stock-filter";
 import {
   getCachedDayInsti,
@@ -43,21 +45,30 @@ export type StockFlowPayload = {
   builtAt: string;
   source: "cache" | "rebuilt";
   tradingDays: string[];
+  /** 成交口徑說明（與成值頁對齊） */
+  amountBasis: string;
 };
 
 const CACHE = "flow-stocks-latest.json";
+const AMOUNT_BASIS =
+  "一般成交金額（上市／上櫃總成交 − 盤後定價 − 零股 − 鉅額；對齊 Yahoo／媒體常見口徑）";
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 function flowForQuote(
   q: QuoteRow | undefined,
   insti: InstiRow | undefined,
+  turnoverNtd: number,
 ) {
-  if (!q || q.turnover <= 0) return null;
-  const price = signedFlowFromQuote(q.turnover, q.changePct);
+  if (!q || turnoverNtd <= 0) return null;
+  const price = signedFlowFromQuote(turnoverNtd, q.changePct);
   const instiYi =
     insti && q.close > 0 ? instiSharesToYi(insti.total, q.close) : null;
   return blendFlow(price, instiYi);
+}
+
+function hasRegularBasis(cached: StockFlowPayload): boolean {
+  return cached.amountBasis === AMOUNT_BASIS;
 }
 
 export async function buildStockFlowRanking(
@@ -68,7 +79,7 @@ export async function buildStockFlowRanking(
 
   if (!options?.force) {
     const cached = await readCacheFile<StockFlowPayload>(CACHE);
-    if (cached?.rows?.length) {
+    if (cached?.rows?.length && hasRegularBasis(cached)) {
       const age = Date.now() - Date.parse(cached.builtAt || "");
       // 日終大包寫入後，盤中／夜間都直接讀快照（約 20 小時）；只有 force 或過期才重算
       if (Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000) {
@@ -102,16 +113,26 @@ export async function buildStockFlowRanking(
   const latestQuotes = await getCachedDayQuotes(days[0]);
   if (!latestQuotes?.size) return null;
 
+  const latestRegular = await applyRegularTurnover(latestQuotes, days[0], {
+    force: Boolean(options?.force),
+  });
+
   const candidates = [...latestQuotes.values()]
-    .filter((q) => isCommonStock(q.code, q.name) && q.turnover > 0)
+    .filter((q) => isCommonStock(q.code, q.name))
+    .map((q) => ({
+      q,
+      turnover: latestRegular.get(q.code) ?? q.turnover,
+    }))
+    .filter((x) => x.turnover > 0)
     .sort((a, b) => b.turnover - a.turnover)
     .slice(0, Math.max(want * 2, 80))
-    .map((q) => q.code);
+    .map((x) => x.q.code);
   const watch = new Set(candidates);
 
   type DaySnap = {
     ymd: string;
     quotes: Map<string, QuoteRow>;
+    regular: Map<string, number>;
     insti: Map<string, InstiRow>;
   };
   const snaps: DaySnap[] = [];
@@ -123,6 +144,11 @@ export async function buildStockFlowRanking(
       const q = quotes.get(code);
       if (q) filtered.set(code, q);
     }
+    // 最新日已算過；其餘日用快取排除額（缺檔才打 API）
+    const regular =
+      ymd === days[0]
+        ? latestRegular
+        : await applyRegularTurnover(filtered, ymd);
     const instiAll = await getCachedDayInsti(ymd);
     const insti = new Map<string, InstiRow>();
     if (instiAll) {
@@ -131,7 +157,7 @@ export async function buildStockFlowRanking(
         if (row) insti.set(code, row);
       }
     }
-    snaps.push({ ymd, quotes: filtered, insti });
+    snaps.push({ ymd, quotes: filtered, regular, insti });
   }
   if (snaps.length < 5) return null;
 
@@ -146,13 +172,23 @@ export async function buildStockFlowRanking(
   for (const code of candidates) {
     const latestQ = latest.quotes.get(code);
     if (!latestQ) continue;
-    const dayParts = flowForQuote(latestQ, latest.insti.get(code));
+    const latestTurnover = latest.regular.get(code) ?? latestQ.turnover;
+    const dayParts = flowForQuote(
+      latestQ,
+      latest.insti.get(code),
+      latestTurnover,
+    );
     if (!dayParts) continue;
 
     let d3Amt = 0;
     let d3Flow = 0;
     for (const day of d3) {
-      const p = flowForQuote(day.quotes.get(code), day.insti.get(code));
+      const q = day.quotes.get(code);
+      const p = flowForQuote(
+        q,
+        day.insti.get(code),
+        q ? (day.regular.get(code) ?? q.turnover) : 0,
+      );
       if (!p) continue;
       d3Amt += p.amt;
       d3Flow += p.flow;
@@ -161,7 +197,12 @@ export async function buildStockFlowRanking(
     let d5Amt = 0;
     let d5Flow = 0;
     for (const day of d5) {
-      const p = flowForQuote(day.quotes.get(code), day.insti.get(code));
+      const q = day.quotes.get(code);
+      const p = flowForQuote(
+        q,
+        day.insti.get(code),
+        q ? (day.regular.get(code) ?? q.turnover) : 0,
+      );
       if (!p) continue;
       d5Amt += p.amt;
       d5Flow += p.flow;
@@ -170,7 +211,12 @@ export async function buildStockFlowRanking(
     let d20Amt = 0;
     let d20Flow = 0;
     for (const day of d20) {
-      const p = flowForQuote(day.quotes.get(code), day.insti.get(code));
+      const q = day.quotes.get(code);
+      const p = flowForQuote(
+        q,
+        day.insti.get(code),
+        q ? (day.regular.get(code) ?? q.turnover) : 0,
+      );
       if (!p) continue;
       d20Amt += p.amt;
       d20Flow += p.flow;
@@ -184,7 +230,7 @@ export async function buildStockFlowRanking(
     rows.push({
       code,
       name: latestQ.name.trim() || code,
-      dayAmt: round1(dayParts.amt),
+      dayAmt: round2(dayParts.amt),
       dayFlow: round1(dayParts.flow),
       dayIn: round1(dayParts.inflow),
       dayOut: round1(dayParts.outflow),
@@ -229,6 +275,7 @@ export async function buildStockFlowRanking(
     builtAt: new Date().toISOString(),
     source: "rebuilt",
     tradingDays: snaps.map((s) => s.ymd),
+    amountBasis: AMOUNT_BASIS,
   };
   await writeCacheFile(CACHE, payload);
   return payload;

@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { formatPct, signedClass } from "@/lib/format";
-
-/** 成交排行固定一位小數，避免 396.8 被顯示成 397 */
-function formatTurnoverYi(n: number) {
-  return `${n.toFixed(1)} 億`;
-}
+import { formatPct, formatTurnoverYi, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 import {

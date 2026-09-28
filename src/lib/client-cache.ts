@@ -38,10 +38,12 @@ export function writeClientCache<T>(key: string, data: T) {
 export const CLIENT_CACHE_KEYS = {
   /** v2：略過可能不完整的舊本機快取 */
   flow: "jinliu:cache:flow:v3",
-  stocks: "jinliu:cache:stocks:v3",
+  /** v4：個股成交額改一般成交口徑（與成值頁對齊） */
+  stocks: "jinliu:cache:stocks:v4",
   wind: "jinliu:cache:wind:v2",
   /** v4：一般成交口徑（扣零股／鉅額／盤後定價）＋日終快照 */
   turnover: "jinliu:cache:turnover:v4",
   ma: "jinliu:cache:ma-screener:v5",
-  value: "jinliu:cache:value-picks:v2",
+  /** v3：成交額顯示固定一位小數（與成值頁對齊） */
+  value: "jinliu:cache:value-picks:v3",
 } as const;

@@ -5,6 +5,14 @@ export function formatYi(n: number, digits = 1): string {
   return `${n.toFixed(digits)} 億`;
 }
 
+/**
+ * 個股／成交排行用：固定一位小數，避免 ≥100 億被 formatYi 四捨五入成整數
+ * （與成值頁顯示口徑一致，例如 396.8 不被顯示成 397）。
+ */
+export function formatTurnoverYi(n: number): string {
+  return `${n.toFixed(1)} 億`;
+}
+
 export function formatYiSigned(n: number, digits = 1): string {
   const sign = n > 0 ? "+" : "";
   const abs = Math.abs(n);

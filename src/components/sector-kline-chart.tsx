@@ -1,8 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SectorCandle } from "@/lib/types";
-import { formatPct, formatYi, formatYiSigned, signedClass } from "@/lib/format";
+import {
+  formatPct,
+  formatTurnoverYi,
+  formatYiSigned,
+  signedClass,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { smaSeries } from "@/lib/ma";
@@ -38,6 +43,29 @@ function polyline(
 
 export function SectorKlineChart({ candles }: Props) {
   const [hover, setHover] = useState<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 初始／資料更新後捲到最右（最新 K 棒），手機不必再手動拖
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let cancelled = false;
+    const scrollRight = () => {
+      if (cancelled) return;
+      el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    };
+    scrollRight();
+    const raf = requestAnimationFrame(() => {
+      scrollRight();
+      requestAnimationFrame(scrollRight);
+    });
+    const timer = window.setTimeout(scrollRight, 120);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [candles]);
 
   const series = useMemo(() => {
     if (!candles.length) return null;
@@ -110,14 +138,17 @@ export function SectorKlineChart({ candles }: Props) {
           <span>開 {active.open.toFixed(2)}</span>
           <span>高 {active.high.toFixed(2)}</span>
           <span>低 {active.low.toFixed(2)}</span>
-          <span>成交 {formatYi(active.amount)}</span>
+          <span>成交 {formatTurnoverYi(active.amount)}</span>
           <span className={signedClass(active.flow)}>
             淨流 {formatYiSigned(active.flow)}
           </span>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border/50 bg-[var(--panel)]/50 p-2">
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto rounded-2xl border border-border/50 bg-[var(--panel)]/50 p-2"
+      >
         <svg
           viewBox={`0 0 ${W} ${H_K + H_F + 24}`}
           className="h-auto w-full min-w-[640px]"

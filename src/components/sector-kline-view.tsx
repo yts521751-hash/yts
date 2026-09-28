@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { SectorKlineChart } from "@/components/sector-kline-chart";
-import { formatYi } from "@/lib/format";
+import { formatTurnoverYi } from "@/lib/format";
 import type { SectorCandle } from "@/lib/types";
 
 type Member = { code: string; name: string; dayAmt?: number };
@@ -156,7 +156,7 @@ export function SectorKlineView({
                   </span>
                   <span className="shrink-0 tabular-nums text-foreground">
                     {m.dayAmt != null && m.dayAmt > 0
-                      ? formatYi(m.dayAmt)
+                      ? formatTurnoverYi(m.dayAmt)
                       : "—"}
                   </span>
                 </li>

@@ -139,7 +139,8 @@ export async function buildValuePicks(options?: {
       name: q.name.trim() || q.code,
       close: round2(q.close),
       changePct: round2(q.changePct),
-      dayAmt: round1(dayAmtYi),
+      // 與成值頁相同：先存兩位再由 UI 固定一位小數顯示
+      dayAmt: round2(dayAmtYi),
       nextYearEps: round2(nextYearEps),
       baseEps: round2(baseEps),
       epsYoy: round1(epsYoy),

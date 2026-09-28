@@ -5,7 +5,7 @@ import type { StockFlow } from "@/lib/types";
 import {
   formatHeat,
   formatPct,
-  formatYi,
+  formatTurnoverYi,
   formatYiSigned,
   signedClass,
 } from "@/lib/format";
@@ -251,7 +251,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                 </p>
               </div>
               <div className="shrink-0 text-right text-xs">
-                <p className="whitespace-nowrap tabular-nums">{formatYi(amt)}</p>
+                <p className="whitespace-nowrap tabular-nums">{formatTurnoverYi(amt)}</p>
                 <p
                   className={cn(
                     "whitespace-nowrap font-medium tabular-nums",
@@ -360,7 +360,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                     {formatPct(s.changePct)}
                   </td>
                   <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3">
-                    {formatYi(amt)}
+                    {formatTurnoverYi(amt)}
                   </td>
                   <td
                     className={cn(
