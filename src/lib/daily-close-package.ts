@@ -1,6 +1,7 @@
 import "server-only";
 import {
   artifactsComplete,
+  isMetaAsOfTarget,
   isPackageUpToDate,
   resolveSyncTargetYmd,
   toCompactYmd,
@@ -181,35 +182,36 @@ async function runDailyClosePackageUnlocked(
   const latestQuote = await getLatestCachedTradingDay();
   const prevMeta = await readDailyCloseMeta();
   const target = resolveSyncTargetYmd();
+  const metaMatchesTarget = isMetaAsOfTarget(prevMeta, target);
+  const packageCurrent =
+    Boolean(latestQuote) &&
+    latestQuote! >= target &&
+    isPackageUpToDate(prevMeta, latestQuote);
 
-  if (
-    !options?.force &&
-    latestQuote &&
-    latestQuote >= target &&
-    isPackageUpToDate(prevMeta, latestQuote)
-  ) {
+  // asOf＝目標交易日，或水位＋artifacts 已齊 → 略過衍生重算（含交易所）
+  if (!options?.force && prevMeta && (metaMatchesTarget || packageCurrent)) {
     const skippedMeta: DailyCloseMeta = {
-      asOf: prevMeta!.asOf,
-      builtAt: prevMeta!.builtAt,
+      asOf: prevMeta.asOf,
+      builtAt: prevMeta.builtAt,
       reason: `${reason}:skip-current`,
       steps: [
         ...steps,
         {
           name: "skip",
           ok: true,
-          detail: `已是最新 asOf=${prevMeta!.asOf}，略過衍生重算`,
+          detail: `已是最新 asOf=${prevMeta.asOf} target=${target}，略過衍生重算`,
           ms: 0,
         },
       ],
-      artifacts: prevMeta!.artifacts,
+      artifacts: prevMeta.artifacts,
       skipped: true,
       gap: gapMeta,
     };
     await writeCacheFile(DAILY_CLOSE_META_CACHE, skippedMeta).catch(() => null);
     await flushUploadsSafe();
     console.log(
-      `[daily-close] skip (${reason}): package current asOf=${prevMeta!.asOf} ` +
-        `gapFetched=${gapMeta?.fetched ?? 0}`,
+      `[daily-close] skip (${reason}): package current asOf=${prevMeta.asOf} ` +
+        `target=${target} gapFetched=${gapMeta?.fetched ?? 0}`,
     );
     return skippedMeta;
   }

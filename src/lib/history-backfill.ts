@@ -1,6 +1,7 @@
 import "server-only";
 import {
   artifactsComplete,
+  isMetaAsOfTarget,
   isPackageUpToDate,
   resolveSyncTargetYmd,
 } from "@/lib/gap-sync";
@@ -21,7 +22,7 @@ import {
 /**
  * 增量歷史／日終同步（寫入 CACHE_DIR，有 R2 時 write-through）：
  * 1) 先 hydrate R2（若啟用）
- * 2) 若水位已到目標日且日終大包 artifacts 齊 → 直接略過（第二下同步應極快）
+ * 2) 若日終 meta.asOf＝目標交易日且有 active flow → 立刻略過（第二下同步應極快）
  * 3) 只補水位之後缺的交易日報價／法人（已有日檔略過）
  * 4) 日終大包：若已對齊最新交易日且 artifacts 齊則略過重算
  * 5) flush R2 上傳，避免 Free 休眠丟掉 snapshot
@@ -46,22 +47,28 @@ export async function runHistoryBackfill(reason: string) {
     }
 
     const { readDailyCloseMeta } = await import("@/lib/daily-close-package");
+    const { getActiveFlowPayload } = await import("@/lib/build-flow");
     const target = resolveSyncTargetYmd();
     const latestQuote = await getLatestCachedTradingDay();
     const prevMeta = await readDailyCloseMeta();
+    const active = await getActiveFlowPayload();
 
-    // 快路徑：水位已到目標且大包齊 → 不跑缺口補日、不重算衍生
-    if (
-      latestQuote &&
+    // 激進快路徑：active flow + daily-close meta.asOf＝目標交易日
+    // → 略過一切交易所抓取與衍生重算（第二下同步應秒級「資料已是最新」）
+    const metaMatchesTarget = isMetaAsOfTarget(prevMeta, target);
+    const packageCurrent =
+      latestQuote != null &&
       latestQuote >= target &&
-      isPackageUpToDate(prevMeta, latestQuote)
-    ) {
+      isPackageUpToDate(prevMeta, latestQuote);
+    if (prevMeta && active && (metaMatchesTarget || packageCurrent)) {
       const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);
       setRebuildProgress({ percent: 100, label: "資料已是最新" });
       finishRebuildProgress(true);
       console.log(
-        `[backfill] skip-current (${reason}): asOf=${prevMeta!.asOf} ` +
-          `watermark=${latestQuote} target=${target} quoteDays=${quoteDays.length}`,
+        `[backfill] skip-current (${reason}): asOf=${prevMeta.asOf} ` +
+          `watermark=${latestQuote ?? "—"} target=${target} ` +
+          `quoteDays=${quoteDays.length} metaMatch=${metaMatchesTarget} ` +
+          `packageCurrent=${packageCurrent}`,
       );
       try {
         const { flushCacheSideEffects } = await import("@/lib/tw-market");
@@ -71,7 +78,7 @@ export async function runHistoryBackfill(reason: string) {
       }
       return {
         meta: {
-          ...prevMeta!,
+          ...prevMeta,
           skipped: true,
           reason: `backfill:${reason}:skip-current`,
         },

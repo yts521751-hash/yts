@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   artifactsComplete,
   findMissingTradingDays,
+  isMetaAsOfTarget,
+  isNonTradingYmd,
   isPackageUpToDate,
   listWeekdaysBetween,
   resolveSyncTargetYmd,
@@ -15,10 +17,11 @@ describe("gap-sync", () => {
     assert.equal(toCompactYmd("20260924"), "20260924");
   });
 
-  it("listWeekdaysBetween returns only weekdays after watermark", () => {
-    // watermark Friday 20260925 → until Wednesday 20260930 → Mon–Wed
-    const days = listWeekdaysBetween("20260925", "20260930", 10);
-    assert.deepEqual(days, ["20260930", "20260929", "20260928"]);
+  it("listWeekdaysBetween skips weekends and TWSE holidays", () => {
+    // watermark Thu 20260924 → until Wed 20260930
+    // 20260925 中秋、20260926–27 週末、20260928 教師節 → 只剩 29–30
+    const days = listWeekdaysBetween("20260924", "20260930", 10);
+    assert.deepEqual(days, ["20260930", "20260929"]);
   });
 
   it("listWeekdaysBetween empty when already at target", () => {
@@ -33,14 +36,30 @@ describe("gap-sync", () => {
     assert.deepEqual(missing, ["20260930", "20260929"]);
   });
 
-  it("resolveSyncTargetYmd uses prior session before Taipei 18:00 on weekday", () => {
-    // 2026-09-28 is Monday; 10:00 Taipei = UTC 02:00
-    const morning = new Date("2026-09-28T02:00:00.000Z");
-    assert.equal(resolveSyncTargetYmd(morning), "20260925"); // prior Friday
+  it("isNonTradingYmd covers Mid-Autumn and Teachers' Day 2026", () => {
+    assert.equal(isNonTradingYmd("20260925"), true);
+    assert.equal(isNonTradingYmd("20260928"), true);
+    assert.equal(isNonTradingYmd("20260924"), false);
+    assert.equal(isNonTradingYmd("20260926"), true); // Saturday
+  });
 
-    // 19:00 Taipei = UTC 11:00
+  it("resolveSyncTargetYmd skips TWSE holidays (2026 Mid-Autumn week)", () => {
+    // 2026-09-28 Monday Teachers' Day; 10:00 Taipei = UTC 02:00
+    // prior calendar walk: Sun→Sat→Fri 中秋→Thu 20260924
+    const morning = new Date("2026-09-28T02:00:00.000Z");
+    assert.equal(resolveSyncTargetYmd(morning), "20260924");
+
+    // 19:00 Taipei = UTC 11:00 — still Teachers' Day holiday → 20260924
     const evening = new Date("2026-09-28T11:00:00.000Z");
-    assert.equal(resolveSyncTargetYmd(evening), "20260928");
+    assert.equal(resolveSyncTargetYmd(evening), "20260924");
+
+    // Ordinary Tuesday after the break: 2026-09-29 10:00 Taipei → prior session 20260924
+    const tueMorning = new Date("2026-09-29T02:00:00.000Z");
+    assert.equal(resolveSyncTargetYmd(tueMorning), "20260924");
+
+    // 2026-09-29 19:00 Taipei → today is a trading day
+    const tueEvening = new Date("2026-09-29T11:00:00.000Z");
+    assert.equal(resolveSyncTargetYmd(tueEvening), "20260929");
   });
 
   it("isPackageUpToDate requires matching asOf and complete artifacts", () => {
@@ -68,6 +87,32 @@ describe("gap-sync", () => {
         { asOf: "2026-09-26", artifacts: { ...arts, valuePicks: false } },
         "20260926",
       ),
+      false,
+    );
+  });
+
+  it("isMetaAsOfTarget matches compact target without requiring artifacts", () => {
+    assert.equal(
+      isMetaAsOfTarget(
+        {
+          asOf: "2026-09-24",
+          artifacts: {
+            flow: true,
+            quotesWarm: false,
+            klines: false,
+            stocks: false,
+            wind: false,
+            ma: false,
+            turnoverClose: false,
+            valuePicks: false,
+          },
+        },
+        "20260924",
+      ),
+      true,
+    );
+    assert.equal(
+      isMetaAsOfTarget({ asOf: "2026-09-24", artifacts: {} as never }, "20260925"),
       false,
     );
   });

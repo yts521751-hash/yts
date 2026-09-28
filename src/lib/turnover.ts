@@ -200,11 +200,16 @@ export async function fillTradingDayGaps(options?: {
     }
   }
 
-  // 深度不足或水位未到目標：往回補（listRecentTradingDays 會跳過已有檔）
+  // 深度不足：往回補（listRecentTradingDays 會跳過已有檔）。
+  // 水位已到目標就不為「幽靈休市目標」再掃 60 日；缺日全打空（休市）也不再追。
   let quoteDays = await listCachedTradingDays(needDays, lookback);
   let depthFetched = 0;
   let depthSkipped = 0;
-  if (quoteDays.length < needDays || (quoteDays[0] ?? "") < target) {
+  const watermarkNow = quoteDays[0] ?? watermark;
+  const doDepth =
+    quoteDays.length < needDays ||
+    (watermarkNow != null && watermarkNow < target && fetched > 0);
+  if (doDepth) {
     quoteDays = await listRecentTradingDays(needDays, lookback, {
       onProgress: (done, need, meta?: TradingDayProgressMeta) => {
         depthSkipped = meta?.skipped ?? depthSkipped;
@@ -221,6 +226,12 @@ export async function fillTradingDayGaps(options?: {
         });
       },
     });
+  } else if (watermarkNow != null && watermarkNow < target && missing.length > 0) {
+    // 目標日無報價（休市／未公布）：以現有水位為準，只在根數不足時才深度回補
+    console.warn(
+      `[gap-fill] target ${target} unreachable (watermark=${watermarkNow}, ` +
+        `missingTried=${missing.length}, fetched=0); skip depth chase`,
+    );
   }
 
   // 近月法人檔：有 quotes 就確保 insti（已有檔略過）
