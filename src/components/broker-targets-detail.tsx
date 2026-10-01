@@ -30,6 +30,8 @@ export type BrokerTargetsDetailProps = {
   defaultOpen?: boolean;
   /** 為 true 時掛載即拉（查詢卡）；列表展開再拉 */
   prefetch?: boolean;
+  /** tw → /api/broker-targets；us → /api/us/broker-targets */
+  market?: "tw" | "us";
 };
 
 type ApiPayload = {
@@ -49,9 +51,18 @@ type ClientHit = {
 const CLIENT_TTL_MS = 30 * 60 * 1000;
 const clientBrokerCache = new Map<string, ClientHit>();
 
-function fmtTarget(n: number) {
+function fmtTarget(n: number, market: "tw" | "us") {
   if (!Number.isFinite(n)) return "—";
+  if (market === "us") {
+    const body = n >= 100 ? n.toLocaleString("en-US") : n.toFixed(2);
+    return `$${body}`;
+  }
   return n >= 100 ? n.toLocaleString("zh-TW") : n.toFixed(1);
+}
+
+function isValidCode(code: string, market: "tw" | "us") {
+  if (market === "us") return /^[A-Z]{1,5}(\.[A-Z])?$/i.test(code.trim());
+  return /^\d{4}$/.test(code.trim());
 }
 
 function seedForCode(
@@ -84,8 +95,11 @@ export function BrokerTargetsDetail({
   className,
   defaultOpen = false,
   prefetch = false,
+  market = "tw",
 }: BrokerTargetsDetailProps) {
-  const seeded = seedForCode(code, initialTargets);
+  const apiBase = market === "us" ? "/api/us" : "/api";
+  const cacheKey = market === "us" ? `us:${code.toUpperCase()}` : code;
+  const seeded = seedForCode(cacheKey, initialTargets);
   const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,20 +119,22 @@ export function BrokerTargetsDetail({
     codeRef.current = code;
     abortRef.current?.abort();
     abortRef.current = null;
-    const next = seedForCode(code, initialTargets);
+    const next = seedForCode(cacheKey, initialTargets);
     setTargets(next.targets);
     setEmptyReason(next.emptyReason);
     setFetched(next.fetched);
     setLoading(false);
     setError(null);
-  }, [code, initialTargets]);
+  }, [code, cacheKey, initialTargets]);
 
   const load = useCallback(async () => {
     const requestCode = code;
-    if (!/^\d{4}$/.test(requestCode)) return;
+    const requestKey =
+      market === "us" ? `us:${requestCode.toUpperCase()}` : requestCode;
+    if (!isValidCode(requestCode, market)) return;
     if (codeRef.current !== requestCode) return;
 
-    const cached = clientBrokerCache.get(requestCode);
+    const cached = clientBrokerCache.get(requestKey);
     if (cached && Date.now() - cached.at < CLIENT_TTL_MS) {
       if (!shouldApplyBrokerFetch(requestCode, codeRef.current, false)) return;
       setTargets(cached.targets);
@@ -138,9 +154,11 @@ export function BrokerTargetsDetail({
     setTargets([]);
     setEmptyReason(null);
     try {
-      const qs = new URLSearchParams({ code: requestCode });
+      const qs = new URLSearchParams({
+        code: market === "us" ? requestCode.toUpperCase() : requestCode,
+      });
       if (name) qs.set("name", name);
-      const res = await fetch(`/api/broker-targets?${qs.toString()}`, {
+      const res = await fetch(`${apiBase}/broker-targets?${qs.toString()}`, {
         cache: "no-store",
         signal: ac.signal,
       });
@@ -170,7 +188,7 @@ export function BrokerTargetsDetail({
           setError(null);
           setTargets([]);
           setEmptyReason(FRIENDLY_EMPTY);
-          clientBrokerCache.set(requestCode, {
+          clientBrokerCache.set(requestKey, {
             targets: [],
             emptyReason: FRIENDLY_EMPTY,
             at: Date.now(),
@@ -192,7 +210,7 @@ export function BrokerTargetsDetail({
       setEmptyReason(nextEmpty);
       setError(null);
       setFetched(true);
-      clientBrokerCache.set(requestCode, {
+      clientBrokerCache.set(requestKey, {
         targets: nextTargets,
         emptyReason: nextEmpty,
         at: Date.now(),
@@ -224,7 +242,7 @@ export function BrokerTargetsDetail({
         setLoading(false);
       }
     }
-  }, [code, name]);
+  }, [code, name, market, apiBase]);
 
   useEffect(() => {
     if (prefetch && !fetched) void load();
@@ -323,7 +341,7 @@ export function BrokerTargetsDetail({
                     <span className="shrink-0 text-right tabular-nums leading-snug">
                       <span className="font-semibold">
                         目標價{" "}
-                        {r.target != null ? fmtTarget(r.target) : "—"}
+                        {r.target != null ? fmtTarget(r.target, market) : "—"}
                       </span>
                       <span className="ml-1 font-normal text-muted-foreground">
                         ，{epsLabel} {epsValue}
@@ -336,9 +354,9 @@ export function BrokerTargetsDetail({
           ) : null}
           {targets.length ? (
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              目標價／EPS 取自 Google 新聞、Bing、鉅亨、Yahoo ADR
-              等公開報道中的具名券商研究（非 FactSet
-              共識彙總）；同券商保留較新一筆。點券商名可開啟來源。
+              {market === "us"
+                ? "目標價／EPS 取自 Yahoo 評等紀錄、Google／Bing 新聞等公開報道中的具名券商研究（USD）；同券商保留較新一筆。點券商名可開啟來源。"
+                : "目標價／EPS 取自 Google 新聞、Bing、鉅亨、Yahoo ADR 等公開報道中的具名券商研究（非 FactSet 共識彙總）；同券商保留較新一筆。點券商名可開啟來源。"}
             </p>
           ) : null}
         </div>

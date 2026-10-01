@@ -23,7 +23,12 @@ import {
   readClientCache,
   writeClientCache,
 } from "@/lib/client-cache";
-import { formatPct, formatTurnoverYi, signedClass } from "@/lib/format";
+import {
+  formatPct,
+  formatTurnoverYi,
+  formatUsTurnoverYi,
+  signedClass,
+} from "@/lib/format";
 import type {
   StockValueLookup,
   ValuePickRow,
@@ -34,8 +39,16 @@ import {
   BrokerTargetsDetail,
   FundMetricsGrid,
 } from "@/components/broker-targets-detail";
+import { MarketSwitch } from "@/components/market-switch";
 
 type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
+
+type ClientPayload = ValuePicksPayload & {
+  market?: "tw" | "us";
+  note?: string;
+  emptyReason?: string | null;
+  epsOk?: number;
+};
 
 const LOOKUP_CLIENT_TTL_MS = 30 * 60 * 1000;
 const lookupClientCache = new Map<
@@ -43,8 +56,16 @@ const lookupClientCache = new Map<
   { at: number; value: StockValueLookup }
 >();
 
-function lookupCacheKey(q: string) {
-  return q.trim().toLowerCase();
+function lookupCacheKey(market: "tw" | "us", q: string) {
+  return `${market}:${q.trim().toLowerCase()}`;
+}
+
+function isUsTickerQuery(q: string) {
+  return /^[A-Za-z]{1,5}(\.[A-Za-z])?$/.test(q.trim());
+}
+
+function fmtTurnover(n: number, market: "tw" | "us") {
+  return market === "us" ? formatUsTurnoverYi(n) : formatTurnoverYi(n);
 }
 
 function lookupFromLocalRow(
@@ -73,6 +94,40 @@ function lookupFromLocalRow(
   };
 }
 
+function findLocalRow(
+  rows: ValuePickRow[],
+  q: string,
+  market: "tw" | "us",
+): ValuePickRow | null {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return null;
+  if (market === "us") {
+    if (isUsTickerQuery(q)) {
+      const upper = q.trim().toUpperCase();
+      const byCode = rows.find((r) => r.code.toUpperCase() === upper);
+      if (byCode) return byCode;
+    }
+    return (
+      rows.find(
+        (r) =>
+          r.name.toLowerCase() === needle ||
+          r.name.toLowerCase().includes(needle) ||
+          needle.includes(r.name.toLowerCase()),
+      ) || null
+    );
+  }
+  return (
+    (/^\d{4}$/.test(q) && rows.find((r) => r.code === q)) ||
+    rows.find(
+      (r) =>
+        r.name === q ||
+        r.name.toLowerCase().includes(needle) ||
+        needle.includes(r.name.toLowerCase()),
+    ) ||
+    null
+  );
+}
+
 function sortValue(row: ValuePickRow, key: SortKey) {
   if (key === "forwardPe") return row.forwardPe;
   if (key === "dayAmt") return row.dayAmt;
@@ -81,21 +136,37 @@ function sortValue(row: ValuePickRow, key: SortKey) {
   return row.epsYoy;
 }
 
-function seedFrom(initial: ValuePicksPayload | null) {
+function seedFrom(initial: ClientPayload | null, market: "tw" | "us") {
   if (initial?.rows?.length) return { data: initial, fromCache: false };
   if (typeof window === "undefined") return { data: null, fromCache: false };
-  const cached = readClientCache<ValuePicksPayload>(CLIENT_CACHE_KEYS.value);
+  const key =
+    market === "us"
+      ? `${CLIENT_CACHE_KEYS.value}:us`
+      : CLIENT_CACHE_KEYS.value;
+  const cached = readClientCache<ClientPayload>(key);
   if (cached?.rows?.length) return { data: cached, fromCache: true };
   return { data: null, fromCache: false };
 }
 
 export function ValuePicksClient({
   initial,
+  market = "tw",
 }: {
-  initial: ValuePicksPayload | null;
+  initial: ClientPayload | null;
+  market?: "tw" | "us";
 }) {
-  const seeded = seedFrom(initial);
-  const [data, setData] = useState<ValuePicksPayload | null>(() => seeded.data);
+  const apiBase = market === "us" ? "/api/us" : "/api";
+  const homeHref = market === "us" ? "/us" : "/";
+  const clientCacheKey =
+    market === "us"
+      ? `${CLIENT_CACHE_KEYS.value}:us`
+      : CLIENT_CACHE_KEYS.value;
+  const defaultMinYoy = market === "us" ? 25 : 50;
+  const defaultMaxPe = market === "us" ? 40 : 35;
+  const defaultMinAmt = market === "us" ? 0.5 : 10;
+
+  const seeded = seedFrom(initial, market);
+  const [data, setData] = useState<ClientPayload | null>(() => seeded.data);
   const [loading, setLoading] = useState(() => !seeded.data?.rows?.length);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,33 +181,36 @@ export function ValuePicksClient({
   const lookupAbortRef = useRef<AbortController | null>(null);
   const lookupSeqRef = useRef(0);
 
-  const load = useCallback(async (force = false) => {
-    setError(null);
-    if (force) setRefreshing(true);
-    else if (!data?.rows?.length) setLoading(true);
-    try {
-      const res = await fetch(`/api/value${force ? "?force=1" : ""}`, {
-        cache: "no-store",
-      });
-      const json = (await res.json()) as ValuePicksPayload & {
-        ok?: boolean;
-        error?: string;
-      };
-      if (!res.ok || json.ok === false) {
-        throw new Error(json.error || `HTTP ${res.status}`);
+  const load = useCallback(
+    async (force = false) => {
+      setError(null);
+      if (force) setRefreshing(true);
+      else if (!data?.rows?.length) setLoading(true);
+      try {
+        const res = await fetch(`${apiBase}/value${force ? "?force=1" : ""}`, {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as ClientPayload & {
+          ok?: boolean;
+          error?: string;
+        };
+        if (!res.ok || json.ok === false) {
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        setData(json);
+        setFromCache(false);
+        writeClientCache(clientCacheKey, json);
+      } catch (e) {
+        if (!data?.rows?.length) {
+          setError(e instanceof Error ? e.message : "載入失敗");
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
       }
-      setData(json);
-      setFromCache(false);
-      writeClientCache(CLIENT_CACHE_KEYS.value, json);
-    } catch (e) {
-      if (!data?.rows?.length) {
-        setError(e instanceof Error ? e.message : "載入失敗");
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [data?.rows?.length]);
+    },
+    [apiBase, clientCacheKey, data?.rows?.length],
+  );
 
   useEffect(() => {
     if (seeded.data?.rows?.length) {
@@ -148,100 +222,92 @@ export function ValuePicksClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const runLookup = useCallback(async (raw?: string) => {
-    const q = (raw ?? query).trim();
-    if (!q) {
-      setLookup(null);
-      setLookupError(null);
-      setLookupLoading(false);
-      return;
-    }
-
-    const key = lookupCacheKey(q);
-    const cached = lookupClientCache.get(key);
-    if (cached && Date.now() - cached.at < LOOKUP_CLIENT_TTL_MS) {
-      setLookup(cached.value);
-      setLookupError(null);
-      setLookupLoading(false);
-      return;
-    }
-
-    // 本機價值選股列：立刻畫出 PE／EPS，不等 API／券商刮取
-    let paintedInstant = false;
-    const localRows = data?.rows ?? [];
-    if (localRows.length) {
-      const needle = q.toLowerCase();
-      const row =
-        (/^\d{4}$/.test(q) && localRows.find((r) => r.code === q)) ||
-        localRows.find(
-          (r) =>
-            r.name === q ||
-            r.name.toLowerCase().includes(needle) ||
-            needle.includes(r.name.toLowerCase()),
-        ) ||
-        null;
-      if (row && data) {
-        const instant = lookupFromLocalRow(
-          row,
-          data.ymd,
-          data.date,
-        );
-        setLookup(instant);
-        setLookupError(null);
-        paintedInstant = true;
-        lookupClientCache.set(key, { at: Date.now(), value: instant });
-        lookupClientCache.set(lookupCacheKey(row.code), {
-          at: Date.now(),
-          value: instant,
-        });
-        // 仍背景確認一次（通常命中伺服器記憶體／名單快取）
-      }
-    }
-
-    // 換查另一檔時立刻清掉舊卡，避免 A 的券商列掛在載入中的 B
-    if (!paintedInstant) {
-      setLookup(null);
-    }
-
-    lookupAbortRef.current?.abort();
-    const ac = new AbortController();
-    lookupAbortRef.current = ac;
-    const seq = ++lookupSeqRef.current;
-    setLookupLoading(true);
-    setLookupError(null);
-    try {
-      const res = await fetch(`/api/value?q=${encodeURIComponent(q)}`, {
-        cache: "no-store",
-        signal: ac.signal,
-      });
-      const json = (await res.json()) as {
-        ok?: boolean;
-        error?: string;
-        lookup?: StockValueLookup;
-      };
-      if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
-      if (!res.ok || json.ok === false || !json.lookup) {
-        throw new Error(json.error || "查無此股");
-      }
-      setLookup(json.lookup);
-      lookupClientCache.set(key, { at: Date.now(), value: json.lookup });
-      lookupClientCache.set(lookupCacheKey(json.lookup.code), {
-        at: Date.now(),
-        value: json.lookup,
-      });
-    } catch (e) {
-      if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
-      // 已有本機即時結果時保留畫面
-      if (!lookupClientCache.has(key)) {
+  const runLookup = useCallback(
+    async (raw?: string) => {
+      const q = (raw ?? query).trim();
+      if (!q) {
         setLookup(null);
-        setLookupError(e instanceof Error ? e.message : "查詢失敗");
-      }
-    } finally {
-      if (!ac.signal.aborted && seq === lookupSeqRef.current) {
+        setLookupError(null);
         setLookupLoading(false);
+        return;
       }
-    }
-  }, [query, data, data?.rows, data?.ymd, data?.date]);
+
+      const key = lookupCacheKey(market, q);
+      const cached = lookupClientCache.get(key);
+      if (cached && Date.now() - cached.at < LOOKUP_CLIENT_TTL_MS) {
+        setLookup(cached.value);
+        setLookupError(null);
+        setLookupLoading(false);
+        return;
+      }
+
+      // 本機價值選股列：立刻畫出 PE／EPS，不等 API／券商刮取
+      let paintedInstant = false;
+      const localRows = data?.rows ?? [];
+      if (localRows.length) {
+        const row = findLocalRow(localRows, q, market);
+        if (row && data) {
+          const instant = lookupFromLocalRow(row, data.ymd, data.date);
+          setLookup(instant);
+          setLookupError(null);
+          paintedInstant = true;
+          lookupClientCache.set(key, { at: Date.now(), value: instant });
+          lookupClientCache.set(lookupCacheKey(market, row.code), {
+            at: Date.now(),
+            value: instant,
+          });
+        }
+      }
+
+      // 換查另一檔時立刻清掉舊卡，避免 A 的券商列掛在載入中的 B
+      if (!paintedInstant) {
+        setLookup(null);
+      }
+
+      lookupAbortRef.current?.abort();
+      const ac = new AbortController();
+      lookupAbortRef.current = ac;
+      const seq = ++lookupSeqRef.current;
+      setLookupLoading(true);
+      setLookupError(null);
+      try {
+        const res = await fetch(
+          `${apiBase}/value?q=${encodeURIComponent(q)}`,
+          {
+            cache: "no-store",
+            signal: ac.signal,
+          },
+        );
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          lookup?: StockValueLookup;
+        };
+        if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
+        if (!res.ok || json.ok === false || !json.lookup) {
+          throw new Error(json.error || "查無此股");
+        }
+        setLookup(json.lookup);
+        lookupClientCache.set(key, { at: Date.now(), value: json.lookup });
+        lookupClientCache.set(lookupCacheKey(market, json.lookup.code), {
+          at: Date.now(),
+          value: json.lookup,
+        });
+      } catch (e) {
+        if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
+        // 已有本機即時結果時保留畫面
+        if (!lookupClientCache.has(key)) {
+          setLookup(null);
+          setLookupError(e instanceof Error ? e.message : "查詢失敗");
+        }
+      } finally {
+        if (!ac.signal.aborted && seq === lookupSeqRef.current) {
+          setLookupLoading(false);
+        }
+      }
+    },
+    [query, data, data?.rows, data?.ymd, data?.date, market, apiBase],
+  );
 
   useEffect(() => {
     return () => {
@@ -282,6 +348,22 @@ export function ValuePicksClient({
     );
   };
 
+  const minYoy = data?.criteria.minEpsYoy ?? defaultMinYoy;
+  const maxPe = data?.criteria.maxForwardPe ?? defaultMaxPe;
+  const minAmt = data?.criteria.minDayAmtYi ?? defaultMinAmt;
+  const amtUnit = market === "us" ? "億美元" : "億";
+  const title = market === "us" ? "美股價值選股" : "價值選股";
+  const backLabel = market === "us" ? "回美股資金流" : "回資金流";
+  const lookupPlaceholder =
+    market === "us"
+      ? "查詢單一股票（代號或名稱，如 AAPL／蘋果／NVDA）"
+      : "查詢單一股票（代號或名稱，如 2330／台積電）";
+  const emptyListMsg =
+    data?.emptyReason ||
+    (market === "us"
+      ? `目前沒有同時符合「明年 EPS YoY > ${minYoy}%」、「前瞻本益比 < ${maxPe}」與「成交 ≥ ${minAmt} ${amtUnit}」的標的。`
+      : `目前沒有同時符合「明年 EPS YoY > ${minYoy}%」、「前瞻本益比 < ${maxPe}」與「成交 ≥ ${minAmt} 億」的標的。`);
+
   return (
     <div className="relative min-h-full flex-1 pb-20 md:pb-6">
       <div
@@ -291,39 +373,47 @@ export function ValuePicksClient({
       <div className="relative z-10 mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Link
-            href="/"
+            href={homeHref}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
           >
             <ArrowLeft className="size-4" />
-            回資金流
+            {backLabel}
           </Link>
-          <button
-            type="button"
-            onClick={() => void load(true)}
-            disabled={loading || refreshing}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={cn(
-                "size-3.5",
-                (loading || refreshing) && "animate-spin",
-              )}
-            />
-            重新篩選
-          </button>
+          <div className="flex items-center gap-2">
+            {market === "us" ? <MarketSwitch /> : null}
+            <button
+              type="button"
+              onClick={() => void load(true)}
+              disabled={loading || refreshing}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
+            >
+              <RefreshCw
+                className={cn(
+                  "size-3.5",
+                  (loading || refreshing) && "animate-spin",
+                )}
+              />
+              重新篩選
+            </button>
+          </div>
         </div>
 
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          價值選股
+          {title}
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          篩選明年 EPS 年增率（多家法人預估中位數）大於{" "}
-          {data?.criteria.minEpsYoy ?? 50}%，前瞻本益比（股價 ÷ 明年 EPS
-          中位數）低於 {data?.criteria.maxForwardPe ?? 35}，且當日一般成交金額
-          達 {data?.criteria.minDayAmtYi ?? 10} 億以上的個股。
+          篩選明年 EPS 年增率（
+          {market === "us" ? "Nasdaq／Yahoo 共識" : "多家法人預估中位數"}
+          ）大於 {minYoy}%，前瞻本益比（股價 ÷ 明年 EPS
+          {market === "us" ? "" : "中位數"}
+          ）低於 {maxPe}，且當日成交金額達 {minAmt} {amtUnit}
+          以上的個股。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價與預估 EPS
+          {market === "us"
+            ? "EPS 來源：Nasdaq yearly forecast／Yahoo earningsTrend；展開列顯示券商目標價與預估 EPS（USD）"
+            : "EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價與預估 EPS"}
+          {data?.note ? ` · ${data.note}` : ""}
           {data?.date ? ` · 行情日 ${data.date}` : ""}
           {data?.scanned != null ? ` · 掃描 ${data.scanned} 檔` : ""}
           {data?.builtAt
@@ -331,8 +421,16 @@ export function ValuePicksClient({
             : ""}
           {fromCache ? " · 本機快取" : ""}
         </p>
+        {market === "us" ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            美股門檻相對台股放寬（YoY {minYoy}%／PE{" "}
+            {maxPe}／成交 {minAmt}
+            億美元），以涵蓋流動中大型；欄位與台股價值選股對齊，即使通過檔數較少仍顯示明年／今年
+            EPS。
+          </p>
+        ) : null}
 
-        {/* 單股查詢 */}
+        {/* 單股查詢：僅在按「查詢」時觸發 */}
         <form
           className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
@@ -345,7 +443,7 @@ export function ValuePicksClient({
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="查詢單一股票（代號或名稱，如 2330／台積電）"
+              placeholder={lookupPlaceholder}
               className="w-full rounded-xl border border-border/50 bg-[var(--panel)]/80 py-2.5 pl-9 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               aria-busy={lookupLoading}
             />
@@ -379,7 +477,7 @@ export function ValuePicksClient({
                     {formatPct(lookup.changePct)}
                   </span>
                   {" · 成交 "}
-                  {formatTurnoverYi(lookup.dayAmt)}
+                  {fmtTurnover(lookup.dayAmt, market)}
                   {lookup.passesScreen ? (
                     <span className="ml-1.5 text-[var(--mk-up)]">符合篩選</span>
                   ) : (
@@ -406,10 +504,11 @@ export function ValuePicksClient({
               epsYoy={lookup.epsYoy}
             />
             <BrokerTargetsDetail
-              key={lookup.code}
+              key={`${market}-${lookup.code}`}
               className="mt-3"
               code={lookup.code}
               name={lookup.name}
+              market={market}
               defaultOpen
               prefetch
             />
@@ -433,7 +532,7 @@ export function ValuePicksClient({
           </div>
         ) : !rows.length ? (
           <p className="mt-10 text-center text-sm text-muted-foreground">
-            目前沒有同時符合「明年 EPS YoY &gt; 50%」、「前瞻本益比 &lt; 35」與「成交 ≥ 10 億」的標的。
+            {emptyListMsg}
           </p>
         ) : (
           <>
@@ -494,14 +593,15 @@ export function ValuePicksClient({
                       epsYoy={r.epsYoy}
                     />
                     <div className="mt-2 text-[11px] text-muted-foreground">
-                      成交 {formatTurnoverYi(r.dayAmt)}
+                      成交 {fmtTurnover(r.dayAmt, market)}
                     </div>
                     {open ? (
                       <BrokerTargetsDetail
-                        key={r.code}
+                        key={`${market}-${r.code}`}
                         className="mt-3"
                         code={r.code}
                         name={r.name}
+                        market={market}
                         defaultOpen
                       />
                     ) : null}
@@ -605,16 +705,17 @@ export function ValuePicksClient({
                             {r.forwardPe.toFixed(1)}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">
-                            {formatTurnoverYi(r.dayAmt)}
+                            {fmtTurnover(r.dayAmt, market)}
                           </td>
                         </tr>
                         {open ? (
                           <tr className="border-t border-border/20 bg-muted/20">
                             <td colSpan={8} className="px-3 py-3">
                               <BrokerTargetsDetail
-                                key={r.code}
+                                key={`${market}-${r.code}`}
                                 code={r.code}
                                 name={r.name}
+                                market={market}
                                 defaultOpen
                               />
                             </td>

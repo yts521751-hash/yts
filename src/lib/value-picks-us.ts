@@ -16,7 +16,7 @@ import {
 import { getYahooCrumbAuth, yahooAuthedGet } from "@/lib/yahoo-crumb";
 import { fetchNasdaqYearlyEps } from "@/lib/nasdaq-us";
 import { US_YI_USD, usdTurnoverToYi } from "@/lib/turnover-us";
-import { resolveUsDisplayNames } from "@/lib/us-company-names";
+import { resolveUsDisplayNames, US_NAME_ZH } from "@/lib/us-company-names";
 
 export type UsValuePickRow = {
   rank: number;
@@ -363,3 +363,271 @@ export async function getUsValuePicks(options?: {
   }
   return buildUsValuePicks(options);
 }
+
+export async function readUsValuePicksCache(): Promise<UsValuePicksPayload | null> {
+  return readUsCacheFile<UsValuePicksPayload>(US_VALUE_CACHE);
+}
+
+/** 與台股 ValuePicksClient 相容的單股查詢結果 */
+export type UsStockValueLookup = {
+  code: string;
+  name: string;
+  nameEn?: string;
+  nameZh?: string;
+  close: number;
+  changePct: number;
+  dayAmt: number;
+  nextYearEps: number | null;
+  baseEps: number | null;
+  epsYoy: number | null;
+  forwardPe: number | null;
+  epsSource: string | null;
+  revenueYoy: number | null;
+  revenueMonth: string | null;
+  brokers: [];
+  consensusBasis: null;
+  passesScreen: boolean;
+  ymd: string;
+  date: string;
+};
+
+const LOOKUP_MEMO_TTL_MS = 5 * 60 * 1000;
+
+function usLookupMemoBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuUsValueLookupMemo?: Map<
+      string,
+      { at: number; value: UsStockValueLookup | null }
+    >;
+  };
+  if (!g.__jinliuUsValueLookupMemo) g.__jinliuUsValueLookupMemo = new Map();
+  return g.__jinliuUsValueLookupMemo;
+}
+
+function normalizeUsLookupKey(query: string) {
+  return query.trim().toLowerCase();
+}
+
+function isUsTickerToken(q: string) {
+  return /^[A-Za-z]{1,5}(\.[A-Za-z])?$/.test(q.trim());
+}
+
+function lookupFromUsValueRow(
+  row: UsValuePickRow,
+  ymd: string,
+  date: string,
+): UsStockValueLookup {
+  return {
+    code: row.code,
+    name: row.name,
+    nameEn: row.nameEn,
+    nameZh: row.nameZh,
+    close: row.close,
+    changePct: row.changePct,
+    dayAmt: row.dayAmt,
+    nextYearEps: row.nextYearEps,
+    baseEps: row.baseEps,
+    epsYoy: row.epsYoy,
+    forwardPe: row.forwardPe,
+    epsSource: row.epsSource,
+    revenueYoy: row.revenueYoy ?? null,
+    revenueMonth: null,
+    brokers: [],
+    consensusBasis: null,
+    passesScreen: true,
+    ymd,
+    date,
+  };
+}
+
+function matchUsRowByQuery(
+  rows: UsValuePickRow[],
+  q: string,
+): UsValuePickRow | null {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return null;
+  if (isUsTickerToken(q)) {
+    const upper = q.trim().toUpperCase();
+    const byCode = rows.find((r) => r.code.toUpperCase() === upper);
+    if (byCode) return byCode;
+  }
+  return (
+    rows.find(
+      (r) =>
+        r.name.toLowerCase() === needle ||
+        r.nameEn?.toLowerCase() === needle ||
+        r.nameZh?.toLowerCase() === needle ||
+        r.name.toLowerCase().includes(needle) ||
+        r.nameEn?.toLowerCase().includes(needle) ||
+        r.nameZh?.toLowerCase().includes(needle) ||
+        needle.includes((r.nameZh || "").toLowerCase()) ||
+        needle.includes((r.nameEn || "").toLowerCase()),
+    ) || null
+  );
+}
+
+/**
+ * 以代號或名稱查美股單檔，回傳與價值選股相同口徑。
+ * 券商目標價由 /api/us/broker-targets 懶載。
+ */
+export async function lookupUsStockValue(
+  query: string,
+): Promise<UsStockValueLookup | null> {
+  const q = query.trim();
+  if (!q) return null;
+
+  const memoKey = normalizeUsLookupKey(q);
+  const memo = usLookupMemoBag();
+  const hit = memo.get(memoKey);
+  if (hit && Date.now() - hit.at < LOOKUP_MEMO_TTL_MS) {
+    return hit.value;
+  }
+
+  const vp = await readUsValuePicksCache().catch(() => null);
+  if (vp?.rows?.length) {
+    const row = matchUsRowByQuery(vp.rows, q);
+    if (row) {
+      const value = lookupFromUsValueRow(row, vp.ymd, vp.date);
+      memo.set(memoKey, { at: Date.now(), value });
+      memo.set(normalizeUsLookupKey(row.code), { at: Date.now(), value });
+      return value;
+    }
+  }
+
+  const days = await listUsCachedTradingDays(1, 40);
+  const ymd = days[0];
+  if (!ymd) return null;
+  const quotes = await getUsCachedDayQuotes(ymd);
+  if (!quotes?.size) return null;
+
+  let code: string | null = null;
+  let quoteName = "";
+
+  if (isUsTickerToken(q)) {
+    const upper = q.toUpperCase();
+    const row = quotes.get(upper);
+    if (row && isUsCommonStock(row.code, row.name)) {
+      code = upper;
+      quoteName = row.name;
+    }
+  }
+
+  if (!code) {
+    const needle = q.toLowerCase();
+    for (const row of quotes.values()) {
+      if (!isUsCommonStock(row.code, row.name)) continue;
+      const names = resolveUsDisplayNames({
+        code: row.code,
+        yahooName: row.name,
+      });
+      if (
+        names.name.toLowerCase() === needle ||
+        names.nameEn.toLowerCase() === needle ||
+        names.nameZh.toLowerCase() === needle ||
+        names.name.toLowerCase().includes(needle) ||
+        names.nameEn.toLowerCase().includes(needle) ||
+        names.nameZh.toLowerCase().includes(needle)
+      ) {
+        code = row.code.toUpperCase();
+        quoteName = row.name;
+        break;
+      }
+    }
+  }
+
+  // 中文短名對照表
+  if (!code) {
+    const needle = q.toLowerCase();
+    for (const [sym, zh] of Object.entries(US_NAME_ZH)) {
+      if (zh.toLowerCase() === needle || zh.includes(q) || q.includes(zh)) {
+        const row = quotes.get(sym);
+        if (row && isUsCommonStock(row.code, row.name)) {
+          code = sym;
+          quoteName = row.name;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!code) {
+    memo.set(memoKey, { at: Date.now(), value: null });
+    return null;
+  }
+
+  const byCode = memo.get(normalizeUsLookupKey(code));
+  if (byCode && Date.now() - byCode.at < LOOKUP_MEMO_TTL_MS) {
+    memo.set(memoKey, { at: Date.now(), value: byCode.value });
+    return byCode.value;
+  }
+
+  const quote = quotes.get(code);
+  const close = quote?.close ?? 0;
+  const changePct = quote?.changePct ?? 0;
+  const dayAmt = round1(usdTurnoverToYi(quote?.turnover ?? 0));
+  const names = resolveUsDisplayNames({
+    code,
+    yahooName: quote?.name || quoteName,
+  });
+
+  const auth = await getYahooCrumbAuth();
+  const eps = await fetchUsForwardEps(code, auth);
+  const nextYearEps = eps?.nextYearEps ?? null;
+  const baseEps = eps?.baseEps ?? null;
+  const epsYoy =
+    nextYearEps != null && baseEps != null && baseEps > 0
+      ? round1(((nextYearEps - baseEps) / Math.abs(baseEps)) * 100)
+      : null;
+  const forwardPe =
+    nextYearEps != null && nextYearEps > 0 && close > 0
+      ? round1(close / nextYearEps)
+      : null;
+
+  const passesScreen = Boolean(
+    nextYearEps != null &&
+      nextYearEps > 0 &&
+      baseEps != null &&
+      baseEps > 0 &&
+      epsYoy != null &&
+      epsYoy > MIN_EPS_YOY &&
+      forwardPe != null &&
+      forwardPe > 0 &&
+      forwardPe < MAX_FORWARD_PE &&
+      dayAmt >= MIN_DAY_AMT_YI,
+  );
+
+  const value: UsStockValueLookup = {
+    code,
+    name: names.name,
+    nameEn: names.nameEn,
+    nameZh: names.nameZh,
+    close: round2(close),
+    changePct: round2(changePct),
+    dayAmt,
+    nextYearEps: nextYearEps != null ? round2(nextYearEps) : null,
+    baseEps: baseEps != null ? round2(baseEps) : null,
+    epsYoy,
+    forwardPe,
+    epsSource: eps?.source ?? null,
+    revenueYoy: eps?.revenueYoy ?? null,
+    revenueMonth: null,
+    brokers: [],
+    consensusBasis: null,
+    passesScreen,
+    ymd,
+    date: ymdToIso(ymd),
+  };
+  memo.set(memoKey, { at: Date.now(), value });
+  memo.set(normalizeUsLookupKey(code), { at: Date.now(), value });
+  if (memo.size > 200) {
+    const first = memo.keys().next().value;
+    if (first) memo.delete(first);
+  }
+  return value;
+}
+
+export const US_VALUE_CRITERIA = {
+  minEpsYoy: MIN_EPS_YOY,
+  maxForwardPe: MAX_FORWARD_PE,
+  minDayAmtYi: MIN_DAY_AMT_YI,
+} as const;
