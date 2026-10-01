@@ -137,7 +137,7 @@ export default function UsTurnoverPage() {
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <p className="t-eyebrow">成值</p>
+                    <p className="t-kicker">成值</p>
                     <Amount
                       text={formatUsTurnoverYi(r.dayAmt)}
                       className="text-[0.9375rem] font-semibold"

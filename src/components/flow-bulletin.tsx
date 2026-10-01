@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 import type { MarketId } from "@/components/market-switch";
 import { Panel, PanelHeader } from "@/components/ui/panel";
+import { Amount } from "@/components/ui/amount";
 
 const TONE_STYLE: Record<
   BulletinTone,
@@ -80,14 +81,13 @@ export function FlowBulletin({ title, rows, market = "tw" }: Props) {
                         </span>
                         <span className="truncate">{item.name}</span>
                       </span>
-                      <span
+                      <Amount
+                        text={formatMarketYiSigned(item.dayFlow, market)}
                         className={cn(
-                          "num shrink-0 font-semibold",
+                          "shrink-0 font-semibold",
                           signedClass(item.dayFlow),
                         )}
-                      >
-                        {formatMarketYiSigned(item.dayFlow, market)}
-                      </span>
+                      />
                     </li>
                   ))}
                 </ol>
@@ -100,7 +100,7 @@ export function FlowBulletin({ title, rows, market = "tw" }: Props) {
           );
         })}
       </div>
-      <p className="t-eyebrow mt-2.5">數值為當日淨流 · 另對照 3／5 日方向</p>
+      <p className="t-kicker mt-2.5">數值為當日淨流</p>
     </Panel>
   );
 }

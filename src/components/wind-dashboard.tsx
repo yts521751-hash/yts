@@ -28,7 +28,7 @@ function WindDial({ reading }: { reading: WindReading }) {
     <Panel as="article" padded className="flex flex-col">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="t-eyebrow mb-1">WIND GAUGE · {reading.asOf}</p>
+          <p className="t-eyebrow mb-1">{reading.asOf}</p>
           <h2 className="t-title truncate">{reading.label}</h2>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -41,8 +41,8 @@ function WindDial({ reading }: { reading: WindReading }) {
         </div>
       </div>
 
-      <div className="relative mx-auto mt-4 aspect-[2/1] w-full max-w-[300px]">
-        <svg viewBox="0 0 200 112" className="h-full w-full" aria-hidden>
+      <div className="mx-auto mt-4 w-full max-w-[300px]">
+        <svg viewBox="0 0 200 108" className="h-auto w-full" aria-hidden>
           {/* 底弧 */}
           <path
             d="M20 100 A80 80 0 0 1 180 100"
@@ -51,19 +51,6 @@ function WindDial({ reading }: { reading: WindReading }) {
             strokeWidth="12"
             strokeLinecap="round"
           />
-          {/* 分級帶：讓分數落在哪一區一眼可見 */}
-          {ZONES.map((z) => (
-            <path
-              key={z.label}
-              d="M20 100 A80 80 0 0 1 180 100"
-              fill="none"
-              stroke={z.color}
-              strokeWidth="12"
-              strokeOpacity="0.18"
-              strokeDasharray={`${((z.to - z.from) / 100) * ARC_LENGTH} ${ARC_LENGTH}`}
-              strokeDashoffset={`${-(z.from / 100) * ARC_LENGTH}`}
-            />
-          ))}
           {/* 實際分數 */}
           <path
             d="M20 100 A80 80 0 0 1 180 100"
@@ -73,11 +60,11 @@ function WindDial({ reading }: { reading: WindReading }) {
             strokeLinecap="round"
             strokeDasharray={`${progress} ${ARC_LENGTH}`}
           />
-          {/* 刻度 */}
-          {[0, 25, 50, 75, 100].map((tick) => {
+          {/* 分級刻度：36／62 是強弱分界 */}
+          {[0, 36, 62, 100].map((tick) => {
             const a = ((needleAngle(tick) - 90) * Math.PI) / 180;
-            const r1 = 66;
-            const r2 = 59;
+            const r1 = 72;
+            const r2 = 64;
             return (
               <line
                 key={tick}
@@ -86,8 +73,8 @@ function WindDial({ reading }: { reading: WindReading }) {
                 x2={100 + Math.cos(a) * r2}
                 y2={100 + Math.sin(a) * r2}
                 stroke="currentColor"
-                strokeOpacity="0.28"
-                strokeWidth="1.2"
+                strokeOpacity="0.3"
+                strokeWidth="1.4"
               />
             );
           })}
@@ -96,7 +83,7 @@ function WindDial({ reading }: { reading: WindReading }) {
               x1="100"
               y1="100"
               x2="100"
-              y2="34"
+              y2="40"
               stroke="currentColor"
               strokeWidth="2.5"
               strokeLinecap="round"
@@ -105,9 +92,9 @@ function WindDial({ reading }: { reading: WindReading }) {
             <circle cx="100" cy="100" r="2" fill="var(--panel)" />
           </g>
         </svg>
-        <div className="absolute inset-x-0 bottom-0 text-center">
+        <div className="mt-1 text-center">
           <p className="t-display num text-[2rem] leading-none">{reading.score}</p>
-          <p className="t-eyebrow mt-1">結構強度</p>
+          <p className="t-kicker mt-1">結構強度（0–100）</p>
         </div>
       </div>
 

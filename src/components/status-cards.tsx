@@ -20,7 +20,10 @@ export function StatusCards({ counts, active, onChange }: Props) {
   return (
     <section aria-label="四態篩選">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <p className="t-eyebrow">FLOW STATES · 近 5 日淨流 × 加速度</p>
+        <p className="t-kicker">
+          <span className="t-eyebrow mr-1.5">FLOW STATES</span>
+          近 5 日淨流 × 加速度
+        </p>
         {filtering ? (
           <button
             type="button"
@@ -62,7 +65,7 @@ export function StatusCards({ counts, active, onChange }: Props) {
                 aria-hidden
               />
               <span className="flex items-center justify-between gap-2">
-                <span className="t-eyebrow">{meta.short}</span>
+                <span className="t-kicker">{meta.short}</span>
                 {selected ? (
                   <span
                     className="rounded-full px-1.5 py-px text-[0.625rem] font-semibold"

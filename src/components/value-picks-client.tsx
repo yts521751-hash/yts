@@ -422,7 +422,7 @@ export function ValuePicksClient({
               onChange={(e) => setQuery(e.target.value)}
               placeholder={lookupPlaceholder}
               aria-label="股票代號或名稱"
-              className="min-h-11 w-full rounded-lg border border-line bg-sunken pr-3 pl-10 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-[var(--mk-anchor)]"
+              className="min-h-11 w-full rounded-lg border border-line bg-sunken pr-3 pl-10 text-sm placeholder:text-muted-foreground focus-visible:border-[var(--mk-anchor)]"
               aria-busy={lookupLoading}
             />
           </div>
@@ -526,8 +526,13 @@ export function ValuePicksClient({
       ) : (
         <section className="space-y-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="t-eyebrow">SCREEN RESULT · {rows.length} 檔</p>
-            <p className="t-meta">點列可展開券商報告（目標價／EPS）</p>
+            <p className="t-kicker">
+              <span className="t-eyebrow mr-1.5">SCREEN RESULT</span>
+              {rows.length} 檔
+            </p>
+            <p className="t-meta hidden sm:block">
+              點列可展開券商報告（目標價／EPS）
+            </p>
           </div>
 
           {/* 手機卡片 */}
@@ -587,7 +592,7 @@ export function ValuePicksClient({
                     </div>
                     <div className="flex shrink-0 items-start gap-2 text-right">
                       <div>
-                        <p className="t-eyebrow">EPS YoY</p>
+                        <p className="t-kicker">EPS YoY</p>
                         <p className="num text-[0.9375rem] font-semibold text-[var(--mk-up)]">
                           +{r.epsYoy.toFixed(1)}%
                         </p>
@@ -603,6 +608,7 @@ export function ValuePicksClient({
                   </button>
                   <div className="px-3 pb-3">
                     <FundMetricsGrid
+                      omitYoy
                       forwardPe={r.forwardPe}
                       nextYearEps={r.nextYearEps}
                       baseEps={r.baseEps}

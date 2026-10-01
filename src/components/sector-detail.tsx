@@ -77,7 +77,7 @@ export function SectorDetail({
 
   if (!sector) {
     return (
-      <div className="surface-outline flex h-full min-h-[300px] items-center">
+      <div className="surface-outline flex h-full min-h-[420px] items-center">
         <EmptyState
           icon={<MousePointerClick className="size-4" aria-hidden />}
           title="點選排行榜看板塊明細"
@@ -97,7 +97,9 @@ export function SectorDetail({
     <div
       className={cn(
         "flex min-h-0 flex-col",
-        isSheet ? "flex-1 overflow-hidden" : "surface h-full min-h-[300px]",
+        isSheet
+          ? "flex-1 overflow-hidden"
+          : "surface max-h-full min-h-[420px] overflow-hidden",
       )}
     >
       <div
@@ -129,12 +131,7 @@ export function SectorDetail({
         ) : null}
       </div>
 
-      <div
-        className={cn(
-          "min-h-0 flex-1",
-          isSheet ? "scroll-y overscroll-contain" : "flex flex-col",
-        )}
-      >
+      <div className="scroll-y min-h-0 flex-1 overscroll-contain">
         <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3">
           <Stat
             label="當日淨流"
@@ -204,7 +201,7 @@ export function SectorDetail({
         ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
-          <p className="t-eyebrow">成分股金流 · {stocks.length} 檔</p>
+          <p className="t-kicker">成分股金流 · {stocks.length} 檔</p>
           <Segmented
             ariaLabel="成分股時間維度"
             size="sm"
@@ -284,12 +281,7 @@ export function SectorDetail({
         </ul>
 
         {/* 桌面：表格 */}
-        <div
-          className={cn(
-            "hidden md:block",
-            isSheet ? "" : "scroll-y min-h-0 flex-1",
-          )}
-        >
+        <div className="hidden md:block">
           <table className="data-table">
             <thead>
               <tr>

@@ -210,7 +210,7 @@ export default function TurnoverPage() {
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
-                        <p className="t-eyebrow">成交</p>
+                        <p className="t-kicker">成交</p>
                         <Amount
                           text={formatTurnoverYi(r.turnoverYi)}
                           className="text-[0.9375rem] font-semibold"

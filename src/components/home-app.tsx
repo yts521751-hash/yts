@@ -463,11 +463,11 @@ export function HomeApp({
     <AppShell
       market={market}
       width="wide"
-      dateLabel={brief?.date ?? "載入中"}
-      updatedAt={brief?.updatedAt ?? "—"}
+      dateLabel={brief?.date}
+      updatedAt={brief?.updatedAt}
       isDemo={isDemo}
-      fearLabel={brief?.fearLabel ?? "—"}
-      fearScore={brief?.fearScore ?? 0}
+      fearLabel={brief?.fearLabel}
+      fearScore={brief?.fearScore}
       banner={
         syncBusy ? (
           <SyncBanner
@@ -597,7 +597,7 @@ export function HomeApp({
                   market={market}
                 />
               </Panel>
-              <div className="hidden lg:sticky lg:top-[7.5rem] lg:block">
+              <div className="hidden lg:sticky lg:top-[7.75rem] lg:block lg:max-h-[calc(100vh-9rem)]">
                 <SectorDetail
                   sector={selected}
                   onClose={() => setSelected(null)}

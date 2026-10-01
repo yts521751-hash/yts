@@ -105,7 +105,10 @@ export function AppHeader({
                   "linear-gradient(145deg, var(--mk-anchor) 0%, color-mix(in oklab, var(--mk-anchor) 78%, black) 100%)",
               }}
             />
-            <span className="t-display relative text-xs font-bold tracking-[0.12em] text-white">
+            <span
+              className="t-display relative text-xs font-bold tracking-[0.12em]"
+              style={{ color: "var(--mk-anchor-fg)" }}
+            >
               流
             </span>
           </span>
@@ -200,23 +203,29 @@ export function AppHeader({
         </div>
       </div>
 
-      {/* meta 條：資料日／更新時間／來源 */}
+      {/* meta 條：更新時間／來源 */}
       <div className="mx-auto flex w-full max-w-[1440px] items-center justify-between gap-3 border-t border-line px-4 py-1.5 sm:px-6">
-        <p className="t-eyebrow min-w-0 truncate">
-          {dateLabel ? (
-            <>
-              <span className="lg:hidden">{dateLabel}</span>
-              {updatedAt && updatedAt !== "—" ? (
-                <>
-                  <span className="lg:hidden"> · </span>
-                  <span>UPDATED {updatedAt}</span>
-                </>
-              ) : null}
-              {isDemo ? <span className="lg:hidden"> · DEMO</span> : null}
-            </>
-          ) : (
-            <span>{market === "us" ? "US EDITION" : "TAIWAN EDITION"}</span>
-          )}
+        <p className="t-eyebrow flex min-w-0 items-center gap-2">
+          <span className="truncate">
+            {updatedAt && updatedAt !== "—"
+              ? `UPDATED ${updatedAt}`
+              : dateLabel
+                ? `DATE ${dateLabel}`
+                : market === "us"
+                  ? "US EDITION"
+                  : "TAIWAN EDITION"}
+          </span>
+          {isDemo ? (
+            <span
+              className="shrink-0 rounded-full px-1.5 text-[0.625rem] font-semibold tracking-normal lg:hidden"
+              style={{
+                background: "var(--mk-rotate-bg)",
+                color: "var(--mk-rotate)",
+              }}
+            >
+              DEMO
+            </span>
+          ) : null}
         </p>
         <p className="t-eyebrow hidden shrink-0 sm:block">{sourceNote(market)}</p>
       </div>
@@ -234,7 +243,7 @@ export function AppHeader({
             className="surface-raised absolute inset-x-3 top-full z-50 mt-2 space-y-4 p-4 lg:hidden"
           >
             <div>
-              <p className="t-eyebrow mb-2">外觀</p>
+              <p className="t-kicker mb-2">外觀</p>
               <div className="flex flex-wrap items-center gap-2">
                 <Segmented
                   ariaLabel="字級"
@@ -258,7 +267,7 @@ export function AppHeader({
             </div>
 
             <div>
-              <p className="t-eyebrow mb-2">功能</p>
+              <p className="t-kicker mb-2">功能</p>
               <div className="grid grid-cols-2 gap-2">
                 {items.map(({ href, label }) => {
                   const active =
@@ -284,7 +293,7 @@ export function AppHeader({
 
             {hasFear || dateLabel ? (
               <div>
-                <p className="t-eyebrow mb-2">看板狀態</p>
+                <p className="t-kicker mb-2">看板狀態</p>
                 <dl className="grid grid-cols-2 gap-2 text-xs">
                   {dateLabel ? (
                     <div className="surface-sunken px-2.5 py-2">

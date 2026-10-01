@@ -202,7 +202,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT, market = "tw" }: Props)
           />
           <Chip tone="outline">個股金流</Chip>
         </div>
-        <p className="t-eyebrow">
+        <p className="t-kicker">
           TOP {ranked.length} / {rows.length} 檔 · 預設成交額→淨流
         </p>
       </div>

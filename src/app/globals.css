@@ -206,10 +206,6 @@
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
-  th,
-  td {
-    font-feature-settings: "tnum" 0;
-  }
 }
 
 html[data-textsize="sm"] {
@@ -263,6 +259,13 @@ html[data-textsize="lg"] {
   .t-meta {
     font-size: 0.75rem;
     line-height: 1.55;
+    color: var(--muted-foreground);
+  }
+  /* 中文小標：與 t-eyebrow 同階，但不套 mono／字距（中文加字距很醜） */
+  .t-kicker {
+    font-size: 0.6875rem;
+    line-height: 1.45;
+    font-weight: 500;
     color: var(--muted-foreground);
   }
   .t-label {
@@ -346,8 +349,9 @@ html[data-textsize="lg"] {
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
+  /* 選取／展開：用中性的墨藍底，不要借用漲跌色造成語意混淆 */
   .data-table tbody tr[data-selected="true"] {
-    background: var(--mk-surge-bg);
+    background: var(--mk-anchor-bg);
   }
   .data-table tbody tr.row-open td {
     border-top-color: transparent;

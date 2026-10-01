@@ -107,7 +107,7 @@ export default function GlossaryPage() {
         if (!items.length) return null;
         return (
           <section key={group} className="space-y-2.5">
-            <h2 className="t-eyebrow">{GROUP_LABEL[group]}</h2>
+            <h2 className="t-kicker">{GROUP_LABEL[group]}</h2>
             <div className="space-y-2.5">
               {items.map((t) => (
                 <Panel as="article" key={t.id} padded>

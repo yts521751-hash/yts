@@ -116,11 +116,7 @@ export function AppShell({
                 </div>
               ) : null}
             </div>
-            {meta ? (
-              <p className="t-eyebrow leading-relaxed normal-case tracking-normal">
-                {meta}
-              </p>
-            ) : null}
+            {meta ? <p className="t-kicker max-w-3xl">{meta}</p> : null}
             {notice}
           </div>
         ) : null}

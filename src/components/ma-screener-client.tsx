@@ -124,14 +124,14 @@ function RowCard({ row }: { row: MaScreenerRow }) {
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <div className="surface-sunken px-2.5 py-2">
-          <div className="t-eyebrow">5 日成交</div>
+          <div className="t-kicker">5 日成交</div>
           <Amount
             text={formatYi(row.amt5 ?? 0)}
             className="mt-1 block text-sm font-semibold"
           />
         </div>
         <div className="surface-sunken px-2.5 py-2">
-          <div className="t-eyebrow">5 日淨流入</div>
+          <div className="t-kicker">5 日淨流入</div>
           <Amount
             text={formatYiSigned(row.flow5 ?? 0)}
             className={cn(
@@ -319,7 +319,7 @@ export function MaScreenerClient({
       }
     >
       <Panel padded>
-        <p className="t-eyebrow">篩選</p>
+        <p className="t-kicker">篩選</p>
         <div className="scroll-x mt-2 flex gap-2 pb-1">
           {FILTERS.map((f) => {
             const active = filter === f.id;
@@ -346,7 +346,7 @@ export function MaScreenerClient({
         </div>
         <p className="t-meta mt-1.5">{activeHint}</p>
 
-        <p className="t-eyebrow mt-4">排序</p>
+        <p className="t-kicker mt-4">排序</p>
         <div className="scroll-x mt-2 flex gap-2 pb-1">
           {SORTS.map((s) => (
             <SortChip

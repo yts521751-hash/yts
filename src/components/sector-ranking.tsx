@@ -313,7 +313,7 @@ export function SectorRanking({
             {filter !== "all" ? ` · ${STATUS_META[filter].label}` : ""}
           </Chip>
         </div>
-        <p className="t-eyebrow">
+        <p className="t-kicker">
           TOP {rows.length}
           {totalMatched > rows.length ? ` / ${totalMatched}` : ""} · 依
           {activeSortLabel}
@@ -359,7 +359,7 @@ export function SectorRanking({
                   aria-pressed={selected}
                   className={cn(
                     "relative flex min-h-[4.5rem] w-full items-center gap-3 py-3 pr-3 pl-4 text-left transition-colors",
-                    selected ? "bg-[var(--mk-surge-bg)]" : "active:bg-sunken",
+                    selected ? "bg-[var(--mk-anchor-bg)]" : "active:bg-sunken",
                   )}
                 >
                   <span
@@ -414,7 +414,7 @@ export function SectorRanking({
                         <Amount text={sortText} />
                       )}
                     </span>
-                    <span className="t-eyebrow block">{activeSortLabel}</span>
+                    <span className="t-kicker block">{activeSortLabel}</span>
                   </span>
                   <ChevronRight
                     className="size-4 shrink-0 text-muted-foreground/60"
