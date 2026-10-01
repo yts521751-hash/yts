@@ -10,7 +10,16 @@ import {
 } from "react";
 import type { BrokerTargetPrice } from "@/lib/broker-targets";
 import { shouldApplyBrokerFetch } from "@/lib/broker-fetch-guard";
+import { tryReadResponseJson } from "@/lib/read-response-json";
 import { cn } from "@/lib/utils";
+
+const FRIENDLY_EMPTY = "尚無逐家券商目標價";
+
+function isJsonParseNoise(message: string) {
+  return /json|unexpected end|unexpected token|failed to execute|parse/i.test(
+    message,
+  );
+}
 
 export type BrokerTargetsDetailProps = {
   code: string;
@@ -135,7 +144,8 @@ export function BrokerTargetsDetail({
         cache: "no-store",
         signal: ac.signal,
       });
-      const json = (await res.json()) as ApiPayload;
+      // 安全解析：空 body／非 JSON 不拋原生 Unexpected end of JSON input
+      const json = await tryReadResponseJson<ApiPayload>(res);
       if (
         !shouldApplyBrokerFetch(
           requestCode,
@@ -145,13 +155,42 @@ export function BrokerTargetsDetail({
       ) {
         return;
       }
-      if (!res.ok || json.ok === false) {
-        throw new Error(json.error || `HTTP ${res.status}`);
+
+      if (!json) {
+        if (!res.ok) {
+          setError(
+            res.status >= 500
+              ? `伺服器忙碌或暫時無法取得券商目標價（HTTP ${res.status}），請稍後再試`
+              : `無法取得券商目標價（HTTP ${res.status}）`,
+          );
+          setTargets([]);
+          setEmptyReason(null);
+        } else {
+          // 200 但空／非法 body：當無券商依據的友善空狀態，不顯示解析錯誤
+          setError(null);
+          setTargets([]);
+          setEmptyReason(FRIENDLY_EMPTY);
+          clientBrokerCache.set(requestCode, {
+            targets: [],
+            emptyReason: FRIENDLY_EMPTY,
+            at: Date.now(),
+          });
+        }
+        setFetched(true);
+        return;
       }
-      const nextTargets = json.targets ?? [];
-      const nextEmpty = json.emptyReason ?? null;
+
+      if (!res.ok || json.ok === false) {
+        throw new Error(
+          json.error || `無法取得券商目標價（HTTP ${res.status}）`,
+        );
+      }
+      const nextTargets = Array.isArray(json.targets) ? json.targets : [];
+      const nextEmpty =
+        json.emptyReason ?? (nextTargets.length ? null : FRIENDLY_EMPTY);
       setTargets(nextTargets);
       setEmptyReason(nextEmpty);
+      setError(null);
       setFetched(true);
       clientBrokerCache.set(requestCode, {
         targets: nextTargets,
@@ -168,7 +207,15 @@ export function BrokerTargetsDetail({
       ) {
         return;
       }
-      setError(e instanceof Error ? e.message : "載入失敗");
+      const msg = e instanceof Error ? e.message : "載入失敗";
+      // 絕不把原生 JSON parse 字串丟上 UI
+      if (isJsonParseNoise(msg)) {
+        setError(null);
+        setTargets([]);
+        setEmptyReason(FRIENDLY_EMPTY);
+      } else {
+        setError(msg);
+      }
       setFetched(true);
     } finally {
       if (
@@ -227,7 +274,7 @@ export function BrokerTargetsDetail({
           ) : null}
           {!loading && fetched && !targets.length ? (
             <p className="leading-relaxed text-muted-foreground">
-              {emptyReason || "尚無逐家券商目標價"}
+              {emptyReason || FRIENDLY_EMPTY}
               。僅在公開新聞標題／內文能辨識「券商＋絕對目標價」時顯示；無具名券商報道時會留空。
             </p>
           ) : null}

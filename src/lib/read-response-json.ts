@@ -1,3 +1,18 @@
+/** 空 body／HTML／非 JSON 時回 null，不拋原生 JSON 解析例外 */
+export async function tryReadResponseJson<T = unknown>(
+  res: Response,
+): Promise<T | null> {
+  const text = await res.text();
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("<") || trimmed.startsWith("<!")) return null;
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
+}
+
 /** 瀏覽器端安全讀 JSON：若伺服器回 HTML（冷啟動／逾時／502）給可讀錯誤 */
 export async function readResponseJson<T = unknown>(
   res: Response,
