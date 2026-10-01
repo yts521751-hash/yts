@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { WindDashboard } from "@/components/wind-dashboard";
 import {
   CLIENT_CACHE_KEYS,
@@ -11,7 +10,10 @@ import {
 } from "@/lib/client-cache";
 import type { WindPayload } from "@/lib/wind-types";
 import { cn } from "@/lib/utils";
-import { MarketSwitch } from "@/components/market-switch";
+import { AppShell } from "@/components/app-shell";
+import { ActionButton } from "@/components/ui/action-button";
+import { Panel } from "@/components/ui/panel";
+import { ErrorState, LoadingState, NoticeBar } from "@/components/ui/states";
 
 export default function WindPage() {
   const [data, setData] = useState<WindPayload | null>(null);
@@ -66,52 +68,55 @@ export default function WindPage() {
   }, [load]);
 
   return (
-    <div className="relative min-h-full flex-1 pb-20 md:pb-6">
-      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
-      <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-6 sm:px-6 sm:py-8">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            回資金流
-          </Link>
-          <div className="flex items-center gap-2">
-            <MarketSwitch />
-            <button
-              type="button"
-              onClick={() => void load(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60"
-            >
-              <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
-              更新
-            </button>
-          </div>
-        </div>
-
-        {(fromCache || syncing) && data ? (
-          <p className="mb-3 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+    <AppShell
+      market="tw"
+      width="default"
+      back={{ href: "/", label: "回資金流" }}
+      eyebrow="WIND GAUGE"
+      title="風度儀表板"
+      description="風力度 ＝ 指數相對均線的結構清楚程度（不是乖離率大小）；右上角標籤是站上／跌破結構。"
+      meta={
+        data?.builtAt
+          ? `更新 ${new Date(data.builtAt).toLocaleString("zh-TW", { hour12: false })}`
+          : undefined
+      }
+      actions={
+        <ActionButton onClick={() => void load(true)} disabled={refreshing}>
+          <RefreshCw
+            className={cn("size-3.5", refreshing && "animate-spin")}
+            aria-hidden
+          />
+          更新
+        </ActionButton>
+      }
+      notice={
+        (fromCache || syncing) && data ? (
+          <NoticeBar>
             {fromCache
               ? "已先顯示本機快取，背景同步風度中…"
               : "背景重建風度中，稍後會自動更新"}
-          </p>
-        ) : null}
-
-        {loading && !data ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">載入中…</p>
-        ) : error && !data ? (
-          <p className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-6 text-sm">
-            {error}
-          </p>
-        ) : data ? (
-          <WindDashboard twse={data.twse} tpex={data.tpex} builtAt={data.builtAt} />
-        ) : null}
-
-        <p className="mt-8 text-center text-[11px] text-muted-foreground">
-          資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料
-        </p>
-      </div>
-    </div>
+          </NoticeBar>
+        ) : null
+      }
+    >
+      {loading && !data ? (
+        <Panel>
+          <LoadingState label="載入風度…" />
+        </Panel>
+      ) : error && !data ? (
+        <Panel>
+          <ErrorState
+            description={error}
+            action={
+              <ActionButton size="sm" onClick={() => void load(true)}>
+                再試一次
+              </ActionButton>
+            }
+          />
+        </Panel>
+      ) : data ? (
+        <WindDashboard readings={[data.twse, data.tpex]} />
+      ) : null}
+    </AppShell>
   );
 }

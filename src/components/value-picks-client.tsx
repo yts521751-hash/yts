@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   Fragment,
   useCallback,
@@ -9,15 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  ArrowUpDown,
-  ChevronDown,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { ChevronDown, RefreshCw, Search } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -39,8 +30,13 @@ import {
   BrokerTargetsDetail,
   FundMetricsGrid,
 } from "@/components/broker-targets-detail";
-import { MarketSwitch } from "@/components/market-switch";
 import { UsStockName } from "@/components/us-stock-name";
+import { AppShell } from "@/components/app-shell";
+import { Panel, PanelHeader } from "@/components/ui/panel";
+import { ActionButton } from "@/components/ui/action-button";
+import { Amount } from "@/components/ui/amount";
+import { Chip, RankSlot, SortHeaderButton, type SortState } from "@/components/ui/chip";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 
 type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
 
@@ -141,9 +137,7 @@ function seedFrom(initial: ClientPayload | null, market: "tw" | "us") {
   if (initial?.rows?.length) return { data: initial, fromCache: false };
   if (typeof window === "undefined") return { data: null, fromCache: false };
   const key =
-    market === "us"
-      ? `${CLIENT_CACHE_KEYS.value}:us`
-      : CLIENT_CACHE_KEYS.value;
+    market === "us" ? `${CLIENT_CACHE_KEYS.value}:us` : CLIENT_CACHE_KEYS.value;
   const cached = readClientCache<ClientPayload>(key);
   if (cached?.rows?.length) return { data: cached, fromCache: true };
   return { data: null, fromCache: false };
@@ -159,9 +153,7 @@ export function ValuePicksClient({
   const apiBase = market === "us" ? "/api/us" : "/api";
   const homeHref = market === "us" ? "/us" : "/";
   const clientCacheKey =
-    market === "us"
-      ? `${CLIENT_CACHE_KEYS.value}:us`
-      : CLIENT_CACHE_KEYS.value;
+    market === "us" ? `${CLIENT_CACHE_KEYS.value}:us` : CLIENT_CACHE_KEYS.value;
   const defaultMinYoy = market === "us" ? 25 : 50;
   const defaultMaxPe = market === "us" ? 40 : 35;
   const defaultMinAmt = market === "us" ? 0.5 : 10;
@@ -272,13 +264,10 @@ export function ValuePicksClient({
       setLookupLoading(true);
       setLookupError(null);
       try {
-        const res = await fetch(
-          `${apiBase}/value?q=${encodeURIComponent(q)}`,
-          {
-            cache: "no-store",
-            signal: ac.signal,
-          },
-        );
+        const res = await fetch(`${apiBase}/value?q=${encodeURIComponent(q)}`, {
+          cache: "no-store",
+          signal: ac.signal,
+        });
         const json = (await res.json()) as {
           ok?: boolean;
           error?: string;
@@ -334,19 +323,11 @@ export function ValuePicksClient({
     }
   };
 
+  const sortState = (key: SortKey): SortState =>
+    sortKey === key ? (asc ? "asc" : "desc") : "none";
+
   const toggleExpand = (code: string) => {
     setExpanded((cur) => (cur === code ? null : code));
-  };
-
-  const SortIcon = ({ k }: { k: SortKey }) => {
-    if (sortKey !== k) {
-      return <ArrowUpDown className="ml-0.5 inline size-3 opacity-40" />;
-    }
-    return asc ? (
-      <ArrowUp className="ml-0.5 inline size-3" />
-    ) : (
-      <ArrowDown className="ml-0.5 inline size-3" />
-    );
   };
 
   const minYoy = data?.criteria.minEpsYoy ?? defaultMinYoy;
@@ -361,59 +342,29 @@ export function ValuePicksClient({
       : "查詢單一股票（代號或名稱，如 2330／台積電）";
   const emptyListMsg =
     data?.emptyReason ||
-    (market === "us"
-      ? `目前沒有同時符合「明年 EPS YoY > ${minYoy}%」、「前瞻本益比 < ${maxPe}」與「成交 ≥ ${minAmt} ${amtUnit}」的標的。`
-      : `目前沒有同時符合「明年 EPS YoY > ${minYoy}%」、「前瞻本益比 < ${maxPe}」與「成交 ≥ ${minAmt} 億」的標的。`);
+    `目前沒有同時符合「明年 EPS YoY > ${minYoy}%」、「前瞻本益比 < ${maxPe}」與「成交 ≥ ${minAmt} ${amtUnit}」的標的。`;
 
   return (
-    <div className="relative min-h-full flex-1 pb-20 md:pb-6">
-      <div
-        className="studio-atmosphere pointer-events-none absolute inset-0"
-        aria-hidden
-      />
-      <div className="relative z-10 mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href={homeHref}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            {backLabel}
-          </Link>
-          <div className="flex items-center gap-2">
-            {market === "us" ? <MarketSwitch /> : null}
-            <button
-              type="button"
-              onClick={() => void load(true)}
-              disabled={loading || refreshing}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
-            >
-              <RefreshCw
-                className={cn(
-                  "size-3.5",
-                  (loading || refreshing) && "animate-spin",
-                )}
-              />
-              重新篩選
-            </button>
-          </div>
-        </div>
-
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          {title}
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+    <AppShell
+      market={market}
+      width="default"
+      back={{ href: homeHref, label: backLabel }}
+      eyebrow={market === "us" ? "US VALUE SCREEN" : "VALUE SCREEN"}
+      title={title}
+      description={
+        <>
           篩選明年 EPS 年增率（
-          {market === "us" ? "Nasdaq／Yahoo 共識" : "多家法人預估中位數"}
-          ）大於 {minYoy}%，前瞻本益比（股價 ÷ 明年 EPS
-          {market === "us" ? "" : "中位數"}
-          ）低於 {maxPe}，且當日成交金額達 {minAmt} {amtUnit}
-          以上的個股。
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
+          {market === "us" ? "Nasdaq／Yahoo 共識" : "多家法人預估中位數"}）大於{" "}
+          {minYoy}%，前瞻本益比（股價 ÷ 明年 EPS
+          {market === "us" ? "" : "中位數"}）低於 {maxPe}，且當日成交金額達{" "}
+          {minAmt} {amtUnit} 以上的個股。
+        </>
+      }
+      meta={
+        <>
           {market === "us"
-            ? "EPS 來源：Nasdaq yearly forecast／Yahoo earningsTrend；展開列顯示券商目標價與預估 EPS（USD）"
-            : "EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價與預估 EPS"}
+            ? "EPS 來源：Nasdaq yearly forecast／Yahoo earningsTrend"
+            : "EPS 來源：Cnyes／FactSet 法人共識中位數"}
           {data?.note ? ` · ${data.note}` : ""}
           {data?.date ? ` · 行情日 ${data.date}` : ""}
           {data?.scanned != null ? ` · 掃描 ${data.scanned} 檔` : ""}
@@ -421,41 +372,68 @@ export function ValuePicksClient({
             ? ` · 更新 ${new Date(data.builtAt).toLocaleString("zh-TW", { hour12: false })}`
             : ""}
           {fromCache ? " · 本機快取" : ""}
-        </p>
+        </>
+      }
+      actions={
+        <ActionButton
+          onClick={() => void load(true)}
+          disabled={loading || refreshing}
+        >
+          <RefreshCw
+            className={cn("size-3.5", (loading || refreshing) && "animate-spin")}
+            aria-hidden
+          />
+          重新篩選
+        </ActionButton>
+      }
+    >
+      <div className="flex flex-wrap gap-2">
+        <Chip tone="outline">EPS YoY &gt; {minYoy}%</Chip>
+        <Chip tone="outline">前瞻 PE &lt; {maxPe}</Chip>
+        <Chip tone="outline">
+          成交 ≥ {minAmt} {amtUnit}
+        </Chip>
         {market === "us" ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            美股門檻相對台股放寬（YoY {minYoy}%／PE{" "}
-            {maxPe}／成交 {minAmt}
-            億美元），以涵蓋流動中大型；欄位與台股價值選股對齊，即使通過檔數較少仍顯示明年／今年
-            EPS。
-          </p>
+          <Chip tone="outline">門檻較台股放寬以涵蓋流動中大型</Chip>
         ) : null}
+      </div>
 
-        {/* 單股查詢：僅在按「查詢」時觸發 */}
+      {/* 單股查詢：僅在按「查詢」時觸發 */}
+      <Panel padded>
+        <PanelHeader
+          eyebrow="LOOKUP"
+          title="查詢單一股票"
+          description="不限於上方名單；會顯示前瞻本益比、明年／今年 EPS 與逐家券商目標價。"
+        />
         <form
-          className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center"
+          className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault();
             void runLookup();
           }}
         >
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={lookupPlaceholder}
-              className="w-full rounded-xl border border-border/50 bg-[var(--panel)]/80 py-2.5 pl-9 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="股票代號或名稱"
+              className="min-h-11 w-full rounded-lg border border-line bg-sunken pr-3 pl-10 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-[var(--mk-anchor)]"
               aria-busy={lookupLoading}
             />
           </div>
-          <button
+          <ActionButton
             type="submit"
+            variant="solid"
             disabled={!query.trim()}
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
+            className="sm:w-28"
           >
             {lookupLoading ? "更新中…" : "查詢"}
-          </button>
+          </ActionButton>
         </form>
 
         {lookupError ? (
@@ -463,28 +441,37 @@ export function ValuePicksClient({
         ) : null}
 
         {lookup ? (
-          <div className="mt-3 rounded-xl border border-border/50 bg-[var(--panel)]/80 p-3.5 sm:p-4">
+          <div className="mt-3 rounded-lg border border-line bg-sunken p-3 sm:p-3.5">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="font-medium">
+              <div className="min-w-0">
+                <p className="t-label">
                   {lookup.name}{" "}
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="num font-normal text-muted-foreground">
                     {lookup.code}
                   </span>
-                </div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground">
-                  {lookup.close.toFixed(lookup.close >= 100 ? 0 : 2)}
-                  <span className={cn("ml-1.5", signedClass(lookup.changePct))}>
+                </p>
+                <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+                  <span className="num text-foreground/80">
+                    {lookup.close.toFixed(lookup.close >= 100 ? 0 : 2)}
+                  </span>
+                  <span className={cn("num", signedClass(lookup.changePct))}>
                     {formatPct(lookup.changePct)}
                   </span>
-                  {" · 成交 "}
-                  {fmtTurnover(lookup.dayAmt, market)}
-                  {lookup.passesScreen ? (
-                    <span className="ml-1.5 text-[var(--mk-up)]">符合篩選</span>
-                  ) : (
-                    <span className="ml-1.5">未列入篩選名單</span>
-                  )}
-                </div>
+                  <span>
+                    成交{" "}
+                    <Amount
+                      text={fmtTurnover(lookup.dayAmt, market)}
+                      className="text-foreground/80"
+                    />
+                  </span>
+                  <span
+                    className={
+                      lookup.passesScreen ? "text-[var(--mk-up)]" : undefined
+                    }
+                  >
+                    {lookup.passesScreen ? "符合篩選" : "未列入篩選名單"}
+                  </span>
+                </p>
               </div>
               <button
                 type="button"
@@ -492,7 +479,7 @@ export function ValuePicksClient({
                   setLookup(null);
                   setQuery("");
                 }}
-                className="text-[11px] text-muted-foreground hover:text-foreground"
+                className="t-meta inline-flex min-h-8 items-center rounded-md px-1.5 hover:text-foreground"
               >
                 清除
               </button>
@@ -515,103 +502,112 @@ export function ValuePicksClient({
             />
           </div>
         ) : null}
+      </Panel>
 
-        {loading && !rows.length ? (
-          <p className="mt-10 text-center text-sm text-muted-foreground">
-            正在篩選符合條件的個股…
-          </p>
-        ) : error && !rows.length ? (
-          <div className="mt-10 text-center">
-            <p className="text-sm text-[var(--mk-ebb)]">{error}</p>
-            <button
-              type="button"
-              onClick={() => void load(true)}
-              className="mt-3 border border-border px-3 py-1.5 text-xs transition hover:bg-muted/50"
-            >
-              再試一次
-            </button>
+      {loading && !rows.length ? (
+        <Panel>
+          <LoadingState label="正在篩選符合條件的個股…" />
+        </Panel>
+      ) : error && !rows.length ? (
+        <Panel>
+          <ErrorState
+            description={error}
+            action={
+              <ActionButton size="sm" onClick={() => void load(true)}>
+                再試一次
+              </ActionButton>
+            }
+          />
+        </Panel>
+      ) : !rows.length ? (
+        <Panel>
+          <EmptyState title="目前沒有符合條件的標的" description={emptyListMsg} />
+        </Panel>
+      ) : (
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="t-eyebrow">SCREEN RESULT · {rows.length} 檔</p>
+            <p className="t-meta">點列可展開券商報告（目標價／EPS）</p>
           </div>
-        ) : !rows.length ? (
-          <p className="mt-10 text-center text-sm text-muted-foreground">
-            {emptyListMsg}
-          </p>
-        ) : (
-          <>
-            <p className="mt-5 text-xs text-muted-foreground">
-              共 {rows.length} 檔 · 點列可展開券商報告（目標價／EPS） · 點欄位可排序
-            </p>
 
-            {/* 手機卡片 */}
-            <ul className="mt-3 space-y-2 md:hidden">
-              {rows.map((r) => {
-                const open = expanded === r.code;
-                return (
-                  <li
-                    key={r.code}
-                    className="rounded-xl border border-border/50 bg-[var(--panel)]/70 p-3.5"
+          {/* 手機卡片 */}
+          <ul className="space-y-2 md:hidden">
+            {rows.map((r) => {
+              const open = expanded === r.code;
+              return (
+                <li key={r.code} className="surface overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(r.code)}
+                    aria-expanded={open}
+                    className="flex w-full items-start gap-3 px-3 py-3 text-left"
                   >
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(r.code)}
-                      className="flex w-full items-start justify-between gap-3 text-left"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="shrink-0 tabular-nums text-muted-foreground">
-                            {r.rank}.
-                          </span>
-                          <span className="shrink-0 font-medium tabular-nums">
+                    <RankSlot rank={r.rank} emphasis className="pt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      {market === "us" ? (
+                        <>
+                          <p className="num text-[0.9375rem] font-semibold">
                             {r.code}
-                          </span>
-                        </div>
-                        {market === "us" ? (
+                          </p>
                           <UsStockName
                             code={r.code}
                             nameEn={r.nameEn}
                             nameZh={r.nameZh}
                             name={r.name}
-                            variant="stack"
-                            className="mt-0.5"
+                            variant="compact"
+                            emphasize={false}
+                            className="mt-0.5 block text-xs text-muted-foreground"
                           />
-                        ) : (
-                          <div className="mt-0.5 truncate font-medium">
+                        </>
+                      ) : (
+                        <>
+                          <p className="truncate text-[0.9375rem] font-medium">
                             {r.name}
-                          </div>
-                        )}
-                        <div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                          </p>
+                          <p className="num text-xs text-muted-foreground">
+                            {r.code}
+                          </p>
+                        </>
+                      )}
+                      <p className="mt-1 flex flex-wrap items-baseline gap-x-2.5 text-xs text-muted-foreground">
+                        <span className="num text-foreground/80">
                           {r.close.toFixed(r.close >= 100 ? 0 : 2)}
-                          <span
-                            className={cn("ml-1.5", signedClass(r.changePct))}
-                          >
-                            {formatPct(r.changePct)}
-                          </span>
-                        </div>
+                        </span>
+                        <span className={cn("num", signedClass(r.changePct))}>
+                          {formatPct(r.changePct)}
+                        </span>
+                        <span>
+                          成交{" "}
+                          <Amount
+                            text={fmtTurnover(r.dayAmt, market)}
+                            className="text-foreground/80"
+                          />
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-start gap-2 text-right">
+                      <div>
+                        <p className="t-eyebrow">EPS YoY</p>
+                        <p className="num text-[0.9375rem] font-semibold text-[var(--mk-up)]">
+                          +{r.epsYoy.toFixed(1)}%
+                        </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2 text-right text-[11px]">
-                        <div>
-                          <div className="text-muted-foreground">EPS YoY</div>
-                          <div className="font-semibold tabular-nums text-[var(--mk-up)]">
-                            +{r.epsYoy.toFixed(1)}%
-                          </div>
-                        </div>
-                        <ChevronDown
-                          className={cn(
-                            "size-4 text-muted-foreground transition",
-                            open && "rotate-180",
-                          )}
-                        />
-                      </div>
-                    </button>
+                      <ChevronDown
+                        className={cn(
+                          "mt-1 size-4 text-muted-foreground transition-transform",
+                          open && "rotate-180",
+                        )}
+                        aria-hidden
+                      />
+                    </div>
+                  </button>
+                  <div className="px-3 pb-3">
                     <FundMetricsGrid
-                      className="mt-3"
                       forwardPe={r.forwardPe}
                       nextYearEps={r.nextYearEps}
                       baseEps={r.baseEps}
                       epsYoy={r.epsYoy}
                     />
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      成交 {fmtTurnover(r.dayAmt, market)}
-                    </div>
                     {open ? (
                       <BrokerTargetsDetail
                         key={`${market}-${r.code}`}
@@ -622,56 +618,60 @@ export function ValuePicksClient({
                         defaultOpen
                       />
                     ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
 
-            {/* 桌面表格 */}
-            <div className="mt-3 hidden overflow-x-auto rounded-xl border border-border/50 bg-[var(--panel)]/70 md:block">
-              <table className="w-full min-w-[720px] text-sm">
+          {/* 桌面表格 */}
+          <Panel className="hidden overflow-hidden md:block">
+            <div className="scroll-x">
+              <table className="data-table min-w-[760px]">
                 <thead>
-                  <tr className="border-b border-border/50 text-left text-[11px] text-muted-foreground">
-                    <th className="px-3 py-2.5 font-medium">#</th>
-                    <th className="px-3 py-2.5 font-medium">代號／名稱</th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button type="button" onClick={() => toggleSort("close")}>
+                  <tr>
+                    <th className="w-10 text-right">#</th>
+                    <th>代號／名稱</th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("close")}
+                        onClick={() => toggleSort("close")}
+                      >
                         股價
-                        <SortIcon k="close" />
-                      </button>
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button
-                        type="button"
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("changePct")}
                         onClick={() => toggleSort("changePct")}
                       >
                         漲跌
-                        <SortIcon k="changePct" />
-                      </button>
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button type="button" onClick={() => toggleSort("epsYoy")}>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("epsYoy")}
+                        onClick={() => toggleSort("epsYoy")}
+                      >
                         明年 EPS YoY
-                        <SortIcon k="epsYoy" />
-                      </button>
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      明年／今年 EPS
-                    </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button
-                        type="button"
+                    <th className="cell-num">明年／今年 EPS</th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("forwardPe")}
                         onClick={() => toggleSort("forwardPe")}
                       >
                         前瞻本益比
-                        <SortIcon k="forwardPe" />
-                      </button>
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-2.5 text-right font-medium">
-                      <button type="button" onClick={() => toggleSort("dayAmt")}>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("dayAmt")}
+                        onClick={() => toggleSort("dayAmt")}
+                      >
                         成交
-                        <SortIcon k="dayAmt" />
-                      </button>
+                      </SortHeaderButton>
                     </th>
                   </tr>
                 </thead>
@@ -681,19 +681,18 @@ export function ValuePicksClient({
                     return (
                       <Fragment key={r.code}>
                         <tr
-                          className="cursor-pointer border-t border-border/40 transition hover:bg-muted/30"
+                          className={cn("cursor-pointer", open && "row-open")}
+                          data-selected={open ? "true" : undefined}
                           onClick={() => toggleExpand(r.code)}
                         >
-                          <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+                          <td className="num text-right text-muted-foreground">
                             {r.rank}
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td>
                             {market === "us" ? (
                               <div className="flex items-start gap-1.5">
                                 <div className="min-w-0 flex-1">
-                                  <div className="font-medium tabular-nums">
-                                    {r.code}
-                                  </div>
+                                  <div className="num font-medium">{r.code}</div>
                                   <UsStockName
                                     code={r.code}
                                     nameEn={r.nameEn}
@@ -701,14 +700,15 @@ export function ValuePicksClient({
                                     name={r.name}
                                     variant="stack"
                                     emphasize={false}
-                                    className="text-[11px] text-muted-foreground"
+                                    className="text-[0.6875rem] text-muted-foreground"
                                   />
                                 </div>
                                 <ChevronDown
                                   className={cn(
-                                    "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition",
+                                    "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform",
                                     open && "rotate-180",
                                   )}
+                                  aria-hidden
                                 />
                               </div>
                             ) : (
@@ -717,43 +717,39 @@ export function ValuePicksClient({
                                   {r.name}
                                   <ChevronDown
                                     className={cn(
-                                      "size-3.5 text-muted-foreground transition",
+                                      "size-3.5 text-muted-foreground transition-transform",
                                       open && "rotate-180",
                                     )}
+                                    aria-hidden
                                   />
                                 </div>
-                                <div className="text-[11px] tabular-nums text-muted-foreground">
+                                <div className="num text-[0.6875rem] text-muted-foreground">
                                   {r.code}
                                 </div>
                               </>
                             )}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
+                          <td className="cell-num">
                             {r.close.toFixed(r.close >= 100 ? 0 : 2)}
                           </td>
-                          <td
-                            className={cn(
-                              "px-3 py-2.5 text-right tabular-nums",
-                              signedClass(r.changePct),
-                            )}
-                          >
+                          <td className={cn("cell-num", signedClass(r.changePct))}>
                             {formatPct(r.changePct)}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-semibold tabular-nums text-[var(--mk-up)]">
+                          <td className="cell-num font-semibold text-[var(--mk-up)]">
                             +{r.epsYoy.toFixed(1)}%
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                          <td className="cell-num text-muted-foreground">
                             {r.nextYearEps.toFixed(2)} / {r.baseEps.toFixed(2)}
                           </td>
-                          <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                          <td className="cell-num font-medium">
                             {r.forwardPe.toFixed(1)}
                           </td>
-                          <td className="px-3 py-2.5 text-right tabular-nums">
-                            {fmtTurnover(r.dayAmt, market)}
+                          <td className="cell-num">
+                            <Amount text={fmtTurnover(r.dayAmt, market)} />
                           </td>
                         </tr>
                         {open ? (
-                          <tr className="border-t border-border/20 bg-muted/20">
+                          <tr className="bg-sunken">
                             <td colSpan={8} className="px-3 py-3">
                               <BrokerTargetsDetail
                                 key={`${market}-${r.code}`}
@@ -771,9 +767,9 @@ export function ValuePicksClient({
                 </tbody>
               </table>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          </Panel>
+        </section>
+      )}
+    </AppShell>
   );
 }

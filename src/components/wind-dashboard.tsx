@@ -2,6 +2,16 @@
 
 import { WIND_META, type WindReading } from "@/lib/wind-types";
 import { cn } from "@/lib/utils";
+import { Panel } from "@/components/ui/panel";
+import { Stat } from "@/components/ui/stat";
+import { StatusPill, Chip } from "@/components/ui/chip";
+
+const ARC_LENGTH = 251;
+const ZONES = [
+  { from: 0, to: 36, label: "無風", color: "var(--mk-ebb)" },
+  { from: 36, to: 62, label: "陣風", color: "var(--mk-rotate)" },
+  { from: 62, to: 100, label: "強風", color: "var(--mk-surge)" },
+] as const;
 
 function needleAngle(score: number) {
   const t = Math.min(100, Math.max(0, score)) / 100;
@@ -12,171 +22,146 @@ function WindDial({ reading }: { reading: WindReading }) {
   const meta = WIND_META[reading.level];
   const angle = needleAngle(reading.score);
   const stance = reading.maStanceLabel || "均線糾結";
+  const progress = (Math.min(100, Math.max(0, reading.score)) / 100) * ARC_LENGTH;
 
   return (
-    <article className="flex flex-col rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 shadow-sm backdrop-blur-sm">
+    <Panel as="article" padded className="flex flex-col">
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
-            {reading.label}
-          </h2>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
-            資料日 {reading.asOf}
-          </p>
+        <div className="min-w-0">
+          <p className="t-eyebrow mb-1">WIND GAUGE · {reading.asOf}</p>
+          <h2 className="t-title truncate">{reading.label}</h2>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          <span
-            className="rounded-md px-2 py-1 text-xs font-semibold"
-            style={{
-              color: meta.color,
-              background: `color-mix(in oklab, ${meta.color} 14%, transparent)`,
-            }}
-          >
-            {reading.levelLabel}
-          </span>
-          <span className="rounded-md bg-muted/50 px-2 py-0.5 text-[10px] text-muted-foreground">
-            {stance}
-          </span>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <StatusPill
+            label={reading.levelLabel}
+            color={meta.color}
+            background={`color-mix(in oklab, ${meta.color} 14%, transparent)`}
+          />
+          <Chip>{stance}</Chip>
         </div>
       </div>
 
-      <div className="relative mx-auto mt-4 aspect-[2/1] w-full max-w-[280px]">
-        <svg viewBox="0 0 200 110" className="h-full w-full" aria-hidden>
+      <div className="relative mx-auto mt-4 aspect-[2/1] w-full max-w-[300px]">
+        <svg viewBox="0 0 200 112" className="h-full w-full" aria-hidden>
+          {/* 底弧 */}
           <path
             d="M20 100 A80 80 0 0 1 180 100"
             fill="none"
-            stroke="currentColor"
-            strokeOpacity="0.12"
-            strokeWidth="14"
+            stroke="var(--line-strong)"
+            strokeWidth="12"
             strokeLinecap="round"
           />
+          {/* 分級帶：讓分數落在哪一區一眼可見 */}
+          {ZONES.map((z) => (
+            <path
+              key={z.label}
+              d="M20 100 A80 80 0 0 1 180 100"
+              fill="none"
+              stroke={z.color}
+              strokeWidth="12"
+              strokeOpacity="0.18"
+              strokeDasharray={`${((z.to - z.from) / 100) * ARC_LENGTH} ${ARC_LENGTH}`}
+              strokeDashoffset={`${-(z.from / 100) * ARC_LENGTH}`}
+            />
+          ))}
+          {/* 實際分數 */}
           <path
             d="M20 100 A80 80 0 0 1 180 100"
             fill="none"
             stroke={meta.color}
-            strokeWidth="14"
+            strokeWidth="12"
             strokeLinecap="round"
-            strokeDasharray={`${(reading.score / 100) * 251} 251`}
+            strokeDasharray={`${progress} ${ARC_LENGTH}`}
           />
+          {/* 刻度 */}
+          {[0, 25, 50, 75, 100].map((tick) => {
+            const a = ((needleAngle(tick) - 90) * Math.PI) / 180;
+            const r1 = 66;
+            const r2 = 59;
+            return (
+              <line
+                key={tick}
+                x1={100 + Math.cos(a) * r1}
+                y1={100 + Math.sin(a) * r1}
+                x2={100 + Math.cos(a) * r2}
+                y2={100 + Math.sin(a) * r2}
+                stroke="currentColor"
+                strokeOpacity="0.28"
+                strokeWidth="1.2"
+              />
+            );
+          })}
           <g transform={`rotate(${angle} 100 100)`}>
             <line
               x1="100"
               y1="100"
               x2="100"
-              y2="28"
+              y2="34"
               stroke="currentColor"
               strokeWidth="2.5"
               strokeLinecap="round"
             />
-            <circle cx="100" cy="100" r="4" fill="currentColor" />
+            <circle cx="100" cy="100" r="4.5" fill="currentColor" />
+            <circle cx="100" cy="100" r="2" fill="var(--panel)" />
           </g>
         </svg>
-        <div className="absolute inset-x-0 bottom-1 text-center">
-          <p className="font-[family-name:var(--font-display)] text-3xl font-semibold tabular-nums">
-            {reading.score}
-          </p>
-          <p className="text-[11px] text-muted-foreground">結構強度</p>
+        <div className="absolute inset-x-0 bottom-0 text-center">
+          <p className="t-display num text-[2rem] leading-none">{reading.score}</p>
+          <p className="t-eyebrow mt-1">結構強度</p>
         </div>
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">日漲跌</dt>
-          <dd
-            className={cn(
-              "mt-0.5 font-semibold tabular-nums",
-              reading.changePct > 0
-                ? "text-[var(--mk-up)]"
-                : reading.changePct < 0
-                  ? "text-[var(--mk-down)]"
-                  : "",
-            )}
-          >
-            {reading.changePct > 0 ? "+" : ""}
-            {reading.changePct.toFixed(2)}%
-          </dd>
-        </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">距MA5</dt>
-          <dd className="mt-0.5 font-semibold tabular-nums">
-            {reading.bias5.toFixed(2)}%
-          </dd>
-        </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">距月線</dt>
-          <dd className="mt-0.5 font-semibold tabular-nums">
-            {reading.bias20.toFixed(2)}%
-          </dd>
-        </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">距季線</dt>
-          <dd className="mt-0.5 font-semibold tabular-nums">
-            {reading.bias60.toFixed(2)}%
-          </dd>
-        </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">波動(20日)</dt>
-          <dd className="mt-0.5 font-semibold tabular-nums">
-            {reading.vol20.toFixed(2)}%
-          </dd>
-        </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <dt className="text-muted-foreground">收盤</dt>
-          <dd className="mt-0.5 font-semibold tabular-nums">
-            {reading.close ? reading.close.toLocaleString("zh-TW") : "—"}
-          </dd>
-        </div>
-      </dl>
-      <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Stat
+          label="日漲跌"
+          value={`${reading.changePct > 0 ? "+" : ""}${reading.changePct.toFixed(2)}%`}
+          tone={reading.changePct}
+        />
+        <Stat label="距 MA5" value={`${reading.bias5.toFixed(2)}%`} />
+        <Stat label="距月線" value={`${reading.bias20.toFixed(2)}%`} />
+        <Stat label="距季線" value={`${reading.bias60.toFixed(2)}%`} />
+        <Stat label="波動（20 日）" value={`${reading.vol20.toFixed(2)}%`} />
+        <Stat
+          label="收盤"
+          value={reading.close ? reading.close.toLocaleString("zh-TW") : "—"}
+        />
+      </div>
+
+      <p className="t-meta mt-3 leading-relaxed">
         {meta.hint}
         {reading.source.includes("tradingIndex") ||
         reading.source.includes("FMTQIK")
           ? " · 指數來源為證交所／櫃買公開資料"
           : ""}
       </p>
-    </article>
+    </Panel>
   );
 }
 
 export function WindDashboard({
-  twse,
-  tpex,
-  builtAt,
+  readings,
+  className,
 }: {
-  twse: WindReading;
-  tpex: WindReading;
-  builtAt: string;
+  readings: WindReading[];
+  className?: string;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
-            風度儀表板
-          </h1>
-          <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
-            風力度＝指數相對均線的結構清楚程度（非乖離率大小）；右上角標籤是站上／跌破結構
-          </p>
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          更新 {new Date(builtAt).toLocaleString("zh-TW", { hour12: false })}
-        </p>
-      </div>
-
+    <div className={cn("space-y-4 sm:space-y-6", className)}>
       <div className="grid gap-4 md:grid-cols-2">
-        <WindDial reading={twse} />
-        <WindDial reading={tpex} />
+        {readings.map((reading) => (
+          <WindDial key={reading.market} reading={reading} />
+        ))}
       </div>
 
-      <section className="rounded-2xl border border-border/50 bg-[var(--panel)]/60 p-4 text-xs text-muted-foreground">
-        <h2 className="font-medium text-foreground">怎麼讀（很重要）</h2>
-        <ul className="mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
+      <Panel padded tone="quiet" as="section">
+        <h2 className="t-title">怎麼讀</h2>
+        <ul className="t-meta mt-2 list-disc space-y-1.5 pl-4 leading-relaxed">
           <li>
-            <span className="text-foreground">強度分數</span>
+            <span className="font-medium text-foreground">強度分數</span>
             依指數相對 MA5／月／季線的細分位置計分（站上權重大、跌破權重小），避免「站上月季」與「跌破月季」同分。
           </li>
           <li>
-            <span className="text-foreground">右上角均線標籤</span>
+            <span className="font-medium text-foreground">右上角均線標籤</span>
             ：多頭／空頭排列、站上月季線、低於五日、跌破月季線等。
           </li>
           <li>強風：結構分數約 62 以上（完整多空排列通常落在這帶）。</li>
@@ -184,7 +169,22 @@ export function WindDashboard({
           <li>亂流：均線方向打架且波動偏高（覆寫分級）。</li>
           <li>無風：結構分數低於 36，或均線糾結且波動低。</li>
         </ul>
-      </section>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {ZONES.map((z) => (
+            <span
+              key={z.label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-[0.6875rem] text-muted-foreground"
+            >
+              <span
+                className="size-2 rounded-full"
+                style={{ background: z.color }}
+                aria-hidden
+              />
+              {z.label} {z.from}–{z.to}
+            </span>
+          ))}
+        </div>
+      </Panel>
     </div>
   );
 }

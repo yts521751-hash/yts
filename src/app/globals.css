@@ -39,6 +39,14 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* 板面專用 token，讓 Tailwind utility 也能直接用 */
+  --color-panel: var(--panel);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  /* 圓角系統：crisp（非圓潤）但一致 —— 4 / 6 / 8 / 11 / 14 px */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,27 +57,36 @@
 }
 
 :root {
-  /* Studio board — cool steel paper + ink navy chrome (no warm ledger, no coastal teal) */
-  --background: #e6ebf0;
-  --foreground: #0f172a;
-  --card: #f4f7fa;
-  --card-foreground: #0f172a;
-  --popover: #f4f7fa;
-  --popover-foreground: #0f172a;
+  /* Studio board — cool steel paper + ink navy chrome */
+  --background: #e8edf3;
+  --foreground: #0d1626;
+  --card: #f7f9fc;
+  --card-foreground: #0d1626;
+  --popover: #f7f9fc;
+  --popover-foreground: #0d1626;
   --primary: #1e3a5f;
   --primary-foreground: #f8fafc;
   --secondary: #d8e0e8;
-  --secondary-foreground: #0f172a;
-  --muted: #dce3ea;
-  --muted-foreground: #475569;
+  --secondary-foreground: #0d1626;
+  --muted: #dde4ec;
+  --muted-foreground: #4a5a6e;
   --accent: #e8eef4;
-  --accent-foreground: #0f172a;
+  --accent-foreground: #0d1626;
   --destructive: #b91c1c;
-  --border: #c5d0db;
-  --input: #c5d0db;
-  --ring: #1e3a5f;
-  --radius: 0.2rem;
-  --panel: #eef2f6;
+  --border: #ccd7e2;
+  --input: #c3d0dd;
+  --ring: #27527f;
+  --radius: 0.5rem;
+
+  /* surface 三層 + hairline 兩階（取代各處臨時 /30 /40 /60 透明度） */
+  --panel: #f3f7fb;
+  --sunken: #e5ebf2;
+  --line: #cfd9e4;
+  --line-strong: #b6c4d4;
+  --row-hover: rgb(30 58 95 / 5%);
+  --shadow-xs: 0 1px 2px rgb(13 22 38 / 5%);
+  --shadow-sm: 0 1px 3px rgb(13 22 38 / 7%), 0 1px 2px rgb(13 22 38 / 4%);
+  --shadow-lg: 0 -8px 32px rgb(13 22 38 / 14%), 0 2px 8px rgb(13 22 38 / 8%);
 
   --mk-up: #c41e3a;
   --mk-down: #0d7a5f;
@@ -77,88 +94,121 @@
   --mk-surge-bg: color-mix(in oklab, #c41e3a 10%, white);
   --mk-rotate: #b45309;
   --mk-rotate-bg: color-mix(in oklab, #b45309 10%, white);
-  --mk-watch: #64748b;
-  --mk-watch-bg: color-mix(in oklab, #64748b 10%, white);
+  --mk-watch: #5a6b80;
+  --mk-watch-bg: color-mix(in oklab, #5a6b80 10%, white);
   --mk-ebb: #312e81;
   --mk-ebb-bg: color-mix(in oklab, #312e81 10%, white);
   --mk-anchor: #1e3a5f;
   --mk-anchor-bg: color-mix(in oklab, #1e3a5f 10%, white);
-  --mk-ink: #0f172a;
+  --mk-anchor-fg: #ffffff;
+  --mk-ink: #0d1626;
+
+  /* 產業 K 線均線色（與四態色區隔，避免混讀） */
+  --ma-5: #b45309;
+  --ma-10: #1d4ed8;
+  --ma-20: #7c3aed;
+  --ma-60: #0f766e;
 
   --chart-1: #c41e3a;
   --chart-2: #b45309;
-  --chart-3: #64748b;
+  --chart-3: #5a6b80;
   --chart-4: #0d7a5f;
   --chart-5: #1e3a5f;
-  --sidebar: #f4f7fa;
-  --sidebar-foreground: #0f172a;
+  --sidebar: #f3f7fb;
+  --sidebar-foreground: #0d1626;
   --sidebar-primary: #1e3a5f;
   --sidebar-primary-foreground: #f8fafc;
   --sidebar-accent: #d8e0e8;
-  --sidebar-accent-foreground: #0f172a;
-  --sidebar-border: #c5d0db;
-  --sidebar-ring: #1e3a5f;
+  --sidebar-accent-foreground: #0d1626;
+  --sidebar-border: #cfd9e4;
+  --sidebar-ring: #27527f;
 }
 
 .dark {
-  --background: #0a0e14;
-  --foreground: #e8eef4;
-  --card: #121820;
-  --card-foreground: #e8eef4;
-  --popover: #121820;
-  --popover-foreground: #e8eef4;
-  --primary: #93c5fd;
-  --primary-foreground: #0a0e14;
+  --background: #080b11;
+  --foreground: #e9eff6;
+  --card: #141b25;
+  --card-foreground: #e9eff6;
+  --popover: #141b25;
+  --popover-foreground: #e9eff6;
+  --primary: #9ecbfd;
+  --primary-foreground: #080b11;
   --secondary: #1a222d;
-  --secondary-foreground: #e8eef4;
+  --secondary-foreground: #e9eff6;
   --muted: #1a222d;
-  --muted-foreground: #94a3b8;
+  --muted-foreground: #9aa8bb;
   --accent: #1e2937;
-  --accent-foreground: #e8eef4;
+  --accent-foreground: #e9eff6;
   --destructive: #f87171;
-  --border: rgb(148 163 184 / 14%);
-  --input: rgb(148 163 184 / 18%);
-  --ring: #93c5fd;
-  --panel: #0e141c;
+  --border: rgb(148 163 184 / 16%);
+  --input: rgb(148 163 184 / 20%);
+  --ring: #9ecbfd;
 
-  --mk-up: #f87171;
+  --panel: #10161f;
+  --sunken: #192230;
+  --line: rgb(148 163 184 / 14%);
+  --line-strong: rgb(148 163 184 / 26%);
+  --row-hover: rgb(148 163 184 / 8%);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 -8px 32px rgb(0 0 0 / 55%), 0 2px 8px rgb(0 0 0 / 40%);
+
+  --mk-up: #fb7185;
   --mk-down: #34d399;
-  --mk-surge: #f87171;
-  --mk-surge-bg: color-mix(in oklab, #f87171 14%, #0e141c);
+  --mk-surge: #fb7185;
+  --mk-surge-bg: color-mix(in oklab, #fb7185 16%, #10161f);
   --mk-rotate: #fbbf24;
-  --mk-rotate-bg: color-mix(in oklab, #fbbf24 12%, #0e141c);
-  --mk-watch: #94a3b8;
-  --mk-watch-bg: color-mix(in oklab, #94a3b8 12%, #0e141c);
+  --mk-rotate-bg: color-mix(in oklab, #fbbf24 14%, #10161f);
+  --mk-watch: #a3b0c2;
+  --mk-watch-bg: color-mix(in oklab, #a3b0c2 14%, #10161f);
   --mk-ebb: #a5b4fc;
-  --mk-ebb-bg: color-mix(in oklab, #a5b4fc 12%, #0e141c);
-  --mk-anchor: #93c5fd;
-  --mk-anchor-bg: color-mix(in oklab, #93c5fd 12%, #0e141c);
-  --mk-ink: #e8eef4;
+  --mk-ebb-bg: color-mix(in oklab, #a5b4fc 14%, #10161f);
+  --mk-anchor: #9ecbfd;
+  --mk-anchor-bg: color-mix(in oklab, #9ecbfd 14%, #10161f);
+  --mk-anchor-fg: #081120;
+  --mk-ink: #e9eff6;
 
-  --chart-1: #f87171;
+  --ma-5: #fbbf24;
+  --ma-10: #7dd3fc;
+  --ma-20: #c4b5fd;
+  --ma-60: #5eead4;
+
+  --chart-1: #fb7185;
   --chart-2: #fbbf24;
-  --chart-3: #94a3b8;
+  --chart-3: #a3b0c2;
   --chart-4: #34d399;
-  --chart-5: #93c5fd;
-  --sidebar: #121820;
-  --sidebar-foreground: #e8eef4;
-  --sidebar-primary: #93c5fd;
-  --sidebar-primary-foreground: #0a0e14;
+  --chart-5: #9ecbfd;
+  --sidebar: #10161f;
+  --sidebar-foreground: #e9eff6;
+  --sidebar-primary: #9ecbfd;
+  --sidebar-primary-foreground: #080b11;
   --sidebar-accent: #1a222d;
-  --sidebar-accent-foreground: #e8eef4;
+  --sidebar-accent-foreground: #e9eff6;
   --sidebar-border: rgb(148 163 184 / 14%);
-  --sidebar-ring: #93c5fd;
+  --sidebar-ring: #9ecbfd;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+    -webkit-tap-highlight-color: transparent;
   }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  /* 鍵盤焦點一律可見（原本幾乎所有自製按鈕都只有 hover） */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  th,
+  td {
+    font-feature-settings: "tnum" 0;
   }
 }
 
@@ -172,35 +222,190 @@ html[data-textsize="lg"] {
   font-size: 20px;
 }
 
-/* Studio atmosphere — soft cool wash only (no hatch, no tide drift) */
+@layer components {
+  /* ——— Surface：三層，禁止再用臨時透明度 ——— */
+  .surface {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xs);
+  }
+  .surface-quiet {
+    background: color-mix(in oklab, var(--panel) 72%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-xl);
+  }
+  .surface-sunken {
+    background: var(--sunken);
+    border-radius: var(--radius-md);
+  }
+  .surface-raised {
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+  }
+  .surface-outline {
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-xl);
+    background: color-mix(in oklab, var(--panel) 45%, transparent);
+  }
+
+  /* ——— 字級 token ——— */
+  .t-eyebrow {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 0.6875rem;
+    line-height: 1.25;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  .t-meta {
+    font-size: 0.75rem;
+    line-height: 1.55;
+    color: var(--muted-foreground);
+  }
+  .t-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+  .t-title {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
+  .t-page {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .t-display {
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+  /* 金額／百分比單位：降一階，數值才是主角 */
+  .unit {
+    font-size: 0.8em;
+    font-weight: 400;
+    opacity: 0.68;
+    margin-left: 0.15em;
+  }
+
+  @media (min-width: 640px) {
+    .t-page {
+      font-size: 1.875rem;
+    }
+    .t-title {
+      font-size: 1.125rem;
+    }
+  }
+
+  /* ——— 表格：一套樣式取代每個 td 重寫 6 個 class ——— */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .data-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--panel);
+    padding: 0.625rem 0.75rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+  }
+  .data-table tbody td {
+    padding: 0.625rem 0.75rem;
+    border-top: 1px solid var(--line);
+    vertical-align: middle;
+  }
+  .data-table tbody tr:first-child td {
+    border-top: 0;
+  }
+  .data-table tbody tr:hover {
+    background: var(--row-hover);
+  }
+  .data-table .cell-num,
+  .data-table th.cell-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .data-table tbody tr[data-selected="true"] {
+    background: var(--mk-surge-bg);
+  }
+  .data-table tbody tr.row-open td {
+    border-top-color: transparent;
+  }
+
+  /* ——— 捲動容器：淡化邊緣、隱藏 scrollbar 噪音 ——— */
+  .scroll-x {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .scroll-x::-webkit-scrollbar {
+    height: 6px;
+  }
+  .scroll-x::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+  }
+  .scroll-y {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .scroll-y::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scroll-y::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border-radius: 999px;
+  }
+}
+
+/* Studio atmosphere — 冷色薄霧 + 極淡製表格線 */
 .studio-atmosphere {
   background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--mk-anchor) 8%, transparent) 0%,
-      transparent 28%
+    radial-gradient(
+      120% 70% at 50% -10%,
+      color-mix(in oklab, var(--mk-anchor) 11%, transparent) 0%,
+      transparent 62%
     ),
     linear-gradient(
       90deg,
-      color-mix(in oklab, var(--mk-ink) 2.5%, transparent) 0 1px,
+      color-mix(in oklab, var(--mk-ink) 2.2%, transparent) 0 1px,
       transparent 1px
     );
-  background-size: auto, 72px 100%;
+  background-size: auto, 88px 100%;
   background-repeat: no-repeat, repeat;
   opacity: 0.9;
 }
 
 .status-card {
-  animation: board-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-  border-left-width: 3px;
-  border-left-style: solid;
-  border-radius: 0;
+  animation: board-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes board-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(5px);
   }
   to {
     opacity: 1;
@@ -208,21 +413,50 @@ html[data-textsize="lg"] {
   }
 }
 
-.logo-mark {
-  border-radius: 0;
-}
-
 .rank-row-enter {
-  animation: row-slide 0.28s ease both;
+  animation: row-slide 0.24s ease both;
 }
 
 @keyframes row-slide {
   from {
     opacity: 0;
-    transform: translateX(-4px);
+    transform: translateX(-3px);
   }
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sunken) 0%,
+    color-mix(in oklab, var(--sunken) 55%, var(--panel)) 50%,
+    var(--sunken) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+/* 使用者要求減少動態時，全站安靜下來 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

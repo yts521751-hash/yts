@@ -9,16 +9,17 @@ import {
   signedClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { Amount } from "@/components/ui/amount";
 
 import { smaSeries } from "@/lib/ma";
 
 type Props = { candles: SectorCandle[] };
 
 const MA_PERIODS = [
-  { key: "ma5", period: 5, color: "#d97706", label: "MA5" },
-  { key: "ma10", period: 10, color: "#2563eb", label: "MA10" },
-  { key: "ma20", period: 20, color: "#7c3aed", label: "MA20" },
-  { key: "ma60", period: 60, color: "#0f766e", label: "MA60" },
+  { key: "ma5", period: 5, color: "var(--ma-5)", label: "MA5" },
+  { key: "ma10", period: 10, color: "var(--ma-10)", label: "MA10" },
+  { key: "ma20", period: 20, color: "var(--ma-20)", label: "MA20" },
+  { key: "ma60", period: 60, color: "var(--ma-60)", label: "MA60" },
 ] as const;
 
 function polyline(
@@ -88,7 +89,7 @@ export function SectorKlineChart({ candles }: Props) {
 
   if (!candles.length || !series) {
     return (
-      <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-border/60 text-sm text-muted-foreground">
+      <div className="surface-outline flex h-72 items-center justify-center text-sm text-muted-foreground">
         尚無日線資料
       </div>
     );
@@ -109,45 +110,79 @@ export function SectorKlineChart({ candles }: Props) {
   };
   const activeIdx = hover != null ? hover : candles.length - 1;
   const active = candles[activeIdx];
+  const gridLines = [0.25, 0.5, 0.75].map((t) => series.yMin + t * (series.yMax - series.yMin));
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-2 px-1">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
         <div>
-          <p className="text-xs text-muted-foreground">
-            {active.date}
-          </p>
-          <p className="mt-0.5 font-[family-name:var(--font-display)] text-2xl font-semibold tabular-nums">
+          <p className="t-eyebrow">{active.date}</p>
+          <p className="t-display num mt-1 flex items-baseline gap-2 text-[1.75rem] leading-none">
             {active.close.toFixed(2)}
-            <span className={cn("ml-2 text-base font-medium", signedClass(active.changePct))}>
+            <span
+              className={cn("text-base font-medium", signedClass(active.changePct))}
+            >
               {formatPct(active.changePct)}
             </span>
           </p>
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] tabular-nums">
-            {MA_PERIODS.map((m) => {
-              const v = series.mas[m.key][activeIdx];
-              return (
-                <span key={m.key} style={{ color: m.color }}>
-                  {m.label} {v != null ? v.toFixed(2) : "—"}
-                </span>
-              );
-            })}
+        </div>
+        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <div className="flex gap-1.5">
+            <dt>開</dt>
+            <dd className="num text-foreground/80">{active.open.toFixed(2)}</dd>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-3 text-xs tabular-nums text-muted-foreground">
-          <span>開 {active.open.toFixed(2)}</span>
-          <span>高 {active.high.toFixed(2)}</span>
-          <span>低 {active.low.toFixed(2)}</span>
-          <span>成交 {formatTurnoverYi(active.amount)}</span>
-          <span className={signedClass(active.flow)}>
-            淨流 {formatYiSigned(active.flow)}
-          </span>
-        </div>
+          <div className="flex gap-1.5">
+            <dt>高</dt>
+            <dd className="num text-foreground/80">{active.high.toFixed(2)}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt>低</dt>
+            <dd className="num text-foreground/80">{active.low.toFixed(2)}</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt>成交</dt>
+            <dd>
+              <Amount
+                text={formatTurnoverYi(active.amount)}
+                className="text-foreground/80"
+              />
+            </dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt>淨流</dt>
+            <dd>
+              <Amount
+                text={formatYiSigned(active.flow)}
+                className={cn("font-medium", signedClass(active.flow))}
+              />
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {MA_PERIODS.map((m) => {
+          const v = series.mas[m.key][activeIdx];
+          return (
+            <span
+              key={m.key}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-sunken px-2 py-0.5 text-[0.6875rem]"
+            >
+              <span
+                className="h-0.5 w-3 rounded-full"
+                style={{ background: m.color }}
+                aria-hidden
+              />
+              <span className="text-muted-foreground">{m.label}</span>
+              <span className="num">{v != null ? v.toFixed(2) : "—"}</span>
+            </span>
+          );
+        })}
       </div>
 
       <div
         ref={scrollRef}
-        className="overflow-x-auto rounded-2xl border border-border/50 bg-[var(--panel)]/50 p-2"
+        className="scroll-x rounded-lg border border-line bg-sunken p-2"
       >
         <svg
           viewBox={`0 0 ${W} ${H_K + H_F + 24}`}
@@ -155,6 +190,19 @@ export function SectorKlineChart({ candles }: Props) {
           role="img"
           aria-label="產業日線 K 線、均線與流入流出"
         >
+          {gridLines.map((v) => (
+            <line
+              key={v}
+              x1={0}
+              y1={yK(v)}
+              x2={W}
+              y2={yK(v)}
+              stroke="currentColor"
+              strokeOpacity={0.08}
+              strokeWidth={1}
+            />
+          ))}
+
           {candles.map((c, i) => {
             const x = xs[i];
             const up = c.close >= c.open;
@@ -170,6 +218,7 @@ export function SectorKlineChart({ candles }: Props) {
                 key={c.date}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
+                onTouchStart={() => setHover(i)}
                 className="cursor-crosshair"
               >
                 <rect
@@ -177,9 +226,17 @@ export function SectorKlineChart({ candles }: Props) {
                   y={0}
                   width={slot}
                   height={H_K + H_F}
-                  fill={hover === i ? "rgba(128,128,128,0.08)" : "transparent"}
+                  fill={hover === i ? "currentColor" : "transparent"}
+                  fillOpacity={hover === i ? 0.06 : 0}
                 />
-                <line x1={x} y1={yH} x2={x} y2={yL} stroke={color} strokeWidth={1.2} />
+                <line
+                  x1={x}
+                  y1={yH}
+                  x2={x}
+                  y2={yL}
+                  stroke={color}
+                  strokeWidth={1.2}
+                />
                 <rect
                   x={x - bodyW / 2}
                   y={top}
@@ -202,9 +259,23 @@ export function SectorKlineChart({ candles }: Props) {
               strokeWidth={1.4}
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity={0.9}
+              opacity={0.92}
             />
           ))}
+
+          {hover != null ? (
+            <line
+              x1={xs[hover]}
+              y1={0}
+              x2={xs[hover]}
+              y2={H_K}
+              stroke="currentColor"
+              strokeOpacity={0.3}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+              pointerEvents="none"
+            />
+          ) : null}
 
           <line
             x1={0}
@@ -212,9 +283,15 @@ export function SectorKlineChart({ candles }: Props) {
             x2={W}
             y2={H_K + 4}
             stroke="currentColor"
-            strokeOpacity={0.15}
+            strokeOpacity={0.14}
           />
-          <text x={PAD_L} y={H_K + 20} fill="currentColor" opacity={0.45} fontSize={11}>
+          <text
+            x={PAD_L}
+            y={H_K + 20}
+            fill="currentColor"
+            opacity={0.45}
+            fontSize={11}
+          >
             流入／流出（億）
           </text>
           {candles.map((c, i) => {
@@ -224,7 +301,11 @@ export function SectorKlineChart({ candles }: Props) {
             const hOut = (c.outflow / series.flowMax) * ((H_F - 36) / 2);
             const mid = baseY + (H_F - 36) / 2;
             return (
-              <g key={`f-${c.date}`} onMouseEnter={() => setHover(i)}>
+              <g
+                key={`f-${c.date}`}
+                onMouseEnter={() => setHover(i)}
+                onTouchStart={() => setHover(i)}
+              >
                 <rect
                   x={x - bodyW / 2}
                   y={mid - hIn}
@@ -246,7 +327,6 @@ export function SectorKlineChart({ candles }: Props) {
           })}
         </svg>
       </div>
-
     </div>
   );
 }

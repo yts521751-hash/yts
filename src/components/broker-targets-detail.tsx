@@ -263,29 +263,30 @@ export function BrokerTargetsDetail({
     : "";
 
   return (
-    <div className={cn("text-[11px]", className)}>
+    <div className={cn("text-xs", className)}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex w-full items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-1.5 text-left transition hover:bg-muted/60"
+        className="inline-flex min-h-10 w-full items-center justify-between gap-2 rounded-lg border border-line bg-sunken px-3 text-left transition-colors hover:border-line-strong"
         aria-expanded={open}
       >
-        <span className="font-medium text-foreground/90">
+        <span className="font-medium">
           券商目標價依據
           {countLabel}
           {loading ? " · 載入中…" : ""}
         </span>
         <ChevronDown
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition",
+            "size-4 shrink-0 text-muted-foreground transition-transform",
             open && "rotate-180",
           )}
+          aria-hidden
         />
       </button>
       {open ? (
         <div className="mt-2 space-y-2">
           {error ? (
-            <p className="text-[11px] text-[var(--mk-ebb)]">{error}</p>
+            <p className="text-[var(--mk-ebb)]">{error}</p>
           ) : null}
           {loading && !targets.length ? (
             <p className="text-muted-foreground">正在查詢內外資券商目標價…</p>
@@ -297,7 +298,7 @@ export function BrokerTargetsDetail({
             </p>
           ) : null}
           {targets.length ? (
-            <ul className="divide-y divide-border/40 overflow-hidden rounded-lg border border-border/40">
+            <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
               {targets.map((r, i) => {
                 const epsLabel = r.epsYear
                   ? `預估${r.epsYear} EPS`
@@ -309,7 +310,7 @@ export function BrokerTargetsDetail({
                 return (
                   <li
                     key={`${r.broker}-${i}`}
-                    className="flex items-baseline justify-between gap-3 px-2.5 py-1.5"
+                    className="flex items-baseline justify-between gap-3 px-2.5 py-2"
                   >
                     <span className="min-w-0 truncate text-muted-foreground">
                       {r.url ? (
@@ -328,17 +329,21 @@ export function BrokerTargetsDetail({
                         </span>
                       )}
                       {r.kind === "foreign" ? (
-                        <span className="ml-1 text-[10px] opacity-60">外資</span>
+                        <span className="ml-1 text-[0.6875rem] opacity-60">
+                          外資
+                        </span>
                       ) : r.kind === "domestic" ? (
-                        <span className="ml-1 text-[10px] opacity-60">國內</span>
+                        <span className="ml-1 text-[0.6875rem] opacity-60">
+                          國內
+                        </span>
                       ) : null}
                       {r.asOf ? (
-                        <span className="ml-1 text-[10px] opacity-70">
+                        <span className="num ml-1 text-[0.6875rem] opacity-70">
                           {r.asOf}
                         </span>
                       ) : null}
                     </span>
-                    <span className="shrink-0 text-right tabular-nums leading-snug">
+                    <span className="num shrink-0 text-right leading-snug">
                       <span className="font-semibold">
                         目標價{" "}
                         {r.target != null ? fmtTarget(r.target, market) : "—"}
@@ -353,7 +358,7 @@ export function BrokerTargetsDetail({
             </ul>
           ) : null}
           {targets.length ? (
-            <p className="text-[10px] leading-relaxed text-muted-foreground">
+            <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
               {market === "us"
                 ? "目標價／EPS 取自 Yahoo 評等紀錄、Google／Bing 新聞等公開報道中的具名券商研究（USD）；同券商保留較新一筆。點券商名可開啟來源。"
                 : "目標價／EPS 取自 Google 新聞、Bing、鉅亨、Yahoo ADR 等公開報道中的具名券商研究（非 FactSet 共識彙總）；同券商保留較新一筆。點券商名可開啟來源。"}
@@ -365,53 +370,7 @@ export function BrokerTargetsDetail({
   );
 }
 
-export type FundMetricsProps = {
-  forwardPe?: number | null;
-  nextYearEps?: number | null;
-  baseEps?: number | null;
-  epsYoy?: number | null;
-  className?: string;
-};
-
-/** 與價值選股相同口徑的三欄指標（成交值展開亦可复用） */
-export function FundMetricsGrid({
-  forwardPe,
-  nextYearEps,
-  baseEps,
-  epsYoy,
-  className,
-}: FundMetricsProps) {
-  return (
-    <div className={cn("grid grid-cols-3 gap-2 text-[11px]", className)}>
-      <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-        <div className="text-muted-foreground">前瞻本益比</div>
-        <div className="mt-0.5 font-semibold tabular-nums">
-          {forwardPe != null && Number.isFinite(forwardPe)
-            ? forwardPe.toFixed(1)
-            : "—"}
-        </div>
-      </div>
-      <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-        <div className="text-muted-foreground">明年／今年 EPS</div>
-        <div className="mt-0.5 font-semibold tabular-nums">
-          {nextYearEps != null ? nextYearEps.toFixed(2) : "—"}
-          {" / "}
-          {baseEps != null ? baseEps.toFixed(2) : "—"}
-        </div>
-      </div>
-      <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-        <div className="text-muted-foreground">EPS YoY</div>
-        <div
-          className={cn(
-            "mt-0.5 font-semibold tabular-nums",
-            epsYoy != null && epsYoy > 0 && "text-[var(--mk-up)]",
-          )}
-        >
-          {epsYoy != null
-            ? `${epsYoy > 0 ? "+" : ""}${epsYoy.toFixed(1)}%`
-            : "—"}
-        </div>
-      </div>
-    </div>
-  );
-}
+export {
+  FundMetricsGrid,
+  type FundMetricsProps,
+} from "@/components/fund-metrics-grid";

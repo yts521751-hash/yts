@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -11,6 +11,16 @@ import {
 import { formatYi, formatYiSigned, signedClass } from "@/lib/format";
 import type { MaScreenerPayload, MaScreenerRow } from "@/lib/ma-screener-types";
 import { cn } from "@/lib/utils";
+import { AppShell } from "@/components/app-shell";
+import { Panel } from "@/components/ui/panel";
+import { ActionButton } from "@/components/ui/action-button";
+import { Amount } from "@/components/ui/amount";
+import { SortChip, SortHeaderButton, type SortState } from "@/components/ui/chip";
+import {
+  EmptyState,
+  NoticeBar,
+  SkeletonRows,
+} from "@/components/ui/states";
 
 type Filter = "all" | "ma5" | "ma10" | "all2";
 type SortKey = "score" | "amt5" | "flow5" | "bias10" | "close";
@@ -58,7 +68,7 @@ const SORTS: Array<{ id: SortKey; label: string }> = [
 ];
 
 function Bias({ value }: { value: number | null }) {
-  if (value == null) return <span className="text-muted-foreground/50">—</span>;
+  if (value == null) return <span className="text-muted-foreground/60">—</span>;
   const up = value >= 0;
   return (
     <span className={up ? "text-[var(--mk-up)]" : "text-[var(--mk-down)]"}>
@@ -72,12 +82,12 @@ function Flag({ on, label }: { on: boolean; label: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold",
+        "inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[0.6875rem] font-semibold",
         on
           ? "bg-[var(--mk-surge-bg)] text-[var(--mk-surge)]"
-          : "bg-muted text-muted-foreground/50",
+          : "bg-sunken text-muted-foreground/55",
       )}
-      title={label}
+      title={on ? `站上 MA${label}` : `未站上 MA${label}`}
     >
       {label}
     </span>
@@ -93,46 +103,52 @@ function RowCard({ row }: { row: MaScreenerRow }) {
   return (
     <Link
       href={sectorHref(row.id)}
-      className="block rounded-xl border border-border/50 bg-[var(--panel)]/70 p-3.5 transition hover:border-[var(--mk-anchor)]/40 hover:bg-muted/30"
+      className="surface block p-3 transition-colors hover:border-line-strong"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-medium">{row.name}</div>
-          <div className="mt-1 text-[11px] text-muted-foreground">
-            收盤 {row.close.toFixed(2)} · 站上 {flags.aboveCount}/2
+          <div className="truncate text-[0.9375rem] font-medium">{row.name}</div>
+          <div className="t-meta mt-0.5">
+            收盤 <span className="num">{row.close.toFixed(2)}</span> · 站上{" "}
+            <span className="num">{flags.aboveCount}/2</span>
           </div>
         </div>
-        <div className="flex flex-wrap justify-end gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Flag on={flags.above5} label="5" />
           <Flag on={flags.above10} label="10" />
+          <ChevronRight
+            className="size-4 text-muted-foreground/60"
+            aria-hidden
+          />
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <div className="text-muted-foreground">5日成交</div>
-          <div className="mt-0.5 font-semibold tabular-nums">
-            {formatYi(row.amt5 ?? 0)}
-          </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="surface-sunken px-2.5 py-2">
+          <div className="t-eyebrow">5 日成交</div>
+          <Amount
+            text={formatYi(row.amt5 ?? 0)}
+            className="mt-1 block text-sm font-semibold"
+          />
         </div>
-        <div className="rounded-lg bg-muted/40 px-2.5 py-2">
-          <div className="text-muted-foreground">5日淨流入</div>
-          <div
+        <div className="surface-sunken px-2.5 py-2">
+          <div className="t-eyebrow">5 日淨流入</div>
+          <Amount
+            text={formatYiSigned(row.flow5 ?? 0)}
             className={cn(
-              "mt-0.5 font-semibold tabular-nums",
+              "mt-1 block text-sm font-semibold",
               signedClass(row.flow5 ?? 0),
             )}
-          >
-            {formatYiSigned(row.flow5 ?? 0)}
-          </div>
+          />
         </div>
       </div>
     </Link>
   );
 }
 
-function seedFrom(
-  initial: MaScreenerPayload | null,
-): { data: MaScreenerPayload | null; fromCache: boolean } {
+function seedFrom(initial: MaScreenerPayload | null): {
+  data: MaScreenerPayload | null;
+  fromCache: boolean;
+} {
   const usable = (p: MaScreenerPayload | null) => {
     if (!p?.rows?.length) return false;
     const noMa10 = p.rows.filter((r) => r.ma10 == null).length;
@@ -249,237 +265,200 @@ export function MaScreenerClient({
     }
   };
 
-  return (
-    <div className="relative min-h-full flex-1 pb-20 md:pb-6">
-      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
-      <div className="relative z-10 mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-          >
-            <ArrowLeft className="size-4" />
-            回資金流
-          </Link>
-          <button
-            type="button"
-            onClick={() => void load(true)}
-            disabled={loading || refreshing}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
-          >
-            <RefreshCw
-              className={cn("size-3.5", (loading || refreshing) && "animate-spin")}
-            />
-            重新掃描
-          </button>
-        </div>
+  const sortState = (key: SortKey): SortState =>
+    sortKey === key ? (asc ? "asc" : "desc") : "none";
 
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          產業均線掃描
-        </h1>
-        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-          找出產業指數收盤站上五日、十日線的族群，並顯示近五日成交與淨流入。點欄位可排序。
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
+  const filterCount = (id: Filter) =>
+    id === "all"
+      ? summary.total
+      : id === "ma5"
+        ? summary.ma5
+        : id === "ma10"
+          ? summary.ma10
+          : summary.all2;
+
+  return (
+    <AppShell
+      market="tw"
+      width="default"
+      back={{ href: "/", label: "回資金流" }}
+      eyebrow="MA SCREENER"
+      title="產業均線掃描"
+      description="找出產業指數收盤站上五日、十日線的族群，並顯示近五日成交與淨流入。"
+      meta={
+        <>
           資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料
           {data?.asOf ? ` · 資料日 ${data.asOf}` : ""}
           {data?.builtAt
             ? ` · 更新 ${new Date(data.builtAt).toLocaleString("zh-TW", { hour12: false })}`
             : ""}
           {fromCache ? " · 本機快取" : ""}
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-2">
+        </>
+      }
+      actions={
+        <ActionButton
+          onClick={() => void load(true)}
+          disabled={loading || refreshing}
+        >
+          <RefreshCw
+            className={cn("size-3.5", (loading || refreshing) && "animate-spin")}
+            aria-hidden
+          />
+          重新掃描
+        </ActionButton>
+      }
+      notice={
+        error ? (
+          <NoticeBar tone="warn">{error}</NoticeBar>
+        ) : shortBars > 0 ? (
+          <NoticeBar tone="warn">
+            有 {shortBars}{" "}
+            個產業日線不足 10 根，兩線可能暫時無法判定；請按「重新掃描」補建報價歷史。
+          </NoticeBar>
+        ) : null
+      }
+    >
+      <Panel padded>
+        <p className="t-eyebrow">篩選</p>
+        <div className="scroll-x mt-2 flex gap-2 pb-1">
           {FILTERS.map((f) => {
-            const count =
-              f.id === "all"
-                ? summary.total
-                : f.id === "ma5"
-                  ? summary.ma5
-                  : f.id === "ma10"
-                    ? summary.ma10
-                    : summary.all2;
             const active = filter === f.id;
             return (
               <button
                 key={f.id}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setFilter(f.id)}
                 className={cn(
-                  "rounded-full border px-3.5 py-1.5 text-xs font-semibold transition",
+                  "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[0.8125rem] font-medium transition-colors",
                   active
-                    ? "border-[var(--mk-anchor)] bg-[var(--mk-anchor)] text-white"
-                    : "border-border/50 bg-[var(--panel)]/70 text-muted-foreground hover:text-foreground",
+                    ? "border-transparent bg-[var(--mk-anchor)] text-[var(--mk-anchor-fg)]"
+                    : "border-line bg-sunken text-muted-foreground hover:text-foreground",
                 )}
               >
                 {f.label}
-                <span
-                  className={cn(
-                    "ml-1.5 tabular-nums",
-                    active ? "opacity-80" : "opacity-50",
-                  )}
-                >
-                  {count}
+                <span className={cn("num", active ? "opacity-80" : "opacity-60")}>
+                  {filterCount(f.id)}
                 </span>
               </button>
             );
           })}
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">{activeHint}</p>
+        <p className="t-meta mt-1.5">{activeHint}</p>
 
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {SORTS.map((s) => {
-            const active = sortKey === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => toggleSort(s.id)}
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition",
-                  active
-                    ? "border-[var(--mk-surge)]/50 bg-[var(--mk-surge-bg)] font-semibold text-foreground"
-                    : "border-border/50 bg-[var(--panel)]/70 text-muted-foreground",
-                )}
-              >
-                {s.label}
-                {active ? (
-                  asc ? (
-                    <ArrowUp className="size-3" />
-                  ) : (
-                    <ArrowDown className="size-3" />
-                  )
-                ) : (
-                  <ArrowUpDown className="size-3 opacity-40" />
-                )}
-              </button>
-            );
-          })}
+        <p className="t-eyebrow mt-4">排序</p>
+        <div className="scroll-x mt-2 flex gap-2 pb-1">
+          {SORTS.map((s) => (
+            <SortChip
+              key={s.id}
+              label={s.label}
+              state={sortState(s.id)}
+              onClick={() => toggleSort(s.id)}
+            />
+          ))}
         </div>
+      </Panel>
 
-        {shortBars > 0 ? (
-          <p className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">
-            有 {shortBars} 個產業日線不足 10 根，兩線可能暫時無法判定；請按「重新掃描」補建報價歷史。
-          </p>
-        ) : null}
-
-        {error ? (
-          <div className="mt-6 rounded-xl border border-[var(--mk-down)]/30 bg-[var(--mk-down)]/10 px-4 py-3 text-sm text-[var(--mk-down)]">
-            {error}
-          </div>
-        ) : null}
-
-        {loading && !data?.rows?.length ? (
-          <div className="mt-6 space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-28 animate-pulse rounded-xl border border-border/40 bg-[var(--panel)]/40"
-              />
+      {loading && !data?.rows?.length ? (
+        <SkeletonRows rows={6} height="h-28" />
+      ) : filtered.length === 0 ? (
+        <Panel>
+          <EmptyState
+            title={`目前沒有符合「${FILTERS.find((f) => f.id === filter)?.label}」的產業`}
+            description={
+              shortBars > 0 || (data?.rows ?? []).some((r) => r.ma10 == null)
+                ? "日線尚未就緒，請按「重新掃描」。"
+                : undefined
+            }
+          />
+        </Panel>
+      ) : (
+        <>
+          <div className="grid gap-3 md:hidden">
+            {filtered.map((row) => (
+              <RowCard key={row.id} row={row} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="mt-6 rounded-xl border border-border/50 bg-[var(--panel)]/60 px-5 py-10 text-center text-sm text-muted-foreground">
-            目前沒有符合「{FILTERS.find((f) => f.id === filter)?.label}」的產業。
-            {shortBars > 0 || (data?.rows ?? []).some((r) => r.ma10 == null)
-              ? " 日線尚未就緒，請按「重新掃描」。"
-              : ""}
-          </div>
-        ) : (
-          <>
-            <div className="mt-6 grid gap-3 md:hidden">
-              {filtered.map((row) => (
-                <RowCard key={row.id} row={row} />
-              ))}
-            </div>
 
-            <div className="mt-6 hidden overflow-x-auto rounded-xl border border-border/50 bg-[var(--panel)]/70 md:block">
-              <table className="w-full min-w-[920px] text-left text-sm">
-                <thead className="border-b border-border/50 bg-muted/30 text-[11px] text-muted-foreground">
+          <Panel className="hidden overflow-hidden md:block">
+            <div className="scroll-x">
+              <table className="data-table min-w-[860px]">
+                <thead>
                   <tr>
-                    <th className="px-4 py-3 font-medium">產業</th>
-                    <th className="px-3 py-3 font-medium">收盤</th>
-                    <th className="px-3 py-3 font-medium">站上</th>
-                    <th className="px-3 py-3 font-medium">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
+                    <th>產業</th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("close")}
+                        onClick={() => toggleSort("close")}
+                      >
+                        收盤
+                      </SortHeaderButton>
+                    </th>
+                    <th>站上</th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("amt5")}
                         onClick={() => toggleSort("amt5")}
                       >
-                        5日成交
-                        {sortKey === "amt5" ? (
-                          asc ? (
-                            <ArrowUp className="size-3" />
-                          ) : (
-                            <ArrowDown className="size-3" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="size-3 opacity-40" />
-                        )}
-                      </button>
+                        5 日成交
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-3 font-medium">
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("flow5")}
                         onClick={() => toggleSort("flow5")}
                       >
-                        5日淨流入
-                        {sortKey === "flow5" ? (
-                          asc ? (
-                            <ArrowUp className="size-3" />
-                          ) : (
-                            <ArrowDown className="size-3" />
-                          )
-                        ) : (
-                          <ArrowUpDown className="size-3 opacity-40" />
-                        )}
-                      </button>
+                        5 日淨流入
+                      </SortHeaderButton>
                     </th>
-                    <th className="px-3 py-3 font-medium">乖離5</th>
-                    <th className="px-4 py-3 font-medium">乖離10</th>
+                    <th className="cell-num">乖離 5</th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("bias10")}
+                        onClick={() => toggleSort("bias10")}
+                      >
+                        乖離 10
+                      </SortHeaderButton>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((row) => {
                     const flags = rowFlags(row);
                     return (
-                      <tr
-                        key={row.id}
-                        className="border-b border-border/30 transition hover:bg-muted/30"
-                      >
-                        <td className="px-4 py-3">
+                      <tr key={row.id}>
+                        <td>
                           <Link
                             href={sectorHref(row.id)}
-                            className="font-medium hover:text-[var(--mk-anchor)]"
+                            className="font-medium transition-colors hover:text-[var(--mk-anchor)]"
                           >
                             {row.name}
                           </Link>
                         </td>
-                        <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                        <td className="cell-num text-muted-foreground">
                           {row.close.toFixed(2)}
                         </td>
-                        <td className="px-3 py-3">
+                        <td>
                           <div className="flex gap-1">
                             <Flag on={flags.above5} label="5" />
                             <Flag on={flags.above10} label="10" />
                           </div>
                         </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          {formatYi(row.amt5 ?? 0)}
+                        <td className="cell-num">
+                          <Amount text={formatYi(row.amt5 ?? 0)} />
                         </td>
                         <td
                           className={cn(
-                            "px-3 py-3 tabular-nums",
+                            "cell-num font-semibold",
                             signedClass(row.flow5 ?? 0),
                           )}
                         >
-                          {formatYiSigned(row.flow5 ?? 0)}
+                          <Amount text={formatYiSigned(row.flow5 ?? 0)} />
                         </td>
-                        <td className="px-3 py-3 tabular-nums">
+                        <td className="cell-num">
                           <Bias value={row.bias5} />
                         </td>
-                        <td className="px-4 py-3 tabular-nums">
+                        <td className="cell-num">
                           <Bias value={row.bias10} />
                         </td>
                       </tr>
@@ -488,9 +467,9 @@ export function MaScreenerClient({
                 </tbody>
               </table>
             </div>
-          </>
-        )}
-      </div>
-    </div>
+          </Panel>
+        </>
+      )}
+    </AppShell>
   );
 }

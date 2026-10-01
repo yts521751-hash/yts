@@ -1,64 +1,92 @@
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { AppShell } from "@/components/app-shell";
+import { Panel } from "@/components/ui/panel";
 
-const TERMS = [
-  {
-    id: "sectors",
-    title: "板塊怎麼分類？",
-    body: "現在分三層：1) 官方產業——依證交所／櫃買 ISIN 產業別（接近三竹產業類型），再取當日成交較熱的代表性個股；2) 題材板塊——人工維護的供應鏈／催化題材；3) 新興自動——從熱議新聞＋成交熱門股自動聚合成概念板塊。可在首頁切換「官方產業／題材／新興自動」。",
-  },
-  {
-    id: "wind",
-    title: "風度儀表板是什麼？",
-    body: "風力度依「指數相對 MA5／月／季線」細分計分（站上權重大、跌破權重小）。等級再依分數帶劃分：強風≈62↑、陣風≈36–61、無風≈36↓；亂流為波動高且均線打架時的覆寫。右上角標籤另標站上／跌破結構。首頁改為伺服器直接帶入 active 快取，開頁即見正確資料，不再顯示 staging 同步提示。",
-  },
-  {
-    id: "cache",
-    title: "為什麼第一次很慢、之後較快？",
-    body: "開頁由伺服器直接讀 active（若僅有完整 staging 會自動升成 active）。平日 18:00 前重建仍先寫 staging，18:00 後灰度切正式檔；使用者畫面不需等待、也不再跳出 staging 提示。瀏覽器另做靜默核對。",
-  },
-  {
-    id: "fear",
-    title: "波動情緒指標怎麼算？",
-    body: "參考 VIX 類波動，而不是當天漲跌。優先讀取 CBOE VIX，並輔以台股加權近約 20 日實現波動（年化）；兩者皆有時以約 0.55／0.45 混合。分數愈高代表市場預期波動／恐慌愈高（例如低波動約 22、常態約 48、偏恐慌約 72、極度恐慌約 85+）。",
-  },
+type Term = {
+  id: string;
+  title: string;
+  body: string;
+  group: "board" | "flow" | "pages" | "ops";
+};
+
+const GROUP_LABEL: Record<Term["group"], string> = {
+  board: "看板與分類",
+  flow: "資金流怎麼算",
+  pages: "各頁怎麼看",
+  ops: "資料與同步",
+};
+
+const GROUP_ORDER: Term["group"][] = ["flow", "board", "pages", "ops"];
+
+const TERMS: Term[] = [
   {
     id: "flow",
+    group: "flow",
     title: "資金流怎麼算？",
     body: "主訊號（權重 80%）＝成交金額 × softSign(漲跌幅)。輔訊號（權重 20%）＝三大法人買賣超股數 × 收盤價（換成億元）。兩者加權後得到當日淨流；沒抓到法人日資料時，當日退回純成交×漲跌，避免數字被無故縮水。",
   },
   {
     id: "in-out",
+    group: "flow",
     title: "流入／流出怎麼拆？",
     body: "成交側：softSign 為正的部分叫流入、為負的絕對值叫流出。法人側：買超進流入、賣超進出流。最後各乘上 80%／20% 再相加；淨流＝流入 − 流出。板塊數字是成分股加總。",
   },
   {
     id: "states",
+    group: "flow",
     title: "強勢／輪動／觀望／出場",
     body: "看近 5 日淨流的正負，再比「近 5 日日均流 − 近 20 日日均流」加速度。強勢＝流入且加速；輪動＝流入但減速；觀望＝流出但減速；出場＝流出加速。",
   },
   {
-    id: "kline",
-    title: "產業日線 K 線是什麼？",
-    body: "把板塊成分股當日開高低收依成交金額加權合成報酬，串成指數型日線（基準 100），並疊 MA5／10／20／60。下方還有每日流入／流出柱。頁面只讀本機快取；MA60 需要至少 60 根日 K，背景同步會補齊歷史行情。",
+    id: "sectors",
+    group: "board",
+    title: "板塊怎麼分類？",
+    body: "現在分三層：1) 官方產業——依證交所／櫃買 ISIN 產業別（接近三竹產業類型），再取當日成交較熱的代表性個股；2) 題材板塊——人工維護的供應鏈／催化題材；3) 新興自動——從熱議新聞＋成交熱門股自動聚合成概念板塊。可在首頁切換「官方產業／題材／新興自動」。",
+  },
+  {
+    id: "fear",
+    group: "board",
+    title: "波動情緒指標怎麼算？",
+    body: "參考 VIX 類波動，而不是當天漲跌。優先讀取 CBOE VIX，並輔以台股加權近約 20 日實現波動（年化）；兩者皆有時以約 0.55／0.45 混合。分數愈高代表市場預期波動／恐慌愈高（例如低波動約 22、常態約 48、偏恐慌約 72、極度恐慌約 85+）。",
   },
   {
     id: "stock-flow",
+    group: "board",
     title: "個股金流怎麼看？",
     body: "首頁可切到「個股金流」：挑成交較熱的個股，用與板塊相同的公式算當日／近 5 日淨流（成交×漲跌為主、法人為輔）。也可在板塊明細裡用當日／5 日切換看成分股。",
   },
   {
+    id: "wind",
+    group: "pages",
+    title: "風度儀表板是什麼？",
+    body: "風力度依「指數相對 MA5／月／季線」細分計分（站上權重大、跌破權重小）。等級再依分數帶劃分：強風≈62↑、陣風≈36–61、無風≈36↓；亂流為波動高且均線打架時的覆寫。右上角標籤另標站上／跌破結構。首頁改為伺服器直接帶入 active 快取，開頁即見正確資料，不再顯示 staging 同步提示。",
+  },
+  {
+    id: "kline",
+    group: "pages",
+    title: "產業日線 K 線是什麼？",
+    body: "把板塊成分股當日開高低收依成交金額加權合成報酬，串成指數型日線（基準 100），並疊 MA5／10／20／60。下方還有每日流入／流出柱。頁面只讀本機快取；MA60 需要至少 60 根日 K，背景同步會補齊歷史行情。",
+  },
+  {
     id: "turnover",
+    group: "pages",
     title: "成交金額排行",
     body: "與資金流無關的單純排行：把當日上市＋上櫃普通股依「一般成交金額」由高到低排列（證交所總成交扣除盤後定價、零股、鉅額，對齊 Yahoo／媒體常見口徑；並排除 ETF）。每日收盤後隨日終大包更新（約 18:00），不做盤中即時輪詢。",
   },
   {
     id: "value",
+    group: "pages",
     title: "價值選股怎麼篩？",
     body: "取當日一般成交金額達 10 億以上的普通股，用多家法人報告預估 EPS 的中位數計算明年 EPS 年增率；條件為明年 EPS YoY 大於 50%，且前瞻本益比（股價÷明年 EPS 中位數）低於 35。日終大包會一併更新快照。",
   },
   {
+    id: "cache",
+    group: "ops",
+    title: "為什麼第一次很慢、之後較快？",
+    body: "開頁由伺服器直接讀 active（若僅有完整 staging 會自動升成 active）。平日 18:00 前重建仍先寫 staging，18:00 後灰度切正式檔；使用者畫面不需等待、也不再跳出 staging 提示。瀏覽器另做靜默核對。",
+  },
+  {
     id: "gray",
+    group: "ops",
     title: "灰度同步是什麼？",
     body: "行情／法人平日 18:00／18:30／19:00 先寫 staging，驗證後才原子切 active（灰度）；18:00 前網頁一律讀上個交易日 active，開頁即有正確資料。force 只觸發背景重建，不卡住畫面。",
   },
@@ -66,37 +94,33 @@ const TERMS = [
 
 export default function GlossaryPage() {
   return (
-    <div className="relative min-h-full flex-1">
-      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
-      <div className="relative z-10 mx-auto max-w-3xl px-4 py-8 sm:px-6">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          回排行榜
-        </Link>
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          金流看板名詞白話小百科
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          專有名詞用白話講一次。金流看板不預測行情，只把成交、漲跌與法人攤開成資金流給你看。資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料。
-        </p>
-        <div className="mt-8 space-y-4">
-          {TERMS.map((t) => (
-            <article
-              key={t.id}
-              id={t.id}
-              className="rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 backdrop-blur-sm"
-            >
-              <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold">
-                {t.title}
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t.body}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </div>
+    <AppShell
+      market="tw"
+      width="narrow"
+      back={{ href: "/", label: "回資金流" }}
+      eyebrow="GLOSSARY"
+      title="名詞白話小百科"
+      description="專有名詞用白話講一次。金流看板不預測行情，只把成交、漲跌與法人攤開成資金流給你看。"
+    >
+      {GROUP_ORDER.map((group) => {
+        const items = TERMS.filter((t) => t.group === group);
+        if (!items.length) return null;
+        return (
+          <section key={group} className="space-y-2.5">
+            <h2 className="t-eyebrow">{GROUP_LABEL[group]}</h2>
+            <div className="space-y-2.5">
+              {items.map((t) => (
+                <Panel as="article" key={t.id} padded>
+                  <h3 className="t-title" id={t.id}>
+                    {t.title}
+                  </h3>
+                  <p className="t-meta mt-1.5 leading-relaxed">{t.body}</p>
+                </Panel>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </AppShell>
   );
 }

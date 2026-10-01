@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { marketFromPath } from "@/components/market-switch";
-import { ArrowLeft } from "lucide-react";
 import { SectorKlineChart } from "@/components/sector-kline-chart";
 import { formatTurnoverYi } from "@/lib/format";
 import type { SectorCandle } from "@/lib/types";
+import { AppShell } from "@/components/app-shell";
+import { Panel, PanelHeader } from "@/components/ui/panel";
+import { ActionButton } from "@/components/ui/action-button";
+import { Amount } from "@/components/ui/amount";
+import { EmptyState, LoadingState } from "@/components/ui/states";
 
 type Member = { code: string; name: string; dayAmt?: number };
 
@@ -46,8 +49,7 @@ export function SectorKlineView({
   const pathname = usePathname();
   const market = marketFromPath(pathname);
   const apiBase = market === "us" ? "/api/us" : "/api";
-  const resolvedBackHref =
-    backHref ?? (market === "us" ? "/us" : "/ma");
+  const resolvedBackHref = backHref ?? (market === "us" ? "/us" : "/ma");
   const resolvedBackLabel =
     backLabel ?? (market === "us" ? "回美股資金流" : "回產業掃描");
   const [name, setName] = useState(initialName || sectorId);
@@ -80,7 +82,7 @@ export function SectorKlineView({
         } else {
           setError(
             data.error ||
-              "產業 K 線資料不足。請回首頁按「觸發背景更新」暖機日行情後再試。",
+              "產業 K 線資料不足。請回首頁按「同步資料」暖機日行情後再試。",
           );
         }
       } catch (e) {
@@ -108,72 +110,66 @@ export function SectorKlineView({
   });
 
   return (
-    <div className="relative min-h-full flex-1">
-      <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
-      <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
-        <Link
-          href={resolvedBackHref}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          {resolvedBackLabel}
-        </Link>
-        <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
-          {name}
-        </h1>
-
-        <div className="mt-6 rounded-2xl border border-border/60 bg-[var(--panel)]/80 p-4 backdrop-blur-sm">
-          {loading ? (
-            <div className="flex h-72 items-center justify-center text-sm text-muted-foreground">
-              載入產業 K 線…
-            </div>
-          ) : candles.length ? (
-            <SectorKlineChart candles={candles} />
-          ) : (
-            <div className="flex h-72 flex-col items-center justify-center gap-3 px-4 text-center text-sm text-muted-foreground">
-              <p>{error || "尚無日線資料"}</p>
-              <button
-                type="button"
-                onClick={() => void load(true)}
-                className="border border-border px-3 py-1.5 text-xs text-foreground transition hover:bg-muted/50"
-              >
+    <AppShell
+      market={market}
+      width="default"
+      back={{ href: resolvedBackHref, label: resolvedBackLabel }}
+      eyebrow="SECTOR K-LINE"
+      title={name}
+      description="成分股開高低收依成交金額加權合成的指數型日線（基準 100），疊 MA5／10／20／60，下方為每日流入／流出。"
+    >
+      <Panel padded>
+        {loading ? (
+          <LoadingState label="載入產業 K 線…" />
+        ) : candles.length ? (
+          <SectorKlineChart candles={candles} />
+        ) : (
+          <EmptyState
+            title="尚無日線資料"
+            description={error || undefined}
+            action={
+              <ActionButton size="sm" onClick={() => void load(true)}>
                 再試一次
-              </button>
-            </div>
-          )}
-        </div>
-
-        {sortedMembers.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-border/50 bg-[var(--panel)]/60 p-4 text-sm text-muted-foreground">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-medium text-foreground">成分股（依成交值）</p>
-              {membersAsOf ? (
-                <p className="text-[11px]">成交日 {membersAsOf}</p>
-              ) : null}
-            </div>
-            <ul className="mt-3 divide-y divide-border/40">
-              {sortedMembers.map((m) => (
-                <li
-                  key={m.code}
-                  className="flex items-center justify-between gap-3 py-2 text-xs first:pt-0 last:pb-0"
-                >
-                  <span className="min-w-0 truncate text-foreground">
-                    <span className="tabular-nums text-muted-foreground">
-                      {m.code}
-                    </span>{" "}
-                    {m.name}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-foreground">
-                    {m.dayAmt != null && m.dayAmt > 0
-                      ? formatTurnoverYi(m.dayAmt)
-                      : "—"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+              </ActionButton>
+            }
+          />
         )}
-      </div>
-    </div>
+      </Panel>
+
+      {sortedMembers.length > 0 && (
+        <Panel padded>
+          <PanelHeader
+            eyebrow="MEMBERS"
+            title="成分股（依成交值）"
+            actions={
+              membersAsOf ? (
+                <span className="t-meta">成交日 {membersAsOf}</span>
+              ) : null
+            }
+          />
+          <ul className="mt-3 divide-y divide-line">
+            {sortedMembers.map((m) => (
+              <li
+                key={m.code}
+                className="flex items-center justify-between gap-3 py-2 text-sm first:pt-0 last:pb-0"
+              >
+                <span className="min-w-0 truncate">
+                  <span className="num text-muted-foreground">{m.code}</span>{" "}
+                  {m.name}
+                </span>
+                {m.dayAmt != null && m.dayAmt > 0 ? (
+                  <Amount
+                    text={formatTurnoverYi(m.dayAmt)}
+                    className="shrink-0 font-medium"
+                  />
+                ) : (
+                  <span className="shrink-0 text-muted-foreground">—</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+    </AppShell>
   );
 }

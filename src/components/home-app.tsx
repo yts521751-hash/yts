@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AppHeader } from "@/components/app-header";
+import { RefreshCw, X } from "lucide-react";
+import { AppShell } from "@/components/app-shell";
+import { SyncBanner } from "@/components/sync-banner";
+import { ActionButton } from "@/components/ui/action-button";
+import { Segmented } from "@/components/ui/segmented";
+import { Panel } from "@/components/ui/panel";
+import { ErrorState, LoadingState, NoticeBar } from "@/components/ui/states";
 import { SectorDetail } from "@/components/sector-detail";
 import {
   SectorRanking,
@@ -25,7 +31,6 @@ import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import type { MarketId } from "@/components/market-switch";
 
-type TextSize = "sm" | "md" | "lg";
 type LoadState = "loading" | "ready" | "error";
 type BoardMode = "sector" | "stock";
 
@@ -110,8 +115,6 @@ export function HomeApp({
       /* ignore */
     }
   }, [flowPeriod]);
-  const [textSize, setTextSize] = useState<TextSize>("sm");
-  const [dark, setDark] = useState(false);
   const seed = ((): FlowClientSnapshot | null => {
     const session = getSession();
     if (session?.sectors && session.sectors.length >= minSectors) return session;
@@ -162,17 +165,6 @@ export function HomeApp({
 
   useEffect(() => {
     try {
-      const ts = (localStorage.getItem("jinchao_text") as TextSize) || "sm";
-      const theme = localStorage.getItem("jinchao_theme");
-      const preferDark =
-        theme === "dark" ||
-        (theme !== "light" &&
-          window.matchMedia("(prefers-color-scheme: dark)").matches);
-      setTextSize(ts);
-      setDark(preferDark);
-      document.documentElement.dataset.textsize = ts;
-      document.documentElement.classList.toggle("dark", preferDark);
-
       // SSR 真實資料才寫入 session／本機；避免把 demo／空殼蓋掉分頁內已有的正確收盤
       if (
         initialFlow?.sectors &&
@@ -416,29 +408,6 @@ export function HomeApp({
   }, [boardMode, stocks.length, stocksLoading, loadStocks]);
 
 
-  const onTextSize = (s: TextSize) => {
-    setTextSize(s);
-    document.documentElement.dataset.textsize = s;
-    try {
-      localStorage.setItem("jinchao_text", s);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onToggleDark = () => {
-    setDark((d) => {
-      const next = !d;
-      document.documentElement.classList.toggle("dark", next);
-      try {
-        localStorage.setItem("jinchao_theme", next ? "dark" : "light");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  };
-
   const counts = useMemo(() => countByStatus(sectors), [sectors]);
   const isDemo = brief?.isDemo === true || source.includes("demo");
 
@@ -472,186 +441,142 @@ export function HomeApp({
     void loadStocks(false);
   }, [stocks.length, stocksLoading, loadStocks]);
 
+  const syncBusy = Boolean(syncing || syncProgress);
+  const refreshDisabled =
+    boardMode === "stock"
+      ? stocksLoading
+      : syncing ||
+        (refreshing && sectors.length === 0) ||
+        (loadState === "loading" && sectors.length === 0);
+  const refreshLabel =
+    boardMode === "stock"
+      ? stocksLoading
+        ? "讀取中…"
+        : "重新整理個股"
+      : syncing
+        ? `同步中 ${syncProgress?.percent ?? 0}%`
+        : refreshing && sectors.length === 0
+          ? "讀取中…"
+          : "同步資料";
+
   return (
-    <div className="relative flex min-h-full flex-1 flex-col">
-      <div
-        className="studio-atmosphere pointer-events-none absolute inset-0"
-        aria-hidden
-      />
-      {syncing || syncProgress ? (
-        <div
-          className="fixed inset-x-0 top-0 z-[100] border-b-2 px-4 py-3 shadow-lg sm:px-6"
-          style={{
-            borderColor: "#1e3a5f",
-            background: "#dbe7f5",
-            color: "#0f172a",
-          }}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-2">
-            <div className="flex items-center justify-between gap-3 text-sm sm:text-base">
-              <span className="font-bold tracking-tight">
-                正在同步資料… {syncProgress?.percent ?? 0}%
-              </span>
-              <span className="max-w-[55%] truncate text-xs opacity-80 sm:text-sm">
-                {syncProgress?.label || "請稍候"}
-              </span>
-            </div>
-            <div className="h-3 overflow-hidden rounded-sm bg-black/20">
-              <div
-                className="h-full rounded-sm transition-[width] duration-300"
-                style={{
-                  width: `${Math.max(4, syncProgress?.percent ?? 0)}%`,
-                  background: "#1e3a5f",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
-      <AppHeader
-        dateLabel={brief?.date ?? "載入中"}
-        updatedAt={brief?.updatedAt ?? "—"}
-        isDemo={isDemo}
-        fearLabel={brief?.fearLabel ?? "—"}
-        fearScore={brief?.fearScore ?? 0}
-        textSize={textSize}
-        onTextSize={onTextSize}
-        dark={dark}
-        onToggleDark={onToggleDark}
-        market={market}
-      />
-
-      <main className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-4 px-4 py-4 sm:px-6 sm:py-6">
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight sm:text-3xl">
-                {boardMode === "sector" ? "板塊資金流排行榜" : "個股資金流排行榜"}
-              </h1>
-              {boardMode === "stock" && stocksDate ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {market === "us"
-                    ? `資料日 ${stocksDate} · 美股金流（成交×漲跌＋相對成交量）`
-                    : `資料日 ${stocksDate} · 與板塊相同金流公式（成交×漲跌 80%＋法人 20%）`}
-                </p>
-              ) : (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {market === "us" ? (
-                    "手機／電腦共用成交額→淨流排序（美股：成交×漲跌＋相對成交量）"
-                  ) : (
-                    <>
-                      手機／電腦共用成交額→淨流排序 ·{" "}
-                      <Link
-                        href="/ma"
-                        className="text-[var(--mk-anchor)] underline-offset-2 hover:underline"
-                      >
-                        產業均線掃描
-                      </Link>
-                    </>
-                  )}
-                </p>
+    <AppShell
+      market={market}
+      width="wide"
+      dateLabel={brief?.date ?? "載入中"}
+      updatedAt={brief?.updatedAt ?? "—"}
+      isDemo={isDemo}
+      fearLabel={brief?.fearLabel ?? "—"}
+      fearScore={brief?.fearScore ?? 0}
+      banner={
+        syncBusy ? (
+          <SyncBanner
+            progress={syncProgress ?? { percent: 0, label: "請稍候" }}
+          />
+        ) : null
+      }
+      eyebrow={market === "us" ? "US MONEY FLOW" : "TAIWAN MONEY FLOW"}
+      title={boardMode === "sector" ? "板塊資金流排行榜" : "個股資金流排行榜"}
+      description={
+        boardMode === "stock" && stocksDate ? (
+          market === "us" ? (
+            `資料日 ${stocksDate}｜美股金流 ＝ 成交×漲跌 ＋ 相對成交量`
+          ) : (
+            `資料日 ${stocksDate}｜與板塊相同金流公式（成交×漲跌 80% ＋ 法人 20%）`
+          )
+        ) : market === "us" ? (
+          "依成交額→淨流排序，手機與電腦共用同一份排名。"
+        ) : (
+          <>
+            依成交額→淨流排序，手機與電腦共用同一份排名。也可看{" "}
+            <Link
+              href="/ma"
+              className="font-medium text-[var(--mk-anchor)] underline-offset-4 hover:underline"
+            >
+              產業均線掃描
+            </Link>
+            。
+          </>
+        )
+      }
+      actions={
+        <>
+          <Segmented
+            ariaLabel="看板模式"
+            value={boardMode}
+            onChange={setBoardMode}
+            items={[
+              { value: "sector", label: "板塊金流" },
+              { value: "stock", label: "個股金流" },
+            ]}
+          />
+          <ActionButton
+            onClick={() => {
+              if (boardMode === "stock") void loadStocks(true);
+              else void runForegroundSync();
+            }}
+            disabled={refreshDisabled}
+          >
+            <RefreshCw
+              className={cn(
+                "size-3.5",
+                (syncing || stocksLoading || refreshing) && "animate-spin",
               )}
-            </div>
-            <div className="flex flex-col items-end gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (boardMode === "stock") void loadStocks(true);
-                  else void runForegroundSync();
-                }}
-                disabled={
-                  boardMode === "stock"
-                    ? stocksLoading
-                    : syncing ||
-                      (refreshing && sectors.length === 0) ||
-                      (loadState === "loading" && sectors.length === 0)
+              aria-hidden
+            />
+            {refreshLabel}
+          </ActionButton>
+        </>
+      }
+      notice={
+        error && boardMode === "sector" ? (
+          <NoticeBar tone="warn">
+            {isDemo
+              ? `真實資料暫不可用，已改顯示示範資料：${error}`
+              : `提醒：${error}`}
+          </NoticeBar>
+        ) : null
+      }
+    >
+        {boardMode === "sector" ? (
+          loadState === "loading" && !sectors.length ? (
+            <Panel>
+              <LoadingState label="載入板塊資金流…" />
+            </Panel>
+          ) : loadState === "error" && !sectors.length ? (
+            <Panel>
+              <ErrorState
+                description={error ?? undefined}
+                action={
+                  <ActionButton size="sm" onClick={() => void loadFlow()}>
+                    再試一次
+                  </ActionButton>
                 }
-                className="border border-border bg-[var(--panel)] px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-[var(--mk-anchor)] hover:text-foreground disabled:opacity-50"
-              >
-                {boardMode === "stock"
-                  ? stocksLoading
-                    ? "讀取中…"
-                    : "重新整理個股"
-                  : syncing
-                    ? `同步中 ${syncProgress?.percent ?? 0}%`
-                    : refreshing && sectors.length === 0
-                      ? "讀取中…"
-                      : "同步資料"}
-              </button>
-            </div>
-          </div>
-
-          <div className="inline-flex border border-border bg-muted/30 p-0.5">
-            {(
-              [
-                ["sector", "板塊金流"],
-                ["stock", "個股金流"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setBoardMode(key)}
-                className={cn(
-                  "px-3 py-1.5 text-xs transition",
-                  boardMode === key
-                    ? "bg-[var(--mk-anchor)] font-semibold text-white"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-
-          {error && boardMode === "sector" && (
-            <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-              {isDemo
-                ? `真實資料暫不可用，已改顯示示範資料：${error}`
-                : `提醒：${error}`}
-            </p>
-          )}
-
-          {boardMode === "sector" ? (
-            loadState === "loading" && !sectors.length ? (
-              <div className="border border-border bg-[var(--panel)] px-4 py-10 text-center text-sm text-muted-foreground">
-                載入中…
-              </div>
-            ) : loadState === "error" && !sectors.length ? (
-              <div className="border border-destructive/30 bg-destructive/5 px-4 py-10 text-center text-sm">
-                <p className="font-medium">無法載入資料</p>
-                <p className="mt-1 text-muted-foreground">{error}</p>
-                <button
-                  type="button"
-                  className="mt-3 rounded-lg border px-3 py-1.5 text-xs"
-                  onClick={() => void loadFlow()}
-                >
-                  再試一次
-                </button>
-              </div>
-            ) : (
-              <StatusCards
-                counts={counts}
-                active={filter}
-                onChange={setFilter}
               />
-            )
-          ) : null}
-        </section>
+            </Panel>
+          ) : (
+            <StatusCards counts={counts} active={filter} onChange={setFilter} />
+          )
+        ) : null}
 
         {boardMode === "sector" ? (
-          <FlowBulletin title="板塊金流公布欄" rows={sectorBulletinRows} market={market} />
+          <FlowBulletin
+            title="板塊金流公布欄"
+            rows={sectorBulletinRows}
+            market={market}
+          />
         ) : (
-          <FlowBulletin title="個股金流公布欄" rows={stockBulletinRows} market={market} />
+          <FlowBulletin
+            title="個股金流公布欄"
+            rows={stockBulletinRows}
+            market={market}
+          />
         )}
 
         {boardMode === "sector" && sectors.length > 0 && (
           <>
-            <section className="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]">
-              <div className="min-h-[320px] border border-border bg-[var(--panel)] p-2 sm:min-h-[480px] sm:p-3">
+            <section className="grid gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)] lg:items-start">
+              <Panel className="min-h-[360px] overflow-hidden sm:min-h-[520px]">
                 <SectorRanking
                   sectors={sectors}
                   selectedId={selected?.id}
@@ -671,8 +596,8 @@ export function HomeApp({
                   onPeriodChange={setFlowPeriod}
                   market={market}
                 />
-              </div>
-              <div className="hidden lg:block">
+              </Panel>
+              <div className="hidden lg:sticky lg:top-[7.5rem] lg:block">
                 <SectorDetail
                   sector={selected}
                   onClose={() => setSelected(null)}
@@ -685,15 +610,33 @@ export function HomeApp({
               <div className="fixed inset-0 z-50 lg:hidden">
                 <button
                   type="button"
-                  className="absolute inset-0 bg-black/40"
-                  aria-label="關閉"
+                  className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+                  aria-label="關閉板塊明細"
                   onClick={() => setSelected(null)}
                 />
                 <div
-                  className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-auto rounded-t-2xl border border-border/60 bg-[var(--panel)] p-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-xl"
+                  className="surface-raised absolute inset-x-0 bottom-0 flex max-h-[88vh] flex-col rounded-b-none pb-[env(safe-area-inset-bottom)]"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`${selected.name} 板塊明細`}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <div className="flex items-center justify-between gap-2 px-3 pt-2.5 pb-1">
+                    <span
+                      className="mx-auto h-1 w-10 rounded-full bg-line-strong"
+                      aria-hidden
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSelected(null)}
+                      aria-label="關閉"
+                      className="absolute right-2 top-2 inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sunken hover:text-foreground"
+                    >
+                      <X className="size-4" aria-hidden />
+                    </button>
+                  </div>
                   <SectorDetail
+                    variant="sheet"
                     sector={selected}
                     onClose={() => setSelected(null)}
                     period={flowPeriod}
@@ -706,38 +649,24 @@ export function HomeApp({
         )}
 
         {boardMode === "stock" && (
-          <section className="min-h-[320px] border border-border bg-[var(--panel)] p-2 sm:min-h-[480px] sm:p-3">
+          <Panel className="min-h-[360px] overflow-hidden sm:min-h-[520px]">
             {stocksLoading && !stocks.length ? (
-              <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                載入個股資金流…
-              </p>
+              <LoadingState label="載入個股資金流…" />
             ) : stocksError && !stocks.length ? (
-              <div className="px-4 py-10 text-center text-sm">
-                <p className="font-medium">無法載入個股資金流</p>
-                <p className="mt-1 text-muted-foreground">{stocksError}</p>
-                <button
-                  type="button"
-                  className="mt-3 border px-3 py-1.5 text-xs"
-                  onClick={() => void loadStocks(true)}
-                >
-                  再試一次
-                </button>
-              </div>
+              <ErrorState
+                title="無法載入個股資金流"
+                description={stocksError}
+                action={
+                  <ActionButton size="sm" onClick={() => void loadStocks(true)}>
+                    再試一次
+                  </ActionButton>
+                }
+              />
             ) : (
               <StockRanking rows={stocks} limit={20} market={market} />
             )}
-          </section>
+          </Panel>
         )}
-      </main>
-
-      <footer className="relative z-10 space-y-1 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
-        <p>金流看板</p>
-        <p>
-          {market === "us"
-            ? "資料來源：Yahoo Finance、Nasdaq 公開行情"
-            : "資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料"}
-        </p>
-      </footer>
-    </div>
+    </AppShell>
   );
 }

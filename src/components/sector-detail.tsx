@@ -13,10 +13,14 @@ import {
   signedClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { CandlestickChart, X } from "lucide-react";
+import { CandlestickChart, MousePointerClick, X } from "lucide-react";
 import { marketFromPath } from "@/components/market-switch";
 import { UsStockName } from "@/components/us-stock-name";
+import { Segmented } from "@/components/ui/segmented";
+import { Stat } from "@/components/ui/stat";
+import { StatusPill } from "@/components/ui/chip";
+import { Amount } from "@/components/ui/amount";
+import { EmptyState } from "@/components/ui/states";
 
 type StockPeriod = "day" | "d3" | "d5";
 
@@ -26,18 +30,28 @@ type Props = {
   /** 與排行榜共用的時間維度（受控）；未傳則內部自管 */
   period?: StockPeriod;
   onPeriodChange?: (period: StockPeriod) => void;
+  /** sheet：手機底部面板（外框由父層提供） */
+  variant?: "panel" | "sheet";
 };
+
+const PERIOD_ITEMS = [
+  { value: "day" as StockPeriod, label: "當日" },
+  { value: "d3" as StockPeriod, label: "3 日" },
+  { value: "d5" as StockPeriod, label: "5 日" },
+];
 
 export function SectorDetail({
   sector,
   onClose,
   period: periodProp,
   onPeriodChange,
+  variant = "panel",
 }: Props) {
   const pathname = usePathname();
   const market = marketFromPath(pathname);
   const apiBase = market === "us" ? "/api/us" : "/api";
   const sectorPageBase = market === "us" ? "/us/sectors" : "/sectors";
+  const isSheet = variant === "sheet";
   const [periodInner, setPeriodInner] = useState<StockPeriod>("day");
   const stockPeriod = periodProp ?? periodInner;
   const setStockPeriod = (next: StockPeriod) => {
@@ -63,248 +77,289 @@ export function SectorDetail({
 
   if (!sector) {
     return (
-      <div className="flex h-full min-h-[280px] flex-col items-center justify-center border border-dashed border-border/70 bg-[var(--panel)]/40 px-6 py-10 text-center">
-        <p className="font-[family-name:var(--font-display)] text-lg text-foreground/80">
-          點選排行榜看板塊
-        </p>
+      <div className="surface-outline flex h-full min-h-[300px] items-center">
+        <EmptyState
+          icon={<MousePointerClick className="size-4" aria-hidden />}
+          title="點選排行榜看板塊明細"
+          description="會顯示淨流、流入／流出、量能與成分股金流。"
+        />
       </div>
     );
   }
 
   const meta = STATUS_META[sector.status];
+  const amtLabel =
+    stockPeriod === "day" ? "成交" : stockPeriod === "d3" ? "3日成交" : "5日成交";
+  const flowLabel =
+    stockPeriod === "day" ? "淨流" : stockPeriod === "d3" ? "3日流" : "5日流";
 
   return (
-    <div className="flex h-full min-h-[280px] flex-col border border-border/60 bg-[var(--panel)]/80 shadow-sm animate-in fade-in slide-in-from-right-2 duration-300">
-      <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight">
-              {sector.name}
-            </h2>
-            <span
-              className="px-2 py-0.5 text-xs font-medium"
-              style={{ background: meta.bg, color: meta.color }}
-            >
-              {meta.label}
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          aria-label="關閉"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3">
-        <Metric
-          label="當日淨流"
-          value={formatMarketYiSigned(sector.dayFlow, market)}
-          tone={sector.dayFlow}
-        />
-        <Metric
-          label="流入／流出"
-          value={`${formatMarketYi(sector.dayIn, market)} / ${formatMarketYi(sector.dayOut, market)}`}
-        />
-        <Metric
-          label="成交額"
-          value={formatMarketYi(sector.dayAmt, market)}
-        />
-        <Metric
-          label="近 3 日流"
-          value={formatMarketYiSigned(sector.d3Flow, market)}
-          tone={sector.d3Flow}
-        />
-        <Metric
-          label="近 5 日流"
-          value={formatMarketYiSigned(sector.d5Flow, market)}
-          tone={sector.d5Flow}
-        />
-        <Metric
-          label="加速度/日"
-          value={formatMarketYiSigned(sector.accel, market)}
-          tone={sector.accel}
-        />
-        <Metric label="量能熱度" value={formatHeat(sector.heat)} />
-      </div>
-
-      {market !== "us" ? (
-        <div className="px-4 pb-2">
-          <Link
-            href={`${sectorPageBase}/${encodeURIComponent(sector.id)}?from=home`}
-            prefetch
-            onMouseEnter={() => {
-              // 滑過就預熱 API／路由，點進去幾乎秒開
-              void fetch(
-                `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
-                { cache: "force-cache" },
-              ).catch(() => null);
-            }}
-            onTouchStart={() => {
-              void fetch(
-                `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
-                { cache: "force-cache" },
-              ).catch(() => null);
-            }}
-            onClick={(e) => {
-              // 避免行動版底層 sheet／overlay 攔截導致「打不開」
-              e.stopPropagation();
-            }}
-            className="inline-flex w-full items-center justify-center gap-2 border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium transition hover:bg-muted/70"
-          >
-            <CandlestickChart className="size-4" />
-            產業 K 線
-          </Link>
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2">
-        <p className="text-xs font-medium text-muted-foreground">成分股金流</p>
-        <div className="inline-flex border border-border bg-muted/30 p-0.5">
-          {(
-            [
-              ["day", "當日"],
-              ["d3", "3 日"],
-              ["d5", "5 日"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setStockPeriod(key)}
-              className={cn(
-                "px-2 py-0.5 text-[11px] transition",
-                stockPeriod === key
-                  ? "bg-[var(--mk-anchor)] font-semibold text-white"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ScrollArea className="flex-1 px-2 pb-3">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-[11px] text-muted-foreground">
-              <th className="px-2 py-1.5 font-medium">代號／名稱</th>
-              <th className="px-2 py-1.5 text-right font-medium">股價</th>
-              <th className="px-2 py-1.5 text-right font-medium">
-                {stockPeriod === "day"
-                  ? "成交"
-                  : stockPeriod === "d3"
-                    ? "3日成交"
-                    : "5日成交"}
-              </th>
-              <th className="px-2 py-1.5 text-right font-medium">
-                {stockPeriod === "day"
-                  ? "淨流"
-                  : stockPeriod === "d3"
-                    ? "3日流"
-                    : "5日流"}
-              </th>
-              <th className="px-2 py-1.5 text-right font-medium">漲跌</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stocks.map((s) => {
-              const amt =
-                stockPeriod === "day"
-                  ? s.dayAmt
-                  : stockPeriod === "d3"
-                    ? s.d3
-                    : s.d5;
-              const flow =
-                stockPeriod === "day"
-                  ? s.dayFlow
-                  : stockPeriod === "d3"
-                    ? s.d3Flow
-                    : s.d5Flow;
-              return (
-                <tr
-                  key={s.code}
-                  className="border-t border-border/40 transition hover:bg-muted/40"
-                >
-                  <td className="px-2 py-2">
-                    {market === "us" ? (
-                      <>
-                        <div className="font-medium tabular-nums">{s.code}</div>
-                        <UsStockName
-                          code={s.code}
-                          name={s.name}
-                          variant="compact"
-                          emphasize={false}
-                          className="text-[11px] text-muted-foreground"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <div className="font-medium">{s.name}</div>
-                        <div className="text-[11px] tabular-nums text-muted-foreground">
-                          {s.code}
-                        </div>
-                      </>
-                    )}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {s.close != null && s.close > 0
-                      ? s.close.toFixed(s.close >= 100 ? 0 : 2)
-                      : "—"}
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">
-                    {formatMarketYi(amt, market)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-2 py-2 text-right font-medium tabular-nums",
-                      signedClass(flow),
-                    )}
-                  >
-                    {formatMarketYiSigned(flow, market)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-2 py-2 text-right tabular-nums",
-                      signedClass(s.changePct),
-                    )}
-                  >
-                    {formatPct(s.changePct)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </ScrollArea>
-    </div>
-  );
-}
-
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: number;
-}) {
-  return (
-    <div className="bg-muted/40 px-2.5 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p
+    <div
+      className={cn(
+        "flex min-h-0 flex-col",
+        isSheet ? "flex-1 overflow-hidden" : "surface h-full min-h-[300px]",
+      )}
+    >
+      <div
         className={cn(
-          "mt-0.5 text-sm font-semibold tabular-nums",
-          tone !== undefined ? signedClass(tone) : undefined,
+          "flex items-start justify-between gap-3 border-b border-line px-4 py-3",
+          isSheet && "border-b-0 pt-0 pb-2",
         )}
       >
-        {value}
-      </p>
+        <div className="min-w-0">
+          <p className="t-eyebrow mb-1">SECTOR DETAIL</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="t-title truncate">{sector.name}</h2>
+            <StatusPill
+              label={meta.label}
+              color={meta.color}
+              background={meta.bg}
+            />
+          </div>
+        </div>
+        {!isSheet ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sunken hover:text-foreground"
+            aria-label="關閉"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        ) : null}
+      </div>
+
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          isSheet ? "scroll-y overscroll-contain" : "flex flex-col",
+        )}
+      >
+        <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3">
+          <Stat
+            label="當日淨流"
+            value={<Amount text={formatMarketYiSigned(sector.dayFlow, market)} />}
+            tone={sector.dayFlow}
+          />
+          <Stat
+            label="流入／流出"
+            value={`${formatMarketYi(sector.dayIn, market)} / ${formatMarketYi(sector.dayOut, market)}`}
+            size="sm"
+          />
+          <Stat
+            label="成交額"
+            value={<Amount text={formatMarketYi(sector.dayAmt, market)} />}
+          />
+          <Stat
+            label="近 3 日流"
+            value={<Amount text={formatMarketYiSigned(sector.d3Flow, market)} />}
+            tone={sector.d3Flow}
+          />
+          <Stat
+            label="近 5 日流"
+            value={<Amount text={formatMarketYiSigned(sector.d5Flow, market)} />}
+            tone={sector.d5Flow}
+          />
+          <Stat
+            label="加速度／日"
+            value={<Amount text={formatMarketYiSigned(sector.accel, market)} />}
+            tone={sector.accel}
+          />
+          <Stat label="量能熱度" value={formatHeat(sector.heat)} />
+          <Stat
+            label="20 日漲幅"
+            value={formatPct(sector.priceChange20d)}
+            tone={sector.priceChange20d}
+          />
+        </div>
+
+        {market !== "us" ? (
+          <div className="px-4 pb-3">
+            <Link
+              href={`${sectorPageBase}/${encodeURIComponent(sector.id)}?from=home`}
+              prefetch
+              onMouseEnter={() => {
+                // 滑過就預熱 API／路由，點進去幾乎秒開
+                void fetch(
+                  `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
+                  { cache: "force-cache" },
+                ).catch(() => null);
+              }}
+              onTouchStart={() => {
+                void fetch(
+                  `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
+                  { cache: "force-cache" },
+                ).catch(() => null);
+              }}
+              onClick={(e) => {
+                // 避免行動版底層 sheet／overlay 攔截導致「打不開」
+                e.stopPropagation();
+              }}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-sunken text-[0.8125rem] font-medium transition-colors hover:border-line-strong"
+            >
+              <CandlestickChart className="size-4" aria-hidden />
+              產業 K 線
+            </Link>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
+          <p className="t-eyebrow">成分股金流 · {stocks.length} 檔</p>
+          <Segmented
+            ariaLabel="成分股時間維度"
+            size="sm"
+            items={PERIOD_ITEMS}
+            value={stockPeriod}
+            onChange={setStockPeriod}
+          />
+        </div>
+
+        {/* 手機：堆疊列（原本在 sheet 裡塞 5 欄表格，又擠又要橫捲） */}
+        <ul className="divide-y divide-line md:hidden">
+          {stocks.map((s) => {
+            const amt =
+              stockPeriod === "day" ? s.dayAmt : stockPeriod === "d3" ? s.d3 : s.d5;
+            const flow =
+              stockPeriod === "day"
+                ? s.dayFlow
+                : stockPeriod === "d3"
+                  ? s.d3Flow
+                  : s.d5Flow;
+            return (
+              <li
+                key={s.code}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  {market === "us" ? (
+                    <>
+                      <p className="num font-medium">{s.code}</p>
+                      <UsStockName
+                        code={s.code}
+                        name={s.name}
+                        variant="compact"
+                        emphasize={false}
+                        className="block text-[0.6875rem] text-muted-foreground"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p className="truncate font-medium">{s.name}</p>
+                      <p className="num text-[0.6875rem] text-muted-foreground">
+                        {s.code}
+                        {s.close != null && s.close > 0
+                          ? ` · ${s.close.toFixed(s.close >= 100 ? 0 : 2)}`
+                          : ""}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="shrink-0 text-right text-xs">
+                  <p className="text-muted-foreground">
+                    {amtLabel}{" "}
+                    <Amount
+                      text={formatMarketYi(amt, market)}
+                      className="text-foreground/80"
+                    />
+                  </p>
+                  <p className="text-muted-foreground">
+                    {flowLabel}{" "}
+                    <Amount
+                      text={formatMarketYiSigned(flow, market)}
+                      className={cn("font-semibold", signedClass(flow))}
+                    />
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    "num w-14 shrink-0 text-right text-xs font-medium",
+                    signedClass(s.changePct),
+                  )}
+                >
+                  {formatPct(s.changePct)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* 桌面：表格 */}
+        <div
+          className={cn(
+            "hidden md:block",
+            isSheet ? "" : "scroll-y min-h-0 flex-1",
+          )}
+        >
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>代號／名稱</th>
+                <th className="cell-num">股價</th>
+                <th className="cell-num">{amtLabel}</th>
+                <th className="cell-num">{flowLabel}</th>
+                <th className="cell-num">漲跌</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stocks.map((s) => {
+                const amt =
+                  stockPeriod === "day"
+                    ? s.dayAmt
+                    : stockPeriod === "d3"
+                      ? s.d3
+                      : s.d5;
+                const flow =
+                  stockPeriod === "day"
+                    ? s.dayFlow
+                    : stockPeriod === "d3"
+                      ? s.d3Flow
+                      : s.d5Flow;
+                return (
+                  <tr key={s.code}>
+                    <td>
+                      {market === "us" ? (
+                        <>
+                          <div className="num font-medium">{s.code}</div>
+                          <UsStockName
+                            code={s.code}
+                            name={s.name}
+                            variant="compact"
+                            emphasize={false}
+                            className="text-[0.6875rem] text-muted-foreground"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <div className="truncate font-medium">{s.name}</div>
+                          <div className="num text-[0.6875rem] text-muted-foreground">
+                            {s.code}
+                          </div>
+                        </>
+                      )}
+                    </td>
+                    <td className="cell-num">
+                      {s.close != null && s.close > 0
+                        ? s.close.toFixed(s.close >= 100 ? 0 : 2)
+                        : "—"}
+                    </td>
+                    <td className="cell-num">
+                      <Amount text={formatMarketYi(amt, market)} />
+                    </td>
+                    <td
+                      className={cn("cell-num font-semibold", signedClass(flow))}
+                    >
+                      <Amount text={formatMarketYiSigned(flow, market)} />
+                    </td>
+                    <td className={cn("cell-num", signedClass(s.changePct))}>
+                      {formatPct(s.changePct)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
