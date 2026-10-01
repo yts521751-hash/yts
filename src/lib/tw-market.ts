@@ -331,13 +331,20 @@ export async function fetchTpexInsti(ymd: string): Promise<InstiRow[] | null> {
  * - 本機預設：`<cwd>/.cache`
  * - 正式環境請設 `CACHE_DIR` 指向持久磁碟（如 `/data/cache`），
  *   重發佈後歷史日檔仍在，日終同步只需補缺日／當日。
+ *
+ * Turbopack NFT：勿用 `path.resolve(process.cwd(), dynamicEnv)`，
+ * 動態第二參數會觸發「whole project traced」並讓 standalone build 失敗。
+ * 絕對路徑原樣使用；相對路徑一律落到固定的 `.cache/` 下。
  */
 function resolveCacheDir() {
   const fromEnv = process.env.CACHE_DIR?.trim();
   if (fromEnv) {
-    return path.isAbsolute(fromEnv)
-      ? fromEnv
-      : path.resolve(process.cwd(), fromEnv);
+    if (path.isAbsolute(fromEnv)) {
+      // e.g. /data/cache on Render Disk / Docker volume — outside the project tree
+      return /* turbopackIgnore: true */ fromEnv;
+    }
+    // Relative: stay under a fixed subfolder so NFT tracing stays bounded
+    return path.join(process.cwd(), ".cache", fromEnv);
   }
   return path.join(process.cwd(), ".cache");
 }
@@ -365,9 +372,11 @@ export type DeployMeta = {
 };
 
 export async function readCacheFile<T>(name: string): Promise<T | null> {
-  const localPath = path.join(CACHE_DIR, name);
+  const localPath = path.join(/* turbopackIgnore: true */ CACHE_DIR, name);
   try {
-    return JSON.parse(await readFile(localPath, "utf8")) as T;
+    return JSON.parse(
+      await readFile(/* turbopackIgnore: true */ localPath, "utf8"),
+    ) as T;
   } catch {
     /* fall through to R2 */
   }
@@ -378,8 +387,10 @@ export async function readCacheFile<T>(name: string): Promise<T | null> {
     if (!isR2Enabled()) return null;
     const remote = await downloadCacheFileFromR2(name);
     if (!remote) return null;
-    await mkdir(path.dirname(localPath), { recursive: true });
-    await writeFile(localPath, remote, "utf8");
+    await mkdir(/* turbopackIgnore: true */ path.dirname(localPath), {
+      recursive: true,
+    });
+    await writeFile(/* turbopackIgnore: true */ localPath, remote, "utf8");
     return JSON.parse(remote) as T;
   } catch {
     return null;
@@ -390,12 +401,15 @@ export async function readCacheFile<T>(name: string): Promise<T | null> {
 const pendingCacheSideEffects = new Set<Promise<unknown>>();
 
 export async function writeCacheFile(name: string, data: unknown) {
-  await mkdir(CACHE_DIR, { recursive: true });
-  const target = path.join(CACHE_DIR, name);
+  await mkdir(/* turbopackIgnore: true */ CACHE_DIR, { recursive: true });
+  const target = path.join(/* turbopackIgnore: true */ CACHE_DIR, name);
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
   const body = JSON.stringify(data);
-  await writeFile(tmp, body, "utf8");
-  await rename(tmp, target);
+  await writeFile(/* turbopackIgnore: true */ tmp, body, "utf8");
+  await rename(
+    /* turbopackIgnore: true */ tmp,
+    /* turbopackIgnore: true */ target,
+  );
   const side = (async () => {
     const { uploadCacheFileToR2, isR2Enabled, trackR2Upload } = await import(
       "@/lib/r2-cache"
@@ -610,7 +624,7 @@ export async function listCachedTradingDays(
   }
 
   try {
-    const files = await readdir(CACHE_DIR);
+    const files = await readdir(/* turbopackIgnore: true */ CACHE_DIR);
     const days = files
       .map((f) => /^quotes-(\d{8})\.json$/.exec(f)?.[1])
       .filter((ymd): ymd is string => Boolean(ymd))
@@ -646,7 +660,7 @@ export async function getLatestCachedTradingDay(): Promise<string | null> {
 /** 本機 CACHE_DIR 全部 quotes-YYYYMMDD.json 的 ymd（新→舊） */
 export async function listAllCachedQuoteYmds(): Promise<string[]> {
   try {
-    const files = await readdir(CACHE_DIR);
+    const files = await readdir(/* turbopackIgnore: true */ CACHE_DIR);
     return files
       .map((f) => /^quotes-(\d{8})\.json$/.exec(f)?.[1])
       .filter((ymd): ymd is string => Boolean(ymd))

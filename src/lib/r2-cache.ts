@@ -400,19 +400,21 @@ export async function hydrateCacheFromR2(
       const keys = await listAllKeys();
       let downloaded = 0;
       let skipped = 0;
-      await mkdir(cacheDir, { recursive: true });
+      await mkdir(/* turbopackIgnore: true */ cacheDir, { recursive: true });
       await mapPool(keys, 6, async (key) => {
         const name = keyToLocalName(key);
         if (!name) return;
-        const dest = path.join(cacheDir, name);
+        const dest = path.join(/* turbopackIgnore: true */ cacheDir, name);
         if (await exists(dest)) {
           skipped++;
           return;
         }
         const body = await downloadCacheFileFromR2(name);
         if (!body) return;
-        await mkdir(path.dirname(dest), { recursive: true });
-        await writeFile(dest, body, "utf8");
+        await mkdir(/* turbopackIgnore: true */ path.dirname(dest), {
+          recursive: true,
+        });
+        await writeFile(/* turbopackIgnore: true */ dest, body, "utf8");
         downloaded++;
       });
       console.log(
@@ -434,7 +436,9 @@ export async function uploadLocalCacheDirToR2(
   if (!isR2Enabled()) return { uploaded: 0 };
   let names: string[] = [];
   try {
-    names = (await readdir(cacheDir)).filter((n) => !n.startsWith("."));
+    names = (
+      await readdir(/* turbopackIgnore: true */ cacheDir)
+    ).filter((n) => !n.startsWith("."));
   } catch {
     return { uploaded: 0 };
   }
@@ -442,7 +446,8 @@ export async function uploadLocalCacheDirToR2(
   await mapPool(names, 4, async (name) => {
     try {
       const { readFile } = await import("fs/promises");
-      const body = await readFile(path.join(cacheDir, name));
+      const local = path.join(/* turbopackIgnore: true */ cacheDir, name);
+      const body = await readFile(/* turbopackIgnore: true */ local);
       const ok = await uploadCacheFileToR2(name, body);
       if (ok) uploaded++;
     } catch {
