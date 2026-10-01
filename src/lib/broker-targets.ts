@@ -1,11 +1,13 @@
 /**
- * 內外資券商目標價（逐家，非 FactSet 共識）。
+ * 內外資券商目標價（逐家，非 FactSet 共識彙總）。
  *
- * 來源：鉅亨新聞（Cnyes）標題／摘要／內文，常見句型如
- * 「摩根士丹利將台積電目標價調升至 2988 元」。
- * Goodinfo 等表格式來源有 Cloudflare，伺服器端無法穩抓，故走新聞解析。
+ * 來源（合併、依券商去重保留最新）：
+ * 1) Google News RSS：標題常含「高盛喊 7000」「美銀給…目標價 750」
+ * 2) 鉅亨新聞（Cnyes）搜尋＋文章 og:description
+ * 3) Yahoo Finance ADR upgradeDowngradeHistory（少數有 ADR 的標的，換算成台幣）
  *
- * 快取：fundamentals-broker-targets.json，TTL 12h；
+ * Goodinfo 等表格式來源有 Cloudflare，伺服器端無法穩抓。
+ * 快取：fundamentals-broker-targets.json；有資料 TTL 24h、空結果 3h。
  * 展開／查詢時懶加載，不在日終同步批次抓取。
  */
 
@@ -19,7 +21,7 @@ import {
 export type BrokerTargetPrice = {
   /** 券商／外資顯示名 */
   broker: string;
-  /** 目標價（元） */
+  /** 目標價（元，台幣） */
   target: number;
   /** 報道／估計日 YYYY-MM-DD */
   asOf?: string | null;
@@ -29,6 +31,8 @@ export type BrokerTargetPrice = {
   source?: string | null;
   /** 原文片段（除錯／溯源） */
   snippet?: string | null;
+  /** 可點來源連結（新聞／Yahoo 等） */
+  url?: string | null;
 };
 
 export type BrokerTargetsPayload = {
@@ -46,7 +50,8 @@ type TargetsCache = {
 };
 
 const CACHE = "fundamentals-broker-targets.json";
-const TTL_MS = 12 * 60 * 60 * 1000;
+const TTL_HIT_MS = 24 * 60 * 60 * 1000;
+const TTL_EMPTY_MS = 3 * 60 * 60 * 1000;
 
 type BrokerAlias = {
   display: string;
@@ -64,12 +69,20 @@ const BROKER_ALIASES: BrokerAlias[] = [
   {
     display: "摩根大通",
     kind: "foreign",
-    aliases: ["摩根大通", "小摩", "JPMorgan", "J.P. Morgan", "JP摩根"],
+    aliases: ["摩根大通", "小摩", "JPMorgan", "J.P. Morgan", "JP摩根", "JP 摩根"],
   },
   {
     display: "美銀",
     kind: "foreign",
-    aliases: ["美銀", "美國銀行", "美銀證", "BofA", "Bank of America"],
+    aliases: [
+      "美銀",
+      "美國銀行",
+      "美銀證",
+      "BofA",
+      "Bank of America",
+      "B of A Securities",
+      "B of A",
+    ],
   },
   {
     display: "高盛",
@@ -137,6 +150,26 @@ const BROKER_ALIASES: BrokerAlias[] = [
     aliases: ["美林", "Merrill"],
   },
   {
+    display: "里昂",
+    kind: "foreign",
+    aliases: ["里昂", "里昂證券", "Societe Generale", "Société Générale", "SocGen"],
+  },
+  {
+    display: "伯恩斯坦",
+    kind: "foreign",
+    aliases: ["伯恩斯坦", "Bernstein"],
+  },
+  {
+    display: "Needham",
+    kind: "foreign",
+    aliases: ["Needham"],
+  },
+  {
+    display: "Stifel",
+    kind: "foreign",
+    aliases: ["Stifel"],
+  },
+  {
     display: "元大",
     kind: "domestic",
     aliases: ["元大", "元大證券", "元大投顧"],
@@ -196,21 +229,50 @@ const BROKER_ALIASES: BrokerAlias[] = [
     kind: "domestic",
     aliases: ["宏遠", "宏遠證券", "宏遠投顧"],
   },
+  {
+    display: "本土投顧",
+    kind: "domestic",
+    aliases: ["本土投顧", "本土券商"],
+  },
 ];
 
+/** TW 代號 → Yahoo ADR（有逐家目標價時才有用） */
+const ADR_BY_CODE: Record<string, string> = {
+  "2330": "TSM",
+};
+
 const stripHtml = (s: string) =>
-  s.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  s
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const decodeXml = (s: string) =>
+  stripHtml(
+    s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"),
+  );
 
 const round0 = (n: number) => Math.round(n);
+
+/** 解析「3,700」「2988」「7.5」等數字字串 */
+function parsePriceToken(raw: string): number | null {
+  const cleaned = raw.replace(/,/g, "").replace(/\s+/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n) || n < 1 || n > 100000) return null;
+  return n;
+}
 
 function toYmd(epochSec: number | null | undefined): string | null {
   if (epochSec == null || !Number.isFinite(epochSec)) return null;
   const d = new Date(epochSec * 1000);
   if (!Number.isFinite(d.getTime())) return null;
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  // Cnyes publishAt 近似台北日：用 Asia/Taipei
   try {
     return new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Taipei",
@@ -219,12 +281,20 @@ function toYmd(epochSec: number | null | undefined): string | null {
       day: "2-digit",
     }).format(d);
   } catch {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   }
 }
 
+function pubDateToYmd(pubDate: string): string | null {
+  const t = Date.parse(pubDate);
+  if (!Number.isFinite(t)) return null;
+  return toYmd(Math.floor(t / 1000));
+}
+
 function findBroker(text: string): BrokerAlias | null {
-  // 長別名優先，避免「摩根」誤配
   let best: { alias: BrokerAlias; len: number } | null = null;
   for (const b of BROKER_ALIASES) {
     for (const a of b.aliases) {
@@ -236,17 +306,42 @@ function findBroker(text: string): BrokerAlias | null {
   return best?.alias ?? null;
 }
 
+function findAllBrokers(text: string): BrokerAlias[] {
+  const hits: { alias: BrokerAlias; len: number; idx: number }[] = [];
+  for (const b of BROKER_ALIASES) {
+    for (const a of b.aliases) {
+      const idx = text.indexOf(a);
+      if (idx >= 0) hits.push({ alias: b, len: a.length, idx });
+    }
+  }
+  hits.sort((x, y) => y.len - x.len || x.idx - y.idx);
+  const seen = new Set<string>();
+  const out: BrokerAlias[] = [];
+  for (const h of hits) {
+    if (seen.has(h.alias.display)) continue;
+    seen.add(h.alias.display);
+    out.push(h.alias);
+  }
+  return out;
+}
+
 /**
- * 從中文新聞句抽出「券商 + 目標價」。
- * 支援：調升至／上調至／上修至／維持／看至／為／上看 等。
- * 優先取「上調／調升至 N」，略過「由 N 元」的舊價。
+ * 從中文新聞句／標題抽出「券商 + 目標價」。
+ * 支援：目標價／目標股價、千分位逗號、喊／給／至／上看 等句型。
+ * 「由 A 上調至 B」取 B；略過「目標價上調 370 元」這類調幅。
  */
 export function extractBrokerTargetsFromText(
   text: string,
-  options?: { asOf?: string | null; source?: string | null },
+  options?: {
+    asOf?: string | null;
+    source?: string | null;
+    url?: string | null;
+  },
 ): BrokerTargetPrice[] {
-  const clean = stripHtml(text);
-  if (!clean.includes("目標價")) return [];
+  const clean = stripHtml(text)
+    // 統一千分位：3,700 → 3700（保留小數）
+    .replace(/(\d),(\d{3})/g, "$1$2");
+  if (!/目標[股]?價/.test(clean)) return [];
 
   const out: BrokerTargetPrice[] = [];
   const seen = new Set<string>();
@@ -254,10 +349,12 @@ export function extractBrokerTargetsFromText(
   const push = (
     broker: BrokerAlias,
     target: number,
-    index: number,
     snippetFrom: number,
+    snippetTo: number,
   ) => {
-    if (!Number.isFinite(target) || target < 1 || target > 20000) return;
+    if (!Number.isFinite(target) || target < 1 || target > 100000) return;
+    // 台股目標價極端值過濾：低於 5 多半是誤抓比率／美元未換算
+    if (target < 5) return;
     if (seen.has(broker.display)) return;
     seen.add(broker.display);
     out.push({
@@ -265,47 +362,105 @@ export function extractBrokerTargetsFromText(
       target: round0(target),
       asOf: options?.asOf ?? null,
       kind: broker.kind,
-      source: options?.source ?? "cnyes-news",
-      snippet: clean.slice(Math.max(0, snippetFrom), index + 40),
+      source: options?.source ?? "news",
+      snippet: clean.slice(
+        Math.max(0, snippetFrom),
+        Math.min(clean.length, snippetTo),
+      ),
+      url: options?.url ?? null,
     });
   };
 
-  // 優先：目標價…(上調|調升|上修|調降|維持|上看)…至/到/為? N 元
-  const rePrefer =
-    /目標價[^。；;\n]{0,40}?(?:上[調修升]|調[升降]|維[持持]|上看)[^0-9]{0,12}?([0-9]{3,5}(?:\.[0-9]+)?)\s*元?/g;
+  const brokerNear = (index: number, span: number) => {
+    // 優先取匹配點左側最近的券商，避免同一句多券商時誤配
+    const left = clean.slice(Math.max(0, index - 56), index);
+    let best: { alias: BrokerAlias; pos: number; len: number } | null = null;
+    for (const b of BROKER_ALIASES) {
+      for (const a of b.aliases) {
+        const pos = left.lastIndexOf(a);
+        if (pos < 0) continue;
+        if (
+          !best ||
+          pos > best.pos ||
+          (pos === best.pos && a.length > best.len)
+        ) {
+          best = { alias: b, pos, len: a.length };
+        }
+      }
+    }
+    if (best) return best.alias;
+    const right = clean.slice(index, Math.min(clean.length, index + span + 40));
+    return findBroker(right) || findBroker(clean);
+  };
+
   let m: RegExpExecArray | null;
-  while ((m = rePrefer.exec(clean))) {
-    const ctxStart = Math.max(0, m.index - 36);
-    const broker =
-      findBroker(clean.slice(ctxStart, m.index + m[0].length)) ||
-      findBroker(clean.slice(ctxStart, m.index));
+
+  // A) 優先：目標價…由 A …(上調|至|提升至) B → 取 B
+  const reFromTo =
+    /目標[股]?價[^。；;\n]{0,48}?由\s*[0-9.]+[^0-9]{0,20}?(?:上[調修升]|調[升降]|至|到|提升至)\s*([0-9]{2,5}(?:\.[0-9]+)?)/g;
+  while ((m = reFromTo.exec(clean))) {
+    const price = parsePriceToken(m[1]);
+    if (price == null) continue;
+    const broker = brokerNear(m.index, m[0].length);
     if (!broker) continue;
-    push(broker, Number(m[1]), m.index, ctxStart);
+    push(broker, price, Math.max(0, m.index - 36), m.index + m[0].length);
   }
 
-  // 次選：目標價至／為／看至 N（且前文有券商）
-  const reAlt =
-    /目標價\s*(?:至|到|為|看至|上看)\s*([0-9]{3,5}(?:\.[0-9]+)?)\s*元?/g;
-  while ((m = reAlt.exec(clean))) {
-    const ctxStart = Math.max(0, m.index - 36);
-    const broker = findBroker(clean.slice(ctxStart, m.index + m[0].length));
+  // B) 目標價…(調升|上調|維持|上看)?…(至|到|為|看至|上看) N
+  //    要求有「至／到／為／看」等錨點，避免吃到「由 N」
+  const reToPrice =
+    /目標[股]?價[^0-9由]{0,28}?(?:上[調修升]|調[升降]|下[調修]|維[持持]|上看)?[^0-9]{0,12}?(?:至|到|為|看至|上看)\s*([0-9]{2,5}(?:\.[0-9]+)?)\s*元?/g;
+  while ((m = reToPrice.exec(clean))) {
+    const price = parsePriceToken(m[1]);
+    if (price == null) continue;
+    const broker = brokerNear(m.index, m[0].length);
     if (!broker) continue;
-    push(broker, Number(m[1]), m.index, ctxStart);
+    push(broker, price, Math.max(0, m.index - 36), m.index + m[0].length);
   }
 
-  // 再退：全文僅一家券商＋任一「目標價…N」
+  // C) 「高盛喊 7000」「美銀給…750」「里昂喊升…至 3700」「目標價 高盛喊到 7000」
+  const reBrokerVerb =
+    /(摩根士丹利|台灣摩根士丹利|大摩|摩根大通|小摩|美銀|美國銀行|高盛|花旗|瑞銀|麥格理|野村|匯豐|巴克萊|傑富瑞|大和|法巴|德銀|星展|美林|里昂證券|里昂|元大|凱基|國泰證|國泰證券|富邦|群益|永豐|中信|兆豐|統一證|台新|第一金|宏遠|本土投顧|本土券商|BofA|Goldman|UBS|Nomura|Citi|Bernstein|Needham|Stifel|Barclays|JPMorgan)[^0-9]{0,40}?(?:喊(?:到|上|出)?|給|上看|升至|調升至|調降至|上調至|下修至|目標[股]?價[^0-9由]{0,16}?(?:至|到|為|看|喊)?)[^0-9]{0,8}?([0-9]{2,5}(?:\.[0-9]+)?)\s*元?/g;
+  while ((m = reBrokerVerb.exec(clean))) {
+    const broker = findBroker(m[1]);
+    const price = parsePriceToken(m[2]);
+    if (!broker || price == null) continue;
+    push(broker, price, m.index, m.index + m[0].length);
+  }
+
+  // D) 「大摩同步把目標價上看至1800」類：目標價上看／喊 N（已有券商於前文）
+  const reLook =
+    /目標[股]?價\s*(?:上看|喊(?:到|上|出)?)\s*(?:至|到)?\s*([0-9]{2,5}(?:\.[0-9]+)?)\s*元?/g;
+  while ((m = reLook.exec(clean))) {
+    const price = parsePriceToken(m[1]);
+    if (price == null) continue;
+    const broker = brokerNear(m.index, m[0].length);
+    if (!broker) continue;
+    push(broker, price, Math.max(0, m.index - 36), m.index + m[0].length);
+  }
+
+  // E) 全文僅一家券商＋任一絕對目標價（排除「由」後第一個數字）
   if (!out.length) {
-    const broker = findBroker(clean);
-    const pm = clean.match(
-      /目標價[^0-9由]{0,20}([0-9]{3,5}(?:\.[0-9]+)?)/,
-    );
-    // 若句中有「由A…至B」取 B
+    const brokers = findAllBrokers(clean);
     const fromTo = clean.match(
-      /目標價[^。]{0,30}?由\s*[0-9.]+[^0-9]{0,12}?(?:上[調修升]|調[升降]|至|到)\s*([0-9]{3,5}(?:\.[0-9]+)?)/,
+      /目標[股]?價[^。]{0,48}?由\s*[0-9.]+[^0-9]{0,20}?(?:上[調修升]|調[升降]|至|到|提升至)\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
+    );
+    const pm = clean.match(
+      /目標[股]?價[^0-9由]{0,24}(?:至|到|為|看至|上看|喊(?:到|上|出)?)?\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
     );
     const raw = fromTo?.[1] ?? pm?.[1];
-    if (broker && raw) {
-      push(broker, Number(raw), 0, 0);
+    if (brokers.length === 1 && raw) {
+      // 丟棄純調幅：目標價上調370（無至）
+      const delta =
+        /目標[股]?價[^0-9]{0,8}(?:上[調修升]|調[升降]|下[調修]|砍)[^0-9至到看喊給為]{0,6}[0-9]/.test(
+          clean,
+        ) && !/(?:至|到|為|看|喊|給)/.test(clean);
+      if (!delta) {
+        const price = parsePriceToken(raw);
+        if (price != null) {
+          push(brokers[0], price, 0, Math.min(100, clean.length));
+        }
+      }
     }
   }
 
@@ -335,7 +490,6 @@ async function cnyesSearch(q: string, limit = 12): Promise<CnyesSearchItem[]> {
   return payload?.items?.data ?? [];
 }
 
-/** 抓單則新聞 meta description（常含「將目標價調升至 N 元」） */
 async function fetchArticleHint(newsId: number): Promise<string> {
   try {
     const { execFile } = await import("child_process");
@@ -356,12 +510,8 @@ async function fetchArticleHint(newsId: number): Promise<string> {
     );
     const html = String(stdout || "");
     const og =
-      html.match(
-        /property="og:description"\s+content="([^"]+)"/,
-      )?.[1] ||
-      html.match(
-        /content="([^"]+)"\s+property="og:description"/,
-      )?.[1] ||
+      html.match(/property="og:description"\s+content="([^"]+)"/)?.[1] ||
+      html.match(/content="([^"]+)"\s+property="og:description"/)?.[1] ||
       "";
     const title =
       html.match(/property="og:title"\s+content="([^"]+)"/)?.[1] || "";
@@ -372,20 +522,313 @@ async function fetchArticleHint(newsId: number): Promise<string> {
 }
 
 function relevantToStock(
-  item: CnyesSearchItem,
+  blob: string,
   code: string,
   name: string,
 ): boolean {
-  const blob = stripHtml(
-    `${item.title ?? ""} ${item.content ?? ""} ${(item.keyword ?? []).join(" ")}`,
-  );
-  if (blob.includes(code)) return true;
-  if (name && blob.includes(name)) return true;
-  // 標題已標過 mark 的「{name}目標價」搜尋結果
-  if (name && (item.title ?? "").includes(name.replace(/[()]/g, ""))) {
-    return true;
-  }
+  const t = stripHtml(blob);
+  if (t.includes(code)) return true;
+  if (name && t.includes(name)) return true;
+  const short = name.replace(/[()]/g, "").replace(/投控$/, "");
+  if (short && short.length >= 2 && t.includes(short)) return true;
   return false;
+}
+
+function mergeTarget(
+  byBroker: Map<string, BrokerTargetPrice>,
+  row: BrokerTargetPrice,
+) {
+  const prev = byBroker.get(row.broker);
+  if (!prev) {
+    byBroker.set(row.broker, row);
+    return;
+  }
+  const newer =
+    row.asOf && prev.asOf
+      ? row.asOf > prev.asOf
+      : row.asOf && !prev.asOf
+        ? true
+        : false;
+  const sameDayNewerOrDiff =
+    row.asOf && prev.asOf && row.asOf === prev.asOf && row.target !== prev.target;
+  if (newer || sameDayNewerOrDiff || (!prev.asOf && row.asOf)) {
+    byBroker.set(row.broker, row);
+  }
+}
+
+type GNewsItem = {
+  title: string;
+  link: string;
+  pubDate: string;
+  source: string;
+};
+
+async function googleNewsSearch(q: string): Promise<GNewsItem[]> {
+  try {
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const run = promisify(execFile);
+    const url =
+      "https://news.google.com/rss/search?" +
+      `q=${encodeURIComponent(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant`;
+    const { stdout } = await run(
+      "curl",
+      [
+        "-sS",
+        "-L",
+        "-A",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "--max-time",
+        "18",
+        url,
+      ],
+      { timeout: 22000, maxBuffer: 4 * 1024 * 1024 },
+    );
+    const xml = String(stdout || "");
+    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => {
+      const block = m[1];
+      return {
+        title: decodeXml(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] || ""),
+        link: decodeXml(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] || ""),
+        pubDate: block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "",
+        source: decodeXml(
+          block.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] || "",
+        ),
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function collectFromGoogleNews(
+  code: string,
+  name: string,
+  byBroker: Map<string, BrokerTargetPrice>,
+) {
+  const queries = [
+    `${name} 目標價 when:2y`,
+    `${name} 目標價 外資 when:2y`,
+    `${name}(${code}) 目標價 when:2y`,
+  ];
+  const seenTitles = new Set<string>();
+  for (const q of queries) {
+    const items = await googleNewsSearch(q);
+    for (const item of items) {
+      if (!item.title || seenTitles.has(item.title)) continue;
+      seenTitles.add(item.title);
+      if (!relevantToStock(item.title, code, name)) continue;
+      if (!/目標[股]?價|[0-9]{2,5}\s*元/.test(item.title)) continue;
+      const asOf = pubDateToYmd(item.pubDate);
+      const found = extractBrokerTargetsFromText(item.title, {
+        asOf,
+        source: item.source
+          ? `gnews:${item.source}`
+          : "gnews",
+        url: item.link || null,
+      });
+      for (const row of found) mergeTarget(byBroker, row);
+    }
+    if (byBroker.size >= 10) break;
+  }
+}
+
+async function collectFromCnyes(
+  code: string,
+  name: string,
+  byBroker: Map<string, BrokerTargetPrice>,
+) {
+  const queries = [
+    `${name}目標價`,
+    `${name}目標股價`,
+    `${name} 目標價`,
+    `${code}-TW 目標價`,
+  ];
+  const articlesToHint: { id: number; asOf: string | null }[] = [];
+
+  for (const q of queries) {
+    const items = await cnyesSearch(q, 15);
+    for (const item of items) {
+      const title = stripHtml(item.title ?? "");
+      const content = stripHtml(item.content ?? "");
+      const summary = stripHtml(item.summary ?? "");
+      const blob = `${title}\n${content}\n${summary}`;
+      if (!relevantToStock(blob, code, name)) continue;
+      const asOf = toYmd(item.publishAt);
+      const found = extractBrokerTargetsFromText(blob, {
+        asOf,
+        source: item.newsId ? `cnyes-news:${item.newsId}` : "cnyes-news",
+        url: item.newsId
+          ? `https://news.cnyes.com/news/id/${item.newsId}`
+          : null,
+      });
+      for (const row of found) mergeTarget(byBroker, row);
+      if (
+        !found.length &&
+        item.newsId &&
+        (/目標[股]?價/.test(title) || findBroker(title)) &&
+        articlesToHint.length < 6
+      ) {
+        articlesToHint.push({ id: item.newsId, asOf });
+      }
+    }
+    if (byBroker.size >= 10) break;
+  }
+
+  for (const { id, asOf } of articlesToHint) {
+    if (byBroker.size >= 12) break;
+    const hint = await fetchArticleHint(id);
+    if (!hint) continue;
+    const found = extractBrokerTargetsFromText(hint, {
+      asOf,
+      source: `cnyes-news:${id}`,
+      url: `https://news.cnyes.com/news/id/${id}`,
+    });
+    for (const row of found) mergeTarget(byBroker, row);
+  }
+}
+
+async function collectFromYahooAdr(
+  code: string,
+  byBroker: Map<string, BrokerTargetPrice>,
+) {
+  const adr = ADR_BY_CODE[code];
+  if (!adr) return;
+  try {
+    const { execFile } = await import("child_process");
+    const { promisify } = await import("util");
+    const run = promisify(execFile);
+    const jar = `/tmp/yahoo-broker-${process.pid}.txt`;
+    await run(
+      "curl",
+      ["-sS", "-c", jar, "-b", jar, "-A", "Mozilla/5.0", "https://fc.yahoo.com", "-o", "/dev/null"],
+      { timeout: 12000 },
+    );
+    const crumbRes = await run(
+      "curl",
+      [
+        "-sS",
+        "-b",
+        jar,
+        "-c",
+        jar,
+        "-A",
+        "Mozilla/5.0",
+        "https://query1.finance.yahoo.com/v1/test/getcrumb",
+      ],
+      { timeout: 12000 },
+    );
+    const crumb = String(crumbRes.stdout || "").trim();
+    if (!crumb) return;
+
+    const fetchQuote = async (symbol: string) => {
+      const url =
+        `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}` +
+        `?modules=upgradeDowngradeHistory,financialData&crumb=${encodeURIComponent(crumb)}`;
+      const { stdout } = await run(
+        "curl",
+        [
+          "-sS",
+          "-b",
+          jar,
+          "-c",
+          jar,
+          "-A",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+          "--max-time",
+          "18",
+          url,
+        ],
+        { timeout: 22000, maxBuffer: 2 * 1024 * 1024 },
+      );
+      return JSON.parse(String(stdout || "{}")) as {
+        quoteSummary?: {
+          result?: Array<{
+            financialData?: { currentPrice?: { raw?: number } };
+            upgradeDowngradeHistory?: {
+              history?: Array<{
+                epochGradeDate?: number;
+                firm?: string;
+                currentPriceTarget?: number;
+                priceTargetAction?: string;
+              }>;
+            };
+          }>;
+        };
+      };
+    };
+
+    const [adrJson, twJson] = await Promise.all([
+      fetchQuote(adr),
+      fetchQuote(`${code}.TW`),
+    ]);
+    const adrPrice =
+      adrJson.quoteSummary?.result?.[0]?.financialData?.currentPrice?.raw;
+    const twPrice =
+      twJson.quoteSummary?.result?.[0]?.financialData?.currentPrice?.raw;
+    const hist =
+      adrJson.quoteSummary?.result?.[0]?.upgradeDowngradeHistory?.history ??
+      [];
+    if (
+      !adrPrice ||
+      !twPrice ||
+      adrPrice <= 0 ||
+      twPrice <= 0 ||
+      !hist.length
+    ) {
+      return;
+    }
+    const fxShares = twPrice / adrPrice; // ADR 報價 → 約當每股台幣
+
+    for (const h of hist) {
+      if (h.currentPriceTarget == null || !h.firm) continue;
+      const broker = findBroker(h.firm);
+      if (!broker) continue;
+      const target = round0(h.currentPriceTarget * fxShares);
+      if (target < 5 || target > 100000) continue;
+      mergeTarget(byBroker, {
+        broker: broker.display,
+        target,
+        asOf: toYmd(h.epochGradeDate ?? null),
+        kind: broker.kind,
+        source: `yahoo-adr:${adr}`,
+        snippet: `${h.firm} ${h.currentPriceTarget} USD → ≈${target} TWD`,
+        url: `https://finance.yahoo.com/quote/${adr}/analysis/`,
+      });
+    }
+  } catch {
+    // ADR 為加分項，失敗略過
+  }
+}
+
+async function fetchLastPrice(code: string): Promise<number | null> {
+  const symbol = encodeURIComponent(`TWS:${code}:STOCK`);
+  const url =
+    "https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/targetPrice/" +
+    symbol;
+  try {
+    const payload =
+      (await fetchJsonViaCurl<{
+        data?: { last?: number | null } | null;
+      }>(url)) ??
+      (await fetchJson<{
+        data?: { last?: number | null } | null;
+      }>(url));
+    const last = payload?.data?.last;
+    return typeof last === "number" && last > 0 ? last : null;
+  } catch {
+    return null;
+  }
+}
+
+function isPlausibleTarget(target: number, last: number | null): boolean {
+  if (!Number.isFinite(target) || target < 5) return false;
+  if (last == null || !(last > 0)) {
+    // 無現價時僅擋明顯不合理的極小值（多半是％或誤抓）
+    return target >= 10;
+  }
+  // 允許低估到 3 折、高估到約 6 倍（成長股外資常給高目標）
+  return target >= last * 0.3 && target <= last * 6;
 }
 
 /**
@@ -402,7 +845,7 @@ export async function getBrokerTargetPrices(
     name,
     targets: [],
     builtAt: new Date().toISOString(),
-    source: "cnyes-news",
+    source: "multi",
     emptyReason: reason,
   });
 
@@ -418,86 +861,43 @@ export async function getBrokerTargetPrices(
   const cached = cache.byCode[stockCode];
   if (!options?.force && cached?.builtAt) {
     const age = Date.now() - Date.parse(cached.builtAt);
-    if (Number.isFinite(age) && age >= 0 && age < TTL_MS) {
+    const ttl = cached.targets?.length ? TTL_HIT_MS : TTL_EMPTY_MS;
+    if (Number.isFinite(age) && age >= 0 && age < ttl) {
       return cached;
     }
   }
 
-  const queries = [
-    `${name}目標價`,
-    `${name} 目標價`,
-    `${stockCode}-TW 目標價`,
-  ];
-
   const byBroker = new Map<string, BrokerTargetPrice>();
-  const articlesToHint: number[] = [];
 
-  for (const q of queries) {
-    const items = await cnyesSearch(q, 15);
-    for (const item of items) {
-      if (!relevantToStock(item, stockCode, name)) continue;
-      const asOf = toYmd(item.publishAt);
-      const text = `${item.title ?? ""}\n${item.content ?? ""}\n${item.summary ?? ""}`;
-      const found = extractBrokerTargetsFromText(text, {
-        asOf,
-        source: item.newsId ? `cnyes-news:${item.newsId}` : "cnyes-news",
-      });
-      for (const row of found) {
-        const prev = byBroker.get(row.broker);
-        // 較新日期覆寫；同日較高目標價保留（資訊量）
-        if (
-          !prev ||
-          (row.asOf && prev.asOf && row.asOf > prev.asOf) ||
-          (row.asOf === prev.asOf && row.target !== prev.target)
-        ) {
-          if (!prev || (row.asOf && (!prev.asOf || row.asOf >= prev.asOf))) {
-            byBroker.set(row.broker, row);
-          }
-        }
-      }
-      // 搜尋摘要常缺數字：排程抓 og:description
-      if (
-        !found.length &&
-        item.newsId &&
-        findBroker(stripHtml(item.title ?? "")) &&
-        articlesToHint.length < 4
-      ) {
-        articlesToHint.push(item.newsId);
-      }
-    }
-    // 已有足夠券商就停，避免打爆新聞 API
-    if (byBroker.size >= 6) break;
-  }
+  // Google News 覆蓋面最大；Cnyes／Yahoo ADR 並行補齊
+  const [, , , lastPrice] = await Promise.all([
+    collectFromGoogleNews(stockCode, name, byBroker),
+    collectFromCnyes(stockCode, name, byBroker),
+    collectFromYahooAdr(stockCode, byBroker),
+    fetchLastPrice(stockCode),
+  ]);
 
-  // 補抓少數文章 meta（有券商名但缺數字）
-  for (const nid of articlesToHint) {
-    if (byBroker.size >= 8) break;
-    const hint = await fetchArticleHint(nid);
-    if (!hint) continue;
-    const found = extractBrokerTargetsFromText(hint, {
-      source: `cnyes-news:${nid}`,
-    });
-    for (const row of found) {
-      if (!byBroker.has(row.broker)) byBroker.set(row.broker, row);
-    }
-  }
+  const targets = [...byBroker.values()]
+    .filter((t) => isPlausibleTarget(t.target, lastPrice))
+    .sort(
+      (a, b) =>
+        b.target - a.target ||
+        (b.asOf ?? "").localeCompare(a.asOf ?? "") ||
+        a.broker.localeCompare(b.broker, "zh-Hant"),
+    );
 
-  const targets = [...byBroker.values()].sort(
-    (a, b) =>
-      b.target - a.target ||
-      (b.asOf ?? "").localeCompare(a.asOf ?? "") ||
-      a.broker.localeCompare(b.broker, "zh-Hant"),
+  const sources = new Set(
+    targets.map((t) => (t.source ?? "").split(":")[0]).filter(Boolean),
   );
-
   const payload: BrokerTargetsPayload = {
     code: stockCode,
     name,
     targets,
     builtAt: new Date().toISOString(),
-    source: "cnyes-news",
+    source: sources.size ? [...sources].sort().join("+") : "multi",
     emptyReason: targets.length
       ? null
-      : "近期新聞未解析到逐家券商目標價",
+      : "近兩年公開新聞未解析到具名券商目標價",
   };
 
   cache.byCode[stockCode] = payload;

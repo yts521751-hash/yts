@@ -117,7 +117,7 @@ export function BrokerTargetsDetail({
           {!loading && fetched && !targets.length ? (
             <p className="leading-relaxed text-muted-foreground">
               {emptyReason || "尚無逐家券商目標價"}
-              。資料來自公開新聞報道解析，部分個股可能暫時沒有可辨識的目標價。
+              。僅在公開新聞標題／內文能辨識「券商＋絕對目標價」時顯示；無具名券商報道時會留空。
             </p>
           ) : null}
           {targets.length ? (
@@ -128,7 +128,21 @@ export function BrokerTargetsDetail({
                   className="flex items-baseline justify-between gap-3 px-2.5 py-1.5"
                 >
                   <span className="min-w-0 truncate text-muted-foreground">
-                    {r.broker}
+                    {r.url ? (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate underline-offset-2 hover:underline"
+                        title={r.snippet ?? r.source ?? undefined}
+                      >
+                        {r.broker}
+                      </a>
+                    ) : (
+                      <span title={r.snippet ?? r.source ?? undefined}>
+                        {r.broker}
+                      </span>
+                    )}
                     {r.kind === "foreign" ? (
                       <span className="ml-1 text-[10px] opacity-60">外資</span>
                     ) : r.kind === "domestic" ? (
@@ -149,8 +163,9 @@ export function BrokerTargetsDetail({
           ) : null}
           {targets.length ? (
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              目標價取自鉅亨等公開報道中的內外資券商研究，非 FactSet
-              共識彙總；同券商保留較新一筆。
+              目標價取自 Google
+              新聞／鉅亨等公開報道中的具名券商研究（非 FactSet
+              共識彙總）；同券商保留較新一筆。點券商名可開啟來源。
             </p>
           ) : null}
         </div>

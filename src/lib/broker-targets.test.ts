@@ -22,6 +22,47 @@ describe("broker-targets extract", () => {
     assert.equal(by["摩根士丹利"], 1800);
   });
 
+  it("parses 目標股價 with thousand separators", () => {
+    const text =
+      "瑞銀周一上調台積電目標股價，由 3,000 新臺幣提升至 3,400 新臺幣，維持買入投資評級。";
+    const rows = extractBrokerTargetsFromText(text);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].broker, "瑞銀");
+    assert.equal(rows[0].target, 3400);
+  });
+
+  it("parses headline 高盛喊／美銀給 patterns", () => {
+    const a = extractBrokerTargetsFromText("聯發科目標價 高盛喊7,000");
+    assert.equal(a[0]?.broker, "高盛");
+    assert.equal(a[0]?.target, 7000);
+
+    const b = extractBrokerTargetsFromText(
+      "美銀給日月光投控目標價 750 元",
+    );
+    assert.equal(b[0]?.broker, "美銀");
+    assert.equal(b[0]?.target, 750);
+
+    const c = extractBrokerTargetsFromText(
+      "花旗調降目標價至2280元！台達電一度摔破1700元大關",
+    );
+    assert.equal(c[0]?.broker, "花旗");
+    assert.equal(c[0]?.target, 2280);
+
+    const d = extractBrokerTargetsFromText(
+      "里昂喊升台積電目標價至3,700元",
+    );
+    assert.equal(d[0]?.broker, "里昂");
+    assert.equal(d[0]?.target, 3700);
+  });
+
+  it("skips adjustment deltas without absolute 至", () => {
+    const rows = extractBrokerTargetsFromText(
+      "外資加碼廣達「目標價上調370元」AI伺服器營收拚再翻倍",
+    );
+    // 無具名券商或僅調幅 → 不應當成絕對目標價 370
+    assert.ok(!rows.some((r) => r.target === 370));
+  });
+
   it("returns empty when no broker name", () => {
     const rows = extractBrokerTargetsFromText(
       "Factset 最新調查：預估目標價為3212.5元",
