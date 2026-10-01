@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { getLatestCachedTradingDay } from "@/lib/tw-market";
 import {
   getValuePicksSingleFlight,
+  isValuePicksCacheCurrent,
   lookupStockValue,
   readValuePicksCache,
   requestValuePicksRebuild,
@@ -30,14 +32,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, lookup: hit });
     }
 
+    const latestYmd = await getLatestCachedTradingDay();
     const cached = await readValuePicksCache();
-    if (cached?.rows && !force) {
-      const age = Date.now() - Date.parse(cached.builtAt || "");
-      const fresh =
-        Number.isFinite(age) && age >= 0 && age < 20 * 60 * 60 * 1000;
-      if (!fresh) {
-        requestValuePicksRebuild("stale-cache");
+    const asOfFresh = isValuePicksCacheCurrent(cached, latestYmd);
+
+    // as-of 落後最新 quotes 日：前景重算（沿用 EPS 快取，更新 close／PE／PEG）
+    if (!force && cached?.rows && !asOfFresh) {
+      const data = await getValuePicksSingleFlight({ force: false });
+      if (data) {
+        return NextResponse.json({ ok: true, ...data });
       }
+    }
+
+    if (cached?.rows && !force && asOfFresh) {
       return NextResponse.json({
         ok: true,
         ...cached,
@@ -45,7 +52,7 @@ export async function GET(req: Request) {
       });
     }
 
-    if (force && cached?.rows) {
+    if (force && cached?.rows && asOfFresh) {
       const rebuild = requestValuePicksRebuild("api-force");
       return NextResponse.json({
         ok: true,
@@ -56,8 +63,8 @@ export async function GET(req: Request) {
       });
     }
 
-    // 無快取：前景單飛建一次（不帶 force，沿用既有 EPS／排除額快取）
-    const data = await getValuePicksSingleFlight({ force: false });
+    // 無快取、force、或 as-of 過舊：前景單飛（force 時重抓 EPS）
+    const data = await getValuePicksSingleFlight({ force });
     if (!data) {
       return NextResponse.json(
         { ok: false, error: "尚無價值選股資料（請先同步報價）" },

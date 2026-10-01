@@ -35,6 +35,8 @@ export type ValuePickRow = {
   epsYoy: number;
   /** 前瞻本益比 = close / nextYearEps */
   forwardPe: number;
+  /** 本益成長比 = forwardPe / epsYoy（%）；成長≤0 時為 null；舊快取可能缺欄 */
+  peg?: number | null;
   epsSource: string | null;
   /** 明年 EPS 依據列（券商或共識統計） */
   brokers?: import("@/lib/fundamentals").BrokerEpsEstimate[];
@@ -52,6 +54,8 @@ export type StockValueLookup = {
   baseEps: number | null;
   epsYoy: number | null;
   forwardPe: number | null;
+  /** 本益成長比；無法計算時 null；舊快取可能缺欄 */
+  peg?: number | null;
   epsSource: string | null;
   revenueYoy: number | null;
   revenueMonth: string | null;
@@ -84,9 +88,63 @@ const MAX_FORWARD_PE = 35;
 const MIN_DAY_AMT_YI = 10;
 /** 取成交較熱的普通股當候選，兼顧涵蓋與抓取時間 */
 const CANDIDATE_LIMIT = 300;
+const CACHE_TTL_MS = 20 * 60 * 60 * 1000;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * 價值選股快取是否可沿用：必須對齊最新 quotes 交易日（同日 close→PE），
+ * 且未超過 TTL、篩選條件版本一致。
+ */
+export function isValuePicksCacheCurrent(
+  cached: Pick<ValuePicksPayload, "ymd" | "builtAt" | "rows" | "criteria"> | null | undefined,
+  latestQuoteYmd: string | null | undefined,
+  nowMs = Date.now(),
+): boolean {
+  if (!cached?.rows?.length || !cached.ymd || !latestQuoteYmd) return false;
+  if (cached.ymd !== latestQuoteYmd) return false;
+  if (cached.criteria?.minDayAmtYi !== MIN_DAY_AMT_YI) return false;
+  const age = nowMs - Date.parse(cached.builtAt || "");
+  return Number.isFinite(age) && age >= 0 && age < CACHE_TTL_MS;
+}
+
+/** 以最新收盤重算前瞻 PE（既有公式：close / nextYearEps） */
+export function forwardPeFromClose(
+  close: number,
+  nextYearEps: number | null | undefined,
+): number | null {
+  if (
+    nextYearEps == null ||
+    !(nextYearEps > 0) ||
+    !(close > 0) ||
+    !Number.isFinite(close)
+  ) {
+    return null;
+  }
+  return round2(close / nextYearEps);
+}
+
+/**
+ * 本益成長比 PEG = 前瞻本益比 ÷ 明年 EPS YoY（%）。
+ * 成長率 ≤ 0 或缺值時回 null（UI 顯示 —）。
+ */
+export function computePeg(
+  forwardPe: number | null | undefined,
+  epsYoy: number | null | undefined,
+): number | null {
+  if (
+    forwardPe == null ||
+    epsYoy == null ||
+    !(forwardPe > 0) ||
+    !(epsYoy > 0) ||
+    !Number.isFinite(forwardPe) ||
+    !Number.isFinite(epsYoy)
+  ) {
+    return null;
+  }
+  return round2(forwardPe / epsYoy);
+}
 
 export async function readValuePicksCache(): Promise<ValuePicksPayload | null> {
   return readCacheFile<ValuePicksPayload>(CACHE);
@@ -153,25 +211,18 @@ export function getValuePicksSingleFlight(options?: {
 export async function buildValuePicks(options?: {
   force?: boolean;
 }): Promise<ValuePicksPayload | null> {
-  if (!options?.force) {
-    const cached = await readValuePicksCache();
-    if (cached?.rows && cached.builtAt) {
-      const age = Date.now() - Date.parse(cached.builtAt);
-      // 舊快照若沒有成交門檻，視為失效
-      if (
-        Number.isFinite(age) &&
-        age >= 0 &&
-        age < 20 * 60 * 60 * 1000 &&
-        cached.criteria?.minDayAmtYi === MIN_DAY_AMT_YI
-      ) {
-        return { ...cached, source: "cache" };
-      }
-    }
-  }
-
   const days = await listCachedTradingDays(1, 40);
   const ymd = days[0];
   if (!ymd) return null;
+
+  if (!options?.force) {
+    const cached = await readValuePicksCache();
+    // 僅當快取 as-of 已是最新 quotes 日才命中；否則用最新收盤重算 PE
+    if (isValuePicksCacheCurrent(cached, ymd)) {
+      return { ...cached!, source: "cache" };
+    }
+  }
+
   const quotes = await getCachedDayQuotes(ymd);
   if (!quotes?.size) return null;
 
@@ -211,8 +262,9 @@ export async function buildValuePicks(options?: {
       continue;
     }
     if (epsYoy <= MIN_EPS_YOY) continue;
-    const forwardPe = q.close / nextYearEps;
+    const forwardPe = forwardPeFromClose(q.close, nextYearEps);
     if (
+      forwardPe == null ||
       !Number.isFinite(forwardPe) ||
       forwardPe <= 0 ||
       forwardPe >= MAX_FORWARD_PE
@@ -231,7 +283,8 @@ export async function buildValuePicks(options?: {
       nextYearEps: round2(nextYearEps),
       baseEps: round2(baseEps),
       epsYoy: round1(epsYoy),
-      forwardPe: round2(forwardPe),
+      forwardPe,
+      peg: computePeg(forwardPe, epsYoy),
       epsSource: f.epsSource,
       brokers: f.brokers ?? [],
       consensusBasis: f.consensusBasis ?? null,
@@ -292,6 +345,7 @@ function lookupFromValueRow(
     baseEps: row.baseEps,
     epsYoy: row.epsYoy,
     forwardPe: row.forwardPe,
+    peg: row.peg ?? computePeg(row.forwardPe, row.epsYoy),
     epsSource: row.epsSource,
     revenueYoy: null,
     revenueMonth: null,
@@ -320,9 +374,13 @@ export async function lookupStockValue(
     return hit.value;
   }
 
-  // 快路徑：已在價值選股名單 → 直接組結果（含 PE／EPS）
+  const days = await listCachedTradingDays(1, 40);
+  const ymd = days[0];
+  if (!ymd) return null;
+
+  // 快路徑：名單命中且快取 as-of 已是最新 quotes 日 → 直接組結果
   const vp = await readValuePicksCache().catch(() => null);
-  if (vp?.rows?.length) {
+  if (vp?.rows?.length && isValuePicksCacheCurrent(vp, ymd)) {
     const needle = q.toLowerCase();
     const row =
       (/^\d{4}$/.test(q) && vp.rows.find((r) => r.code === q)) ||
@@ -341,9 +399,6 @@ export async function lookupStockValue(
     }
   }
 
-  const days = await listCachedTradingDays(1, 40);
-  const ymd = days[0];
-  if (!ymd) return null;
   const quotes = await getCachedDayQuotes(ymd);
   if (!quotes?.size) return null;
 
@@ -389,6 +444,24 @@ export async function lookupStockValue(
     }
   }
 
+  // 名單有列但快取日過舊：沿用 EPS，價格／PE 改用最新 quotes
+  if (!code && vp?.rows?.length) {
+    const needle = q.toLowerCase();
+    const row =
+      (/^\d{4}$/.test(q) && vp.rows.find((r) => r.code === q)) ||
+      vp.rows.find(
+        (r) =>
+          r.name === q ||
+          r.name.toLowerCase().includes(needle) ||
+          needle.includes(r.name.toLowerCase()),
+      ) ||
+      null;
+    if (row) {
+      code = row.code;
+      name = row.name;
+    }
+  }
+
   if (!code) {
     memo.set(memoKey, { at: Date.now(), value: null });
     return null;
@@ -406,6 +479,8 @@ export async function lookupStockValue(
   const changePct = quote?.changePct ?? 0;
   if (quote) name = quote.name.trim() || name || code;
 
+  const staleVpRow = vp?.rows?.find((r) => r.code === code) ?? null;
+
   const [regular, fundMap] = await Promise.all([
     applyRegularTurnover(quotes, ymd, { skipNetwork: true }),
     enrichStockFundamentals([code], { force: false, preferStale: true }),
@@ -413,13 +488,11 @@ export async function lookupStockValue(
   const dayAmt = round2((regular.get(code) ?? quote?.turnover ?? 0) / 1e8);
 
   const f = fundMap.get(code);
-  const nextYearEps = f?.nextYearEps ?? null;
-  const baseEps = f?.baseEps ?? null;
-  const epsYoy = f?.epsGrowth ?? null;
-  const forwardPe =
-    nextYearEps != null && nextYearEps > 0 && close > 0
-      ? round2(close / nextYearEps)
-      : null;
+  const nextYearEps = f?.nextYearEps ?? staleVpRow?.nextYearEps ?? null;
+  const baseEps = f?.baseEps ?? staleVpRow?.baseEps ?? null;
+  const epsYoy = f?.epsGrowth ?? staleVpRow?.epsYoy ?? null;
+  const epsSource = f?.epsSource ?? staleVpRow?.epsSource ?? null;
+  const forwardPe = forwardPeFromClose(close, nextYearEps);
 
   const passesScreen = Boolean(
     nextYearEps != null &&
@@ -432,7 +505,7 @@ export async function lookupStockValue(
       forwardPe > 0 &&
       forwardPe < MAX_FORWARD_PE &&
       dayAmt >= MIN_DAY_AMT_YI &&
-      f?.epsSource?.startsWith("cnyes-factset-"),
+      epsSource?.startsWith("cnyes-factset-"),
   );
 
   const value: StockValueLookup = {
@@ -445,11 +518,12 @@ export async function lookupStockValue(
     baseEps: baseEps != null ? round2(baseEps) : null,
     epsYoy: epsYoy != null ? round1(epsYoy) : null,
     forwardPe,
-    epsSource: f?.epsSource ?? null,
+    peg: computePeg(forwardPe, epsYoy),
+    epsSource,
     revenueYoy: f?.revenueYoy ?? null,
     revenueMonth: f?.revenueMonth ?? null,
-    brokers: f?.brokers ?? [],
-    consensusBasis: f?.consensusBasis ?? null,
+    brokers: f?.brokers ?? staleVpRow?.brokers ?? [],
+    consensusBasis: f?.consensusBasis ?? staleVpRow?.consensusBasis ?? null,
     passesScreen,
     ymd,
     date: ymdToIso(ymd),

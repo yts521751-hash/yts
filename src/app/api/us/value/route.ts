@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { listUsCachedTradingDays } from "@/lib/us-market";
 import {
   getUsValuePicks,
+  isUsValuePicksCacheCurrent,
   lookupUsStockValue,
   readUsValuePicksCache,
 } from "@/lib/value-picks-us";
@@ -29,9 +31,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, lookup: hit, market: "us" });
     }
 
+    const latestYmd = (await listUsCachedTradingDays(1, 40))[0] ?? null;
+
     if (!force) {
       const cached = await readUsValuePicksCache();
-      if (cached?.rows?.length) {
+      if (
+        cached?.rows?.length &&
+        isUsValuePicksCacheCurrent(cached, latestYmd)
+      ) {
         return NextResponse.json({
           ok: true,
           ...cached,
@@ -41,6 +48,7 @@ export async function GET(req: Request) {
       }
     }
 
+    // 無快取、force、或 as-of 落後最新 quotes → 重建／重算收盤 PE
     const payload = await getUsValuePicks({ force });
     if (!payload) {
       return NextResponse.json(

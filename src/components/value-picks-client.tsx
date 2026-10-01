@@ -38,7 +38,7 @@ import { Amount } from "@/components/ui/amount";
 import { Chip, RankSlot, SortHeaderButton, type SortState } from "@/components/ui/chip";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 
-type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
+type SortKey = "epsYoy" | "forwardPe" | "peg" | "dayAmt" | "close" | "changePct";
 
 type ClientPayload = ValuePicksPayload & {
   market?: "tw" | "us";
@@ -70,6 +70,11 @@ function lookupFromLocalRow(
   ymd: string,
   date: string,
 ): StockValueLookup {
+  const peg =
+    row.peg ??
+    (row.forwardPe > 0 && row.epsYoy > 0
+      ? Math.round((row.forwardPe / row.epsYoy) * 100) / 100
+      : null);
   return {
     code: row.code,
     name: row.name,
@@ -80,6 +85,7 @@ function lookupFromLocalRow(
     baseEps: row.baseEps,
     epsYoy: row.epsYoy,
     forwardPe: row.forwardPe,
+    peg,
     epsSource: row.epsSource,
     revenueYoy: null,
     revenueMonth: null,
@@ -127,10 +133,30 @@ function findLocalRow(
 
 function sortValue(row: ValuePickRow, key: SortKey) {
   if (key === "forwardPe") return row.forwardPe;
+  if (key === "peg") {
+    const peg =
+      row.peg ??
+      (row.forwardPe > 0 && row.epsYoy > 0
+        ? row.forwardPe / row.epsYoy
+        : Number.POSITIVE_INFINITY);
+    return peg ?? Number.POSITIVE_INFINITY;
+  }
   if (key === "dayAmt") return row.dayAmt;
   if (key === "close") return row.close;
   if (key === "changePct") return row.changePct;
   return row.epsYoy;
+}
+
+function rowPeg(row: ValuePickRow): number | null {
+  if (row.peg != null && Number.isFinite(row.peg)) return row.peg;
+  if (row.forwardPe > 0 && row.epsYoy > 0) {
+    return Math.round((row.forwardPe / row.epsYoy) * 100) / 100;
+  }
+  return null;
+}
+
+function fmtPeg(peg: number | null) {
+  return peg != null && Number.isFinite(peg) ? peg.toFixed(2) : "—";
 }
 
 function seedFrom(initial: ClientPayload | null, market: "tw" | "us") {
@@ -206,12 +232,9 @@ export function ValuePicksClient({
   );
 
   useEffect(() => {
-    if (seeded.data?.rows?.length) {
-      setLoading(false);
-      return;
-    }
+    // 有 SSR／本機快取也背景對齊最新 quotes 日（避免股價／PE 停在前一交易日）
     void load(false);
-    // 僅冷啟動拉一次
+    // 僅掛載拉一次
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -319,7 +342,7 @@ export function ValuePicksClient({
     if (sortKey === key) setAsc((v) => !v);
     else {
       setSortKey(key);
-      setAsc(key === "forwardPe");
+      setAsc(key === "forwardPe" || key === "peg");
     }
   };
 
@@ -403,7 +426,7 @@ export function ValuePicksClient({
         <PanelHeader
           eyebrow="LOOKUP"
           title="查詢單一股票"
-          description="不限於上方名單；會顯示前瞻本益比、明年／今年 EPS 與逐家券商目標價。"
+          description="不限於上方名單；會顯示前瞻本益比、本益成長比、明年／今年 EPS 與逐家券商目標價。"
         />
         <form
           className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
@@ -487,6 +510,7 @@ export function ValuePicksClient({
             <FundMetricsGrid
               className="mt-3"
               forwardPe={lookup.forwardPe}
+              peg={lookup.peg}
               nextYearEps={lookup.nextYearEps}
               baseEps={lookup.baseEps}
               epsYoy={lookup.epsYoy}
@@ -610,6 +634,7 @@ export function ValuePicksClient({
                     <FundMetricsGrid
                       omitYoy
                       forwardPe={r.forwardPe}
+                      peg={rowPeg(r)}
                       nextYearEps={r.nextYearEps}
                       baseEps={r.baseEps}
                       epsYoy={r.epsYoy}
@@ -633,7 +658,7 @@ export function ValuePicksClient({
           {/* 桌面表格 */}
           <Panel className="hidden overflow-hidden md:block">
             <div className="scroll-x">
-              <table className="data-table min-w-[760px]">
+              <table className="data-table min-w-[840px]">
                 <thead>
                   <tr>
                     <th className="w-10 text-right">#</th>
@@ -669,6 +694,14 @@ export function ValuePicksClient({
                         onClick={() => toggleSort("forwardPe")}
                       >
                         前瞻本益比
+                      </SortHeaderButton>
+                    </th>
+                    <th className="cell-num">
+                      <SortHeaderButton
+                        state={sortState("peg")}
+                        onClick={() => toggleSort("peg")}
+                      >
+                        本益成長比
                       </SortHeaderButton>
                     </th>
                     <th className="cell-num">
@@ -750,13 +783,14 @@ export function ValuePicksClient({
                           <td className="cell-num font-medium">
                             {r.forwardPe.toFixed(1)}
                           </td>
+                          <td className="cell-num">{fmtPeg(rowPeg(r))}</td>
                           <td className="cell-num">
                             <Amount text={fmtTurnover(r.dayAmt, market)} />
                           </td>
                         </tr>
                         {open ? (
                           <tr className="bg-sunken">
-                            <td colSpan={8} className="px-3 py-3">
+                            <td colSpan={9} className="px-3 py-3">
                               <BrokerTargetsDetail
                                 key={`${market}-${r.code}`}
                                 code={r.code}

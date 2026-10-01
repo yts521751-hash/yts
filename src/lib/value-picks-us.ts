@@ -31,6 +31,8 @@ export type UsValuePickRow = {
   baseEps: number;
   epsYoy: number;
   forwardPe: number;
+  /** 本益成長比 = forwardPe / epsYoy（%）；成長≤0 時為 null；舊快取可能缺欄 */
+  peg?: number | null;
   epsSource: string | null;
   revenueYoy?: number | null;
 };
@@ -62,6 +64,94 @@ const CANDIDATE_LIMIT = 120;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 快取 as-of 必須等於最新 quotes 日，否則 PE／股價會停在前一交易日 */
+export function isUsValuePicksCacheCurrent(
+  cached: Pick<UsValuePicksPayload, "ymd" | "rows"> | null | undefined,
+  latestQuoteYmd: string | null | undefined,
+): boolean {
+  if (!cached?.rows?.length || !cached.ymd || !latestQuoteYmd) return false;
+  return cached.ymd === latestQuoteYmd;
+}
+
+export function usForwardPeFromClose(
+  close: number,
+  nextYearEps: number | null | undefined,
+): number | null {
+  if (
+    nextYearEps == null ||
+    !(nextYearEps > 0) ||
+    !(close > 0) ||
+    !Number.isFinite(close)
+  ) {
+    return null;
+  }
+  return round1(close / nextYearEps);
+}
+
+/** PEG = 前瞻 PE ÷ EPS YoY%；成長≤0 或缺值 → null */
+export function usComputePeg(
+  forwardPe: number | null | undefined,
+  epsYoy: number | null | undefined,
+): number | null {
+  if (
+    forwardPe == null ||
+    epsYoy == null ||
+    !(forwardPe > 0) ||
+    !(epsYoy > 0) ||
+    !Number.isFinite(forwardPe) ||
+    !Number.isFinite(epsYoy)
+  ) {
+    return null;
+  }
+  return round2(forwardPe / epsYoy);
+}
+
+/**
+ * 輕量路徑：沿用既有 EPS／YoY，只用最新日 quotes 重算 close／成交／前瞻 PE。
+ * 給 tiny-gap 日終用，避免為了換收盤價重抓百檔 EPS。
+ */
+export function repriceUsValuePicksRows(args: {
+  rows: UsValuePickRow[];
+  quotes: Map<string, { close: number; changePct: number; turnover: number }>;
+  ymd: string;
+  criteria?: UsValuePicksPayload["criteria"];
+}): Omit<UsValuePickRow, "rank">[] {
+  const criteria = args.criteria ?? {
+    minEpsYoy: MIN_EPS_YOY,
+    maxForwardPe: MAX_FORWARD_PE,
+    minDayAmtYi: MIN_DAY_AMT_YI,
+  };
+  const out: Omit<UsValuePickRow, "rank">[] = [];
+  for (const row of args.rows) {
+    const q = args.quotes.get(row.code.toUpperCase());
+    if (!q || !(q.close > 0) || !(row.nextYearEps > 0)) continue;
+    const forwardPe = usForwardPeFromClose(q.close, row.nextYearEps);
+    const dayAmt = round1(usdTurnoverToYi(q.turnover));
+    if (
+      forwardPe == null ||
+      forwardPe <= 0 ||
+      forwardPe >= criteria.maxForwardPe ||
+      row.epsYoy <= criteria.minEpsYoy ||
+      dayAmt < criteria.minDayAmtYi
+    ) {
+      continue;
+    }
+    out.push({
+      ...row,
+      close: round2(q.close),
+      changePct: round2(q.changePct),
+      dayAmt,
+      forwardPe,
+      peg: usComputePeg(forwardPe, row.epsYoy),
+    });
+  }
+  out.sort(
+    (a, b) =>
+      b.epsYoy - a.epsYoy || a.forwardPe - b.forwardPe || b.dayAmt - a.dayAmt,
+  );
+  return out;
+}
 
 type EpsHit = {
   nextYearEps: number;
@@ -255,17 +345,55 @@ function isBadEmptyCache(cached: UsValuePicksPayload | null): boolean {
 export async function buildUsValuePicks(options?: {
   force?: boolean;
 }): Promise<UsValuePicksPayload | null> {
+  const days = await listUsCachedTradingDays(1, 40);
+  if (!days.length) return null;
+  const ymd = days[0];
+  const quotes = await getUsCachedDayQuotes(ymd);
+  if (!quotes?.size) return null;
+
   if (!options?.force) {
     const cached = await readUsCacheFile<UsValuePicksPayload>(US_VALUE_CACHE);
     if (cached?.rows?.length && !isBadEmptyCache(cached)) {
-      return { ...cached, source: "cache", market: "us" };
+      if (isUsValuePicksCacheCurrent(cached, ymd)) {
+        return { ...cached, source: "cache", market: "us" };
+      }
+      // as-of 落後：沿用 EPS，用最新收盤重算 PE／股價（tiny-gap／日終輕量路徑）
+      const repriced = repriceUsValuePicksRows({
+        rows: cached.rows,
+        quotes,
+        ymd,
+        criteria: cached.criteria ?? {
+          minEpsYoy: MIN_EPS_YOY,
+          maxForwardPe: MAX_FORWARD_PE,
+          minDayAmtYi: MIN_DAY_AMT_YI,
+        },
+      });
+      const criteria = cached.criteria ?? {
+        minEpsYoy: MIN_EPS_YOY,
+        maxForwardPe: MAX_FORWARD_PE,
+        minDayAmtYi: MIN_DAY_AMT_YI,
+      };
+      const rows = repriced.map((r, i) => ({ ...r, rank: i + 1 }));
+      const payload: UsValuePicksPayload = {
+        ...cached,
+        date: ymdToIso(ymd),
+        ymd,
+        rows,
+        builtAt: new Date().toISOString(),
+        source: "rebuilt",
+        market: "us",
+        emptyReason: emptyReasonText({
+          scanned: cached.scanned ?? rows.length,
+          epsOk: cached.epsOk ?? rows.length,
+          picks: rows.length,
+          epsProviderOk: true,
+          criteria,
+        }),
+      };
+      await writeUsCacheFile(US_VALUE_CACHE, payload);
+      return payload;
     }
   }
-
-  const days = await listUsCachedTradingDays(1, 40);
-  if (!days.length) return null;
-  const quotes = await getUsCachedDayQuotes(days[0]);
-  if (!quotes?.size) return null;
 
   const minTurnover = MIN_DAY_AMT_YI * US_YI_USD;
   const candidates = [...quotes.values()]
@@ -288,8 +416,13 @@ export async function buildUsValuePicks(options?: {
     epsOk++;
     const epsYoy =
       ((eps.nextYearEps - eps.baseEps) / Math.abs(eps.baseEps)) * 100;
-    const forwardPe = q.close / eps.nextYearEps;
-    if (epsYoy <= MIN_EPS_YOY || forwardPe >= MAX_FORWARD_PE || forwardPe <= 0) {
+    const forwardPe = usForwardPeFromClose(q.close, eps.nextYearEps);
+    if (
+      epsYoy <= MIN_EPS_YOY ||
+      forwardPe == null ||
+      forwardPe >= MAX_FORWARD_PE ||
+      forwardPe <= 0
+    ) {
       continue;
     }
     const names = resolveUsDisplayNames({
@@ -308,7 +441,8 @@ export async function buildUsValuePicks(options?: {
       nextYearEps: round2(eps.nextYearEps),
       baseEps: round2(eps.baseEps),
       epsYoy: round1(epsYoy),
-      forwardPe: round1(forwardPe),
+      forwardPe,
+      peg: usComputePeg(forwardPe, epsYoy),
       epsSource: eps.source,
       revenueYoy: eps.revenueYoy,
     });
@@ -333,8 +467,8 @@ export async function buildUsValuePicks(options?: {
   });
 
   const payload: UsValuePicksPayload = {
-    date: ymdToIso(days[0]),
-    ymd: days[0],
+    date: ymdToIso(ymd),
+    ymd,
     rows: picks,
     builtAt: new Date().toISOString(),
     source: "rebuilt",
@@ -356,10 +490,15 @@ export async function getUsValuePicks(options?: {
 }): Promise<UsValuePicksPayload | null> {
   if (!options?.force) {
     const cached = await readUsCacheFile<UsValuePicksPayload>(US_VALUE_CACHE);
-    if (cached?.rows?.length) {
+    const latest = (await listUsCachedTradingDays(1, 40))[0] ?? null;
+    if (
+      cached?.rows?.length &&
+      !isBadEmptyCache(cached) &&
+      isUsValuePicksCacheCurrent(cached, latest)
+    ) {
       return { ...cached, source: "cache", market: "us" };
     }
-    // 空列／舊 crumb 錯誤快取：走重建
+    // as-of 落後或空列：走重建／重算收盤 PE
   }
   return buildUsValuePicks(options);
 }
@@ -381,6 +520,7 @@ export type UsStockValueLookup = {
   baseEps: number | null;
   epsYoy: number | null;
   forwardPe: number | null;
+  peg?: number | null;
   epsSource: string | null;
   revenueYoy: number | null;
   revenueMonth: string | null;
@@ -429,6 +569,7 @@ function lookupFromUsValueRow(
     baseEps: row.baseEps,
     epsYoy: row.epsYoy,
     forwardPe: row.forwardPe,
+    peg: row.peg ?? usComputePeg(row.forwardPe, row.epsYoy),
     epsSource: row.epsSource,
     revenueYoy: row.revenueYoy ?? null,
     revenueMonth: null,
@@ -483,8 +624,12 @@ export async function lookupUsStockValue(
     return hit.value;
   }
 
+  const days = await listUsCachedTradingDays(1, 40);
+  const ymd = days[0];
+  if (!ymd) return null;
+
   const vp = await readUsValuePicksCache().catch(() => null);
-  if (vp?.rows?.length) {
+  if (vp?.rows?.length && isUsValuePicksCacheCurrent(vp, ymd)) {
     const row = matchUsRowByQuery(vp.rows, q);
     if (row) {
       const value = lookupFromUsValueRow(row, vp.ymd, vp.date);
@@ -494,9 +639,6 @@ export async function lookupUsStockValue(
     }
   }
 
-  const days = await listUsCachedTradingDays(1, 40);
-  const ymd = days[0];
-  if (!ymd) return null;
   const quotes = await getUsCachedDayQuotes(ymd);
   if (!quotes?.size) return null;
 
@@ -550,6 +692,13 @@ export async function lookupUsStockValue(
     }
   }
 
+  // 名單有列但快取日過舊：沿用 EPS，價格／PE 改用最新 quotes
+  const staleVpRow = !code && vp?.rows?.length ? matchUsRowByQuery(vp.rows, q) : null;
+  if (!code && staleVpRow) {
+    code = staleVpRow.code.toUpperCase();
+    quoteName = staleVpRow.name;
+  }
+
   if (!code) {
     memo.set(memoKey, { at: Date.now(), value: null });
     return null;
@@ -570,18 +719,32 @@ export async function lookupUsStockValue(
     yahooName: quote?.name || quoteName,
   });
 
-  const auth = await getYahooCrumbAuth();
-  const eps = await fetchUsForwardEps(code, auth);
-  const nextYearEps = eps?.nextYearEps ?? null;
-  const baseEps = eps?.baseEps ?? null;
-  const epsYoy =
-    nextYearEps != null && baseEps != null && baseEps > 0
-      ? round1(((nextYearEps - baseEps) / Math.abs(baseEps)) * 100)
-      : null;
-  const forwardPe =
-    nextYearEps != null && nextYearEps > 0 && close > 0
-      ? round1(close / nextYearEps)
-      : null;
+  const vpRow =
+    staleVpRow ||
+    vp?.rows?.find((r) => r.code.toUpperCase() === code) ||
+    null;
+
+  // 有名單列時沿用 EPS，避免單查又打 Nasdaq／Yahoo
+  let nextYearEps = vpRow?.nextYearEps ?? null;
+  let baseEps = vpRow?.baseEps ?? null;
+  let epsYoy = vpRow?.epsYoy ?? null;
+  let epsSource = vpRow?.epsSource ?? null;
+  let revenueYoy = vpRow?.revenueYoy ?? null;
+
+  if (nextYearEps == null || baseEps == null) {
+    const auth = await getYahooCrumbAuth();
+    const eps = await fetchUsForwardEps(code, auth);
+    nextYearEps = eps?.nextYearEps ?? nextYearEps;
+    baseEps = eps?.baseEps ?? baseEps;
+    epsSource = eps?.source ?? epsSource;
+    revenueYoy = eps?.revenueYoy ?? revenueYoy;
+    epsYoy =
+      nextYearEps != null && baseEps != null && baseEps > 0
+        ? round1(((nextYearEps - baseEps) / Math.abs(baseEps)) * 100)
+        : epsYoy;
+  }
+
+  const forwardPe = usForwardPeFromClose(close, nextYearEps);
 
   const passesScreen = Boolean(
     nextYearEps != null &&
@@ -608,8 +771,9 @@ export async function lookupUsStockValue(
     baseEps: baseEps != null ? round2(baseEps) : null,
     epsYoy,
     forwardPe,
-    epsSource: eps?.source ?? null,
-    revenueYoy: eps?.revenueYoy ?? null,
+    peg: usComputePeg(forwardPe, epsYoy),
+    epsSource,
+    revenueYoy: revenueYoy ?? null,
     revenueMonth: null,
     brokers: [],
     consensusBasis: null,
