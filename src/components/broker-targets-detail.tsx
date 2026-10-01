@@ -29,7 +29,24 @@ function fmtTarget(n: number) {
   return n >= 100 ? n.toLocaleString("zh-TW") : n.toFixed(1);
 }
 
-/** 價值選股／查詢：「依據」＝逐家券商目標價（非 FactSet 共識） */
+function fmtEps(n: number) {
+  if (!Number.isFinite(n)) return "—";
+  return n >= 100 ? n.toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : n.toFixed(2);
+}
+
+function rowPrimary(r: BrokerTargetPrice): string {
+  const parts: string[] = [];
+  if (r.target != null && Number.isFinite(r.target)) {
+    parts.push(`目標價 ${fmtTarget(r.target)}`);
+  }
+  if (r.eps != null && Number.isFinite(r.eps)) {
+    const year = r.epsYear ? `${r.epsYear} ` : "";
+    parts.push(`預估 ${year}EPS ${fmtEps(r.eps)}`);
+  }
+  return parts.length ? parts.join("，") : "—";
+}
+
+/** 價值選股／查詢：「依據」＝逐家券商目標價／預估 EPS（非 FactSet 共識） */
 export function BrokerTargetsDetail({
   code,
   name,
@@ -95,7 +112,7 @@ export function BrokerTargetsDetail({
         aria-expanded={open}
       >
         <span className="font-medium text-foreground/90">
-          券商目標價依據
+          券商／外資報告
           {countLabel}
           {loading ? " · 載入中…" : ""}
         </span>
@@ -112,12 +129,14 @@ export function BrokerTargetsDetail({
             <p className="text-[11px] text-[var(--mk-ebb)]">{error}</p>
           ) : null}
           {loading && !targets.length ? (
-            <p className="text-muted-foreground">正在查詢內外資券商目標價…</p>
+            <p className="text-muted-foreground">
+              正在查詢內外資券商目標價與預估 EPS…
+            </p>
           ) : null}
           {!loading && fetched && !targets.length ? (
             <p className="leading-relaxed text-muted-foreground">
-              {emptyReason || "尚無逐家券商目標價"}
-              。僅在公開新聞標題／內文能辨識「券商＋絕對目標價」時顯示；無具名券商報道時會留空。
+              {emptyReason || "尚無逐家券商目標價或預估 EPS"}
+              。僅在公開新聞能辨識「具名券商＋目標價／EPS」時顯示；無具名券商報道時會留空。
             </p>
           ) : null}
           {targets.length ? (
@@ -154,8 +173,8 @@ export function BrokerTargetsDetail({
                       </span>
                     ) : null}
                   </span>
-                  <span className="shrink-0 font-semibold tabular-nums">
-                    {fmtTarget(r.target)}
+                  <span className="max-w-[58%] shrink-0 text-right font-semibold tabular-nums leading-snug">
+                    {rowPrimary(r)}
                   </span>
                 </li>
               ))}
@@ -163,9 +182,9 @@ export function BrokerTargetsDetail({
           ) : null}
           {targets.length ? (
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              目標價取自 Google
-              新聞／鉅亨等公開報道中的具名券商研究（非 FactSet
-              共識彙總）；同券商保留較新一筆。點券商名可開啟來源。
+              取自 Google／Bing 新聞、鉅亨等公開報道中的具名券商研究（非 FactSet
+              共識彙總）；同券商保留較新一筆，目標價與預估
+              EPS 可分開補齊。點券商名可開啟來源。
             </p>
           ) : null}
         </div>

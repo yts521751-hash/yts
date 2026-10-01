@@ -69,4 +69,43 @@ describe("broker-targets extract", () => {
     );
     assert.equal(rows.length, 0);
   });
+
+  it("parses target with EPS in same sentence", () => {
+    const text =
+      "美銀最新報告上調奇鋐目標價至3540元，EPS預估倍增至99.23元";
+    const rows = extractBrokerTargetsFromText(text);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].broker, "美銀");
+    assert.equal(rows[0].target, 3540);
+    assert.equal(rows[0].eps, 99.23);
+  });
+
+  it("parses 大摩 target + 明年 EPS year label", () => {
+    const text =
+      "大摩將華邦電目標價上調至222元，明年EPS上看56.06元";
+    const rows = extractBrokerTargetsFromText(text);
+    assert.equal(rows[0]?.broker, "摩根士丹利");
+    assert.equal(rows[0]?.target, 222);
+    assert.equal(rows[0]?.eps, 56.06);
+    assert.equal(rows[0]?.epsYear, "明年");
+  });
+
+  it("keeps broker when only EPS is present", () => {
+    const text = "元大預估緯穎明年EPS至145.03元，維持買進評等";
+    const rows = extractBrokerTargetsFromText(text);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].broker, "元大");
+    assert.equal(rows[0].target, null);
+    assert.equal(rows[0].eps, 145.03);
+    assert.equal(rows[0].epsYear, "明年");
+  });
+
+  it("parses 目標價飆 pattern", () => {
+    const text =
+      "大摩認錯了！記憶體行情比想像更猛 華邦電目標價飆222元、南亞科上看805元";
+    const rows = extractBrokerTargetsFromText(text);
+    const ms = rows.find((r) => r.broker === "摩根士丹利");
+    assert.ok(ms);
+    assert.equal(ms?.target, 222);
+  });
 });

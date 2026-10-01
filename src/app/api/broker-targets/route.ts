@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * 懶加載個股內外資券商目標價。
+ * 懶加載個股內外資券商目標價／預估 EPS。
  * GET /api/broker-targets?code=2330&name=台積電
  * GET /api/broker-targets?code=2330&force=1
  */

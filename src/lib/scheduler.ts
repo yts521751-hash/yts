@@ -201,6 +201,14 @@ export function startScheduler() {
           } catch (e) {
             console.error("[scheduler] morning turnover warm failed", e);
           }
+          try {
+            const { warmBrokerTargetsFromUniverse } = await import(
+              "@/lib/broker-targets"
+            );
+            warmBrokerTargetsFromUniverse(`morning:${morningExpr}`);
+          } catch (e) {
+            console.error("[scheduler] morning broker-targets warm failed", e);
+          }
         })();
       },
       { timezone: TZ },

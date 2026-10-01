@@ -207,7 +207,7 @@ export function ValuePicksClient({
           達 {data?.criteria.minDayAmtYi ?? 10} 億以上的個股。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價
+          EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價與預估 EPS
           {data?.date ? ` · 行情日 ${data.date}` : ""}
           {data?.scanned != null ? ` · 掃描 ${data.scanned} 檔` : ""}
           {data?.builtAt
@@ -320,7 +320,7 @@ export function ValuePicksClient({
         ) : (
           <>
             <p className="mt-5 text-xs text-muted-foreground">
-              共 {rows.length} 檔 · 點列可展開券商目標價依據 · 點欄位可排序
+              共 {rows.length} 檔 · 點列可展開券商報告（目標價／EPS） · 點欄位可排序
             </p>
 
             {/* 手機卡片 */}

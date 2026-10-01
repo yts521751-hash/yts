@@ -361,6 +361,16 @@ async function runDailyClosePackageUnlocked(
       valueStep.ok && valueStep.value?.rows != null,
     );
 
+    // 背景暖機券商目標價（不阻塞日終）
+    try {
+      const { warmBrokerTargetsFromUniverse } = await import(
+        "@/lib/broker-targets"
+      );
+      warmBrokerTargetsFromUniverse(`${reason}:tiny-gap`);
+    } catch (err) {
+      console.warn("[daily-close] broker-targets warm skip", err);
+    }
+
     const meta: DailyCloseMeta = {
       asOf,
       builtAt: new Date().toISOString(),
@@ -493,6 +503,15 @@ async function runDailyClosePackageUnlocked(
     artifacts.klines = true;
   } else if (smallGap) {
     artifacts.klines = Boolean(prevMeta?.artifacts?.klines);
+  }
+
+  try {
+    const { warmBrokerTargetsFromUniverse } = await import(
+      "@/lib/broker-targets"
+    );
+    warmBrokerTargetsFromUniverse(reason);
+  } catch (err) {
+    console.warn("[daily-close] broker-targets warm skip", err);
   }
 
   const meta: DailyCloseMeta = {
