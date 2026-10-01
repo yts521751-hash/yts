@@ -261,7 +261,8 @@ export type GapFillProgress = {
   fetched: number;
   missingTotal: number;
   currentYmd?: string;
-  phase: "scan" | "fetch" | "done";
+  /** fetch=水位後缺日；depth=歷史深度回補；scan/done=檢查／完成 */
+  phase: "scan" | "fetch" | "depth" | "done";
 };
 
 export type GapFillResult = {

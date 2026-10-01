@@ -32,6 +32,13 @@ export type TurnoverRow = {
   turnoverYi: number;
   changePct: number;
   close: number;
+  /** 前瞻本益比 = close / nextYearEps（有 EPS 才有） */
+  forwardPe?: number | null;
+  nextYearEps?: number | null;
+  baseEps?: number | null;
+  /** 明年 EPS YoY % */
+  epsYoy?: number | null;
+  epsSource?: string | null;
 };
 
 export type TurnoverPayload = {
@@ -138,6 +145,35 @@ export async function buildTurnoverRanking(
     forceExclusions: Boolean(options?.force),
   });
   if (!payload) return null;
+
+  // 批次補基本面（共用 fundamentals 快取；不 force，避免 N+1 打爆）
+  try {
+    const { enrichStockFundamentals } = await import("@/lib/fundamentals");
+    const fund = await enrichStockFundamentals(
+      payload.rows.map((r) => r.code),
+      { force: false },
+    );
+    for (const row of payload.rows) {
+      const f = fund.get(row.code);
+      if (!f) continue;
+      row.nextYearEps = f.nextYearEps;
+      row.baseEps = f.baseEps;
+      row.epsYoy = f.epsGrowth;
+      row.epsSource = f.epsSource;
+      if (
+        f.nextYearEps != null &&
+        f.nextYearEps > 0 &&
+        Number.isFinite(row.close)
+      ) {
+        row.forwardPe = round2(row.close / f.nextYearEps);
+      } else {
+        row.forwardPe = null;
+      }
+    }
+  } catch (err) {
+    console.warn("[turnover] fundamentals enrich failed", err);
+  }
+
   await writeCacheFile(CACHE, payload);
   return payload;
 }
@@ -168,22 +204,24 @@ export async function fillTradingDayGaps(options?: {
     : listWeekdaysBetween(null, target, needDays);
   const missing = findMissingTradingDays(existingSet, afterWatermark);
 
+  // skipped = 本次略過的缺日數（非本機全部日檔數）
   options?.onProgress?.({
     done: 0,
     need: Math.max(missing.length, 1),
-    skipped: existingSet.size,
+    skipped: 0,
     fetched: 0,
     missingTotal: missing.length,
     phase: missing.length ? "fetch" : "scan",
   });
 
   let fetched = 0;
+  const fetchedYmds: string[] = [];
   for (let i = 0; i < missing.length; i++) {
     const ymd = missing[i];
     options?.onProgress?.({
       done: i,
       need: missing.length,
-      skipped: existing.length,
+      skipped: i - fetched,
       fetched,
       missingTotal: missing.length,
       currentYmd: ymd,
@@ -192,6 +230,7 @@ export async function fillTradingDayGaps(options?: {
     const quotes = await loadMergedQuotesDay(ymd);
     if (quotes?.quotes?.length) {
       fetched++;
+      fetchedYmds.push(ymd);
       existingSet.add(ymd);
       await loadMergedInstiDay(ymd);
       await sleep(180);
@@ -217,12 +256,12 @@ export async function fillTradingDayGaps(options?: {
         options?.onProgress?.({
           done,
           need,
-          skipped: existing.length + depthSkipped,
+          skipped: depthSkipped,
           fetched: fetched + depthFetched,
-          // 深度回補時用 need 當分母，避免一直顯示「1/1」卻其實在往回抓數十根
-          missingTotal: Math.max(missing.length, need),
+          // 深度回補用獨立 phase，避免 UI 把「補缺 1 日」顯示成 X/60
+          missingTotal: need,
           currentYmd: meta?.currentYmd,
-          phase: "fetch",
+          phase: "depth",
         });
       },
     });
@@ -234,21 +273,21 @@ export async function fillTradingDayGaps(options?: {
     );
   }
 
-  // 近月法人檔：有 quotes 就確保 insti（已有檔略過）
+  // 只為「本次新抓到的日」確保法人檔（已有檔略過）；不再每次掃 25 日
   quoteDays = await listCachedTradingDays(needDays, lookback);
-  for (const ymd of quoteDays.slice(0, 25)) {
+  for (const ymd of [...new Set(fetchedYmds)]) {
     await loadMergedInstiDay(ymd);
   }
 
   const totalFetched = fetched + depthFetched;
   if (totalFetched > 0) invalidateTradingDaysMemo();
   quoteDays = await listCachedTradingDays(needDays, lookback);
-  const skipped = Math.max(0, quoteDays.length - totalFetched);
+  const skippedThisRun = Math.max(0, missing.length - fetched) + depthSkipped;
 
   options?.onProgress?.({
     done: Math.max(missing.length, quoteDays.length),
-    need: Math.max(missing.length, needDays),
-    skipped,
+    need: Math.max(missing.length, 1),
+    skipped: skippedThisRun,
     fetched: totalFetched,
     missingTotal: missing.length,
     phase: "done",
@@ -259,7 +298,7 @@ export async function fillTradingDayGaps(options?: {
     target,
     missing,
     fetched: totalFetched,
-    skipped,
+    skipped: skippedThisRun,
     quoteDays,
     didFetch: totalFetched > 0,
   };

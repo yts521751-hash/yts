@@ -3,6 +3,7 @@ import {
   artifactsComplete,
   isMetaAsOfTarget,
   isPackageUpToDate,
+  prevTradingDayYmd,
   resolveSyncTargetYmd,
   toCompactYmd,
 } from "@/lib/gap-sync";
@@ -12,6 +13,10 @@ import {
   readCacheFile,
   writeCacheFile,
 } from "@/lib/tw-market";
+import {
+  setRebuildProgress,
+  progressInRange,
+} from "@/lib/rebuild-progress";
 
 /**
  * 日終大包（Daily Close Package）
@@ -21,6 +26,7 @@ import {
  * - 之後各頁（資金流、個股、產業 K、均線、風度）只讀這批快照，不再為了開頁去打交易所
  * - 成交排行改為日終快照（一般成交口徑），不再盤中即時輪詢
  * - 增量：先補水位之後缺日；若 active 大包已對齊最新交易日且 artifacts 齊則略過重算
+ * - 小缺口（≈1 日）：本機日檔重算、略過二次 60 日回補／重複法人掃描
  *
  * 快照仍拆成多個 cache 檔（較好增量更新／灰度），但由本模組統一編排與寫入 meta 索引。
  */
@@ -101,6 +107,19 @@ function dailyCloseBag() {
   return g.__jinliuDailyClose;
 }
 
+function markStep(
+  label: string,
+  from: number,
+  to: number,
+  index: number,
+  total: number,
+) {
+  setRebuildProgress({
+    percent: progressInRange(from, to, index, total),
+    label,
+  });
+}
+
 /**
  * 執行日終大包：先缺口補日 →（可略過）flow 定稿與衍生快照。
  * 任一步失敗不阻断後續（meta 會標示），避免單一資料源拖垮整晚同步。
@@ -113,6 +132,8 @@ export async function runDailyClosePackage(
     force?: boolean;
     /** 呼叫端已做過缺口補日時可跳過 */
     skipGapFill?: boolean;
+    /** 小缺口提示：略過二次歷史回補／用本機日檔 */
+    smallGap?: boolean;
   },
 ): Promise<DailyCloseMeta> {
   const bag = dailyCloseBag();
@@ -130,6 +151,7 @@ async function runDailyClosePackageUnlocked(
   options?: {
     force?: boolean;
     skipGapFill?: boolean;
+    smallGap?: boolean;
   },
 ): Promise<DailyCloseMeta> {
   console.log(`[daily-close] start (${reason})`);
@@ -141,20 +163,18 @@ async function runDailyClosePackageUnlocked(
   if (!options?.skipGapFill) {
     const gapStep = await step("gap-fill", async () => {
       const { fillTradingDayGaps } = await import("@/lib/turnover");
-      const {
-        beginRebuildProgress,
-        setRebuildProgress,
-        progressInRange,
-      } = await import("@/lib/rebuild-progress");
+      const { beginRebuildProgress } = await import("@/lib/rebuild-progress");
       beginRebuildProgress("補缺交易日");
       return fillTradingDayGaps({
         onProgress: (p) => {
           const label =
-            p.missingTotal > 0
-              ? `補缺交易日 ${p.fetched}/${p.missingTotal}（已有略過 ${p.skipped}）`
-              : p.phase === "done"
-                ? `交易日已齊（略過 ${p.skipped}）`
-                : `檢查交易日缺口（已有 ${p.skipped}）`;
+            p.phase === "depth"
+              ? `深度回補交易日 ${p.done}/${p.need}（略過 ${p.skipped}）`
+              : p.missingTotal > 0
+                ? `補缺交易日 ${p.fetched}/${p.missingTotal}（略過 ${p.skipped}）`
+                : p.phase === "done"
+                  ? `交易日已齊（略過 ${p.skipped}）`
+                  : `檢查交易日缺口（已有 ${p.skipped}）`;
           setRebuildProgress({
             percent: progressInRange(3, 38, p.done, Math.max(p.need, 1)),
             label,
@@ -216,6 +236,17 @@ async function runDailyClosePackageUnlocked(
     return skippedMeta;
   }
 
+  // 小缺口：水位只前進約 1 個交易日，且前次 artifacts 齊 → 走輕量路徑
+  const prevAsOfYmd = prevMeta?.asOf ? toCompactYmd(prevMeta.asOf) : null;
+  const smallGap =
+    Boolean(options?.smallGap) ||
+    Boolean(
+      latestQuote &&
+        prevAsOfYmd &&
+        artifactsComplete(prevMeta?.artifacts) &&
+        prevTradingDayYmd(latestQuote) === prevAsOfYmd,
+    );
+
   const artifacts: DailyCloseMeta["artifacts"] = {
     flow: false,
     quotesWarm: false,
@@ -227,11 +258,24 @@ async function runDailyClosePackageUnlocked(
     valuePicks: false,
   };
   let asOf: string | null = null;
+  const totalSteps = 6;
 
-  // 1) 資金流定稿（內含：近 N 日報價／法人、universe、staging→active、K 線預熱）
+  // 1) 資金流定稿
+  markStep(
+    smallGap ? "重算資金流（本機日檔）" : "重算資金流",
+    42,
+    52,
+    0,
+    totalSteps,
+  );
   const flowStep = await step("flow", async () => {
     const { rebuildFlowPayload } = await import("@/lib/build-flow");
-    return rebuildFlowPayload({ promote: true });
+    return rebuildFlowPayload({
+      promote: true,
+      cacheOnly: Boolean(options?.skipGapFill || smallGap),
+      skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
+      manageProgress: false,
+    });
   });
   steps.push({
     name: flowStep.name,
@@ -241,24 +285,37 @@ async function runDailyClosePackageUnlocked(
   });
   if (flowStep.ok && flowStep.value) {
     artifacts.flow = true;
-    artifacts.quotesWarm = true; // rebuild 內 ensureQuoteHistory
-    artifacts.klines = true; // rebuild 內 warmSectorKlineCaches
+    artifacts.quotesWarm = true;
+    artifacts.klines = true;
     asOf = flowStep.value.brief?.date ?? null;
   }
 
-  // 2) 個股資金流排行（先暖機近月排除額，再 force 重算寫 flow-stocks-latest）
+  // 2) 個股資金流排行（不再雙重 warm；小缺口不 force EPS）
+  markStep(
+    smallGap ? "更新個股金流（僅最新日排除額）" : "重算個股金流",
+    52,
+    68,
+    1,
+    totalSteps,
+  );
   const stocksStep = await step("stocks", async () => {
     const { listCachedTradingDays } = await import("@/lib/tw-market");
     const { warmTurnoverExclusions } = await import("@/lib/regular-turnover");
     const { buildStockFlowRanking } = await import("@/lib/stock-flow");
     const days = await listCachedTradingDays(25, 60);
     if (days.length) {
-      await warmTurnoverExclusions(days, {
+      // 小缺口：只暖最新日；完整包才暖近月
+      const warmDays = smallGap ? days.slice(0, 1) : days;
+      await warmTurnoverExclusions(warmDays, {
         forceLatest: days[0],
         concurrency: 4,
       });
     }
-    const payload = await buildStockFlowRanking(50, { force: true });
+    const payload = await buildStockFlowRanking(50, {
+      force: true,
+      forceFundamentals: !smallGap,
+      skipWarmExclusions: true,
+    });
     await flushUploadsSafe();
     return payload;
   });
@@ -270,7 +327,8 @@ async function runDailyClosePackageUnlocked(
   });
   artifacts.stocks = Boolean(stocksStep.ok && stocksStep.value?.rows?.length);
 
-  // 3) 風度儀表（上市／上櫃指數均線結構）
+  // 3) 風度儀表
+  markStep("更新風度儀表", 68, 76, 2, totalSteps);
   const windStep = await step("wind", async () => {
     const { computeWindPayload } = await import("@/lib/wind-gauge");
     return computeWindPayload({ force: true, allowNetwork: true });
@@ -283,12 +341,20 @@ async function runDailyClosePackageUnlocked(
   });
   artifacts.wind = Boolean(windStep.ok && windStep.value?.twse && windStep.value?.tpex);
 
-  // 4) 產業均線掃描（依賴上一步 K 線快取）
+  // 4) 產業均線掃描
+  markStep(
+    smallGap ? "更新均線掃描（略過歷史回補）" : "重算均線掃描",
+    76,
+    86,
+    3,
+    totalSteps,
+  );
   const maStep = await step("ma-screener", async () => {
     const { buildMaScreener } = await import("@/lib/ma-screener");
     return buildMaScreener({
       forceRebuildMissing: true,
       skipDiskCache: true,
+      skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
     });
   });
   steps.push({
@@ -299,7 +365,8 @@ async function runDailyClosePackageUnlocked(
   });
   artifacts.ma = Boolean(maStep.ok && maStep.value?.rows?.length);
 
-  // 5) 收盤版成交排行（一般成交口徑；日終寫快照，盤中不再即時抓）
+  // 5) 收盤版成交排行
+  markStep("更新成交排行", 86, 92, 4, totalSteps);
   const turnoverStep = await step("turnover-close", async () => {
     const { buildTurnoverRanking } = await import("@/lib/turnover");
     return buildTurnoverRanking(50, { force: true });
@@ -314,7 +381,8 @@ async function runDailyClosePackageUnlocked(
     turnoverStep.ok && turnoverStep.value?.rows?.length,
   );
 
-  // 6) 價值選股（法人 EPS 中位數 YoY＋前瞻本益比）
+  // 6) 價值選股
+  markStep("更新價值選股", 92, 98, 5, totalSteps);
   const valueStep = await step("value-picks", async () => {
     const { buildValuePicks } = await import("@/lib/value-picks");
     return buildValuePicks({ force: true });
@@ -344,7 +412,7 @@ async function runDailyClosePackageUnlocked(
   const okCount = steps.filter((s) => s.ok).length;
   console.log(
     `[daily-close] done (${reason}): ${okCount}/${steps.length} ok asOf=${asOf ?? "—"} ` +
-      `complete=${artifactsComplete(artifacts)} target=${target} ` +
+      `complete=${artifactsComplete(artifacts)} target=${target} smallGap=${smallGap} ` +
       `ms=${steps.map((s) => `${s.name}:${s.ms}`).join(",")}`,
   );
   return meta;

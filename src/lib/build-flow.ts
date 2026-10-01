@@ -11,6 +11,9 @@ import {
   ACTIVE_FLOW_CACHE,
   STAGING_FLOW_CACHE,
   LAST_CLOSE_FLOW_CACHE,
+  getCachedDayInsti,
+  getCachedDayQuotes,
+  listCachedTradingDays,
   listRecentTradingDays,
   loadMergedInstiDay,
   loadMergedQuotesDay,
@@ -267,13 +270,27 @@ export async function rebuildFlowPayload(options?: {
   days?: number;
   /** 強制切 active（略過 18:00；冷啟動無 active 也會自動切） */
   promote?: boolean;
+  /** 只用本機報價／法人日檔，不打交易所（日終大包缺口已補時） */
+  cacheOnly?: boolean;
+  /** 略過尾端 ensureQuoteHistory（呼叫端已補缺口） */
+  skipEnsureHistory?: boolean;
+  /** 為 false 時不 begin/finish 全域進度（由日終大包擁有進度條） */
+  manageProgress?: boolean;
 }): Promise<FlowPayload> {
   await writeDeployMeta({ syncing: true, lastError: null });
-  beginRebuildProgress("同步資金流");
+  const manageProgress = options?.manageProgress !== false;
+  const cacheOnly = Boolean(options?.cacheOnly);
+  const skipEnsureHistory = Boolean(options?.skipEnsureHistory);
+  if (manageProgress) beginRebuildProgress("同步資金流");
+  else setRebuildProgress({ label: "重算資金流（本機日檔）" });
   try {
     const needDays = options?.days ?? 20;
-    setRebuildProgress({ percent: 5, label: "抓取交易日" });
-    const tradingDaysRaw = await listRecentTradingDays(needDays, 50);
+    if (manageProgress) {
+      setRebuildProgress({ percent: 5, label: "抓取交易日" });
+    }
+    const tradingDaysRaw = cacheOnly
+      ? await listCachedTradingDays(needDays, 50)
+      : await listRecentTradingDays(needDays, 50);
     const clock = taipeiClock();
     // 18:00 前不用「今天」未定稿日，避免晨間／盤中覆蓋上個交易日結果
     const tradingDays =
@@ -286,25 +303,46 @@ export async function rebuildFlowPayload(options?: {
 
     const dayData: DayBundle[] = [];
     for (const ymd of tradingDays) {
-      const bundle = await loadMergedQuotesDay(ymd);
-      if (!bundle?.quotes?.length) {
+      let quotesMap: Map<string, QuoteRow> | null = null;
+      let insti: Map<string, InstiRow> = new Map();
+      let indexChangePct: number | null | undefined;
+
+      if (cacheOnly) {
+        quotesMap = await getCachedDayQuotes(ymd);
+        if (!quotesMap?.size) continue;
+        insti = (await getCachedDayInsti(ymd)) ?? new Map();
+        // 指數漲跌：舊日檔未必有；缺則略過（fear gauge 會濾 null）
+        indexChangePct = undefined;
+      } else {
+        const bundle = await loadMergedQuotesDay(ymd);
+        if (!bundle?.quotes?.length) {
+          await sleep(100);
+          continue;
+        }
+        quotesMap = new Map(bundle.quotes.map((q) => [q.code, q]));
+        insti =
+          (await loadMergedInstiDay(ymd, { watchCodes: WATCH_CODES })) ??
+          new Map<string, InstiRow>();
+        indexChangePct = bundle.indexChangePct;
         await sleep(100);
-        continue;
       }
-      const insti =
-        (await loadMergedInstiDay(ymd, { watchCodes: WATCH_CODES })) ??
-        new Map<string, InstiRow>();
+
       dayData.push({
         ymd,
-        quotes: new Map(bundle.quotes.map((q) => [q.code, q])),
+        quotes: quotesMap,
         insti,
-        indexChangePct: bundle.indexChangePct,
+        indexChangePct: indexChangePct ?? null,
       });
-      setRebuildProgress({
-        percent: progressInRange(8, 32, dayData.length, tradingDays.length),
-        label: `同步資金流 ${dayData.length}/${tradingDays.length}`,
-      });
-      await sleep(100);
+      if (manageProgress) {
+        setRebuildProgress({
+          percent: progressInRange(8, 32, dayData.length, tradingDays.length),
+          label: `同步資金流 ${dayData.length}/${tradingDays.length}`,
+        });
+      } else {
+        setRebuildProgress({
+          label: `重算資金流 ${dayData.length}/${tradingDays.length}`,
+        });
+      }
     }
     if (dayData.length < 5) {
       throw new Error("成交金額日資料不足，請稍後再試");
@@ -374,18 +412,32 @@ export async function rebuildFlowPayload(options?: {
 
     // 預熱產業 K 線快取（近約 60 交易日），避免點進頁面才重算
     try {
-      const { ensureQuoteHistory } = await import("@/lib/turnover");
+      if (!skipEnsureHistory) {
+        const { ensureQuoteHistory } = await import("@/lib/turnover");
+        const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
+        if (manageProgress) {
+          setRebuildProgress({ percent: 45, label: "補齊歷史報價" });
+        }
+        await ensureQuoteHistory(HISTORY_TRADING_DAYS, {
+          onProgress: (done, need) => {
+            if (!manageProgress) return;
+            setRebuildProgress({
+              percent: progressInRange(45, 72, done, need),
+              label: `補齊歷史報價 ${done}/${need}`,
+            });
+          },
+        });
+      } else {
+        setRebuildProgress({
+          label: "略過歷史報價回補（缺口已補）",
+        });
+      }
       const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
-      setRebuildProgress({ percent: 45, label: "補齊歷史報價" });
-      await ensureQuoteHistory(HISTORY_TRADING_DAYS, {
-        onProgress: (done, need) => {
-          setRebuildProgress({
-            percent: progressInRange(45, 72, done, need),
-            label: `補齊歷史報價 ${done}/${need}`,
-          });
-        },
-      });
-      setRebuildProgress({ percent: 75, label: "重算產業 K 線" });
+      if (manageProgress) {
+        setRebuildProgress({ percent: 75, label: "重算產業 K 線" });
+      } else {
+        setRebuildProgress({ label: "更新產業 K 線（僅過期）" });
+      }
       let warmDefs = universe;
       try {
         const { listIndustryDefs } = await import("@/lib/ma-screener");
@@ -397,11 +449,19 @@ export async function rebuildFlowPayload(options?: {
         /* industries optional — still warm flow universe */
       }
       await warmSectorKlineCaches(HISTORY_TRADING_DAYS, warmDefs, {
+        force: false,
+        allowEnsureHistory: !skipEnsureHistory,
         onProgress: (done, total) => {
-          setRebuildProgress({
-            percent: progressInRange(75, 98, done, total),
-            label: `重算產業 K 線 ${done}/${total}`,
-          });
+          if (manageProgress) {
+            setRebuildProgress({
+              percent: progressInRange(75, 98, done, total),
+              label: `重算產業 K 線 ${done}/${total}`,
+            });
+          } else {
+            setRebuildProgress({
+              label: `更新產業 K 線 ${done}/${total}`,
+            });
+          }
         },
       });
     } catch (err) {
@@ -409,12 +469,12 @@ export async function rebuildFlowPayload(options?: {
     }
 
     await writeDeployMeta({ syncing: false, lastError: null });
-    finishRebuildProgress(true);
+    if (manageProgress) finishRebuildProgress(true);
     return { ...payload, deploySlot: doPromote ? "active" : "staging" };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await writeDeployMeta({ syncing: false, lastError: message });
-    finishRebuildProgress(false, message);
+    if (manageProgress) finishRebuildProgress(false, message);
     throw err;
   }
 }

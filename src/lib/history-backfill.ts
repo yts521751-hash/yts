@@ -105,11 +105,13 @@ export async function runHistoryBackfill(reason: string) {
       needDays: HISTORY_TRADING_DAYS,
       onProgress: (p) => {
         const label =
-          p.missingTotal > 0
-            ? `補缺交易日 ${Math.min(p.fetched, p.missingTotal)}/${p.missingTotal}（略過已有 ${p.skipped}）`
-            : p.phase === "done"
-              ? `交易日已齊（略過已有 ${p.skipped}）`
-              : `檢查缺口（已有 ${p.skipped} 日）`;
+          p.phase === "depth"
+            ? `深度回補交易日 ${p.done}/${p.need}（略過 ${p.skipped}）`
+            : p.missingTotal > 0
+              ? `補缺交易日 ${Math.min(p.fetched, p.missingTotal)}/${p.missingTotal}（略過 ${p.skipped}）`
+              : p.phase === "done"
+                ? `交易日已齊（略過 ${p.skipped}）`
+                : `檢查缺口（略過 ${p.skipped}）`;
         setRebuildProgress({
           percent: progressInRange(5, 40, p.done, Math.max(p.need, 1)),
           label,
@@ -122,16 +124,24 @@ export async function runHistoryBackfill(reason: string) {
         `missing=${gap.missing.length} fetched=${gap.fetched} skipped≈${gap.skipped}`,
     );
 
+    const smallGap =
+      gap.fetched > 0 &&
+      gap.fetched <= 2 &&
+      gap.missing.length <= 2;
+
     setRebuildProgress({
       percent: 42,
       label:
         gap.fetched > 0
-          ? "日終大包（含產業 K／均線）"
+          ? smallGap
+            ? `日終增量更新（補了 ${gap.fetched} 日）`
+            : "日終大包（含產業 K／均線）"
           : "檢查日終大包是否最新",
     });
     const { runDailyClosePackage } = await import("@/lib/daily-close-package");
     const meta = await runDailyClosePackage(`backfill:${reason}`, {
       skipGapFill: true,
+      smallGap,
     });
 
     const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);

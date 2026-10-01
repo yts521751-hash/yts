@@ -173,10 +173,20 @@ function enrichFundamentalsInBackground(cached: StockFlowPayload) {
  */
 export async function buildStockFlowRanking(
   limit = 50,
-  options?: { force?: boolean },
+  options?: {
+    force?: boolean;
+    /** 強制重算排行時仍可沿用 EPS 快取（日終小缺口） */
+    forceFundamentals?: boolean;
+    /** 略過內部 warmTurnoverExclusions（呼叫端已暖機） */
+    skipWarmExclusions?: boolean;
+  },
 ): Promise<StockFlowPayload | null> {
   const want = Math.min(100, Math.max(10, limit));
   const force = Boolean(options?.force);
+  const forceFundamentals =
+    options?.forceFundamentals != null
+      ? Boolean(options.forceFundamentals)
+      : force;
 
   if (!force) {
     const cached = await readCacheFile<StockFlowPayload>(CACHE);
@@ -193,10 +203,12 @@ export async function buildStockFlowRanking(
   if (!latestQuotes?.size) return null;
 
   // 先並行暖機近月排除額，避免逐日串行打交易所
-  await warmTurnoverExclusions(days, {
-    forceLatest: force ? days[0] : undefined,
-    concurrency: 4,
-  });
+  if (!options?.skipWarmExclusions) {
+    await warmTurnoverExclusions(days, {
+      forceLatest: force ? days[0] : undefined,
+      concurrency: 4,
+    });
+  }
 
   const latestRegular = await applyRegularTurnover(latestQuotes, days[0], {
     force,
@@ -344,7 +356,7 @@ export async function buildStockFlowRanking(
   try {
     const fund = await enrichStockFundamentals(
       top.map((r) => r.code),
-      { force },
+      { force: forceFundamentals },
     );
     for (const row of top) {
       const f = fund.get(row.code);

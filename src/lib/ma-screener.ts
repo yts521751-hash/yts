@@ -252,6 +252,8 @@ export async function readMaScreenerCache(): Promise<MaScreenerPayload | null> {
 export async function buildMaScreener(options?: {
   forceRebuildMissing?: boolean;
   skipDiskCache?: boolean;
+  /** 日終大包已補缺口時略過 ensureQuoteHistory */
+  skipEnsureHistory?: boolean;
 }): Promise<MaScreenerPayload> {
   if (!options?.skipDiskCache && !options?.forceRebuildMissing) {
     const cached = await readMaScreenerCache();
@@ -260,7 +262,10 @@ export async function buildMaScreener(options?: {
 
   const defs = await listIndustryDefs();
   // 日終／明確 skipDiskCache 暖機才補報價歷史；HTTP 短超時路徑勿卡 gap-sync
-  if (options?.skipDiskCache || options?.forceRebuildMissing) {
+  if (
+    !options?.skipEnsureHistory &&
+    (options?.skipDiskCache || options?.forceRebuildMissing)
+  ) {
     try {
       const { ensureQuoteHistory } = await import("@/lib/turnover");
       const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
@@ -284,7 +289,8 @@ export async function buildMaScreener(options?: {
         payload = await buildSectorKline(def.id, HISTORY_TRADING_DAYS, {
           def,
           force: true,
-          allowEnsureHistory: Boolean(options?.skipDiskCache),
+          allowEnsureHistory:
+            !options?.skipEnsureHistory && Boolean(options?.skipDiskCache),
         }).catch(() => null);
       }
       if (!payload?.candles?.length) return null;

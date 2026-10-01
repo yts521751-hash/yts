@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronDown, RefreshCw } from "lucide-react";
 import { formatPct, formatTurnoverYi, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
@@ -11,6 +11,7 @@ import {
   readClientCache,
   writeClientCache,
 } from "@/lib/client-cache";
+import { FundMetricsGrid } from "@/components/eps-basis-detail";
 
 type Row = {
   rank: number;
@@ -19,6 +20,11 @@ type Row = {
   turnoverYi: number;
   changePct: number;
   close: number;
+  forwardPe?: number | null;
+  nextYearEps?: number | null;
+  baseEps?: number | null;
+  epsYoy?: number | null;
+  epsSource?: string | null;
 };
 
 type TurnoverSnapshot = {
@@ -30,6 +36,15 @@ type TurnoverSnapshot = {
   amountBasis?: string;
 };
 
+function hasFund(r: Row) {
+  return (
+    r.forwardPe != null ||
+    r.nextYearEps != null ||
+    r.epsYoy != null ||
+    r.baseEps != null
+  );
+}
+
 export default function TurnoverPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [date, setDate] = useState("");
@@ -40,6 +55,7 @@ export default function TurnoverPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [fromCache, setFromCache] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     const cached = readClientCache<TurnoverSnapshot>(CLIENT_CACHE_KEYS.turnover);
@@ -94,6 +110,10 @@ export default function TurnoverPage() {
     void load(false);
   }, [load]);
 
+  const toggle = (code: string) => {
+    setExpanded((cur) => (cur === code ? null : code));
+  };
+
   return (
     <div className="relative min-h-full flex-1">
       <div
@@ -130,6 +150,7 @@ export default function TurnoverPage() {
             <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground sm:mt-2">
               {amountBasis ||
                 "一般成交金額（不含盤後定價／零股／鉅額）· 每日收盤後更新"}
+              {" · 點列可展開前瞻本益比／明年 EPS"}
               {fromCache ? " · 已先顯示本機快取" : ""}
             </p>
           </div>
@@ -163,49 +184,77 @@ export default function TurnoverPage() {
           ) : (
             <>
               <ul className="divide-y divide-border/40 sm:hidden">
-                {rows.map((r) => (
-                  <li
-                    key={r.code}
-                    className="flex items-start gap-3 px-3 py-3"
-                  >
-                    <span className="w-6 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
-                      {r.rank}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-medium tabular-nums">
-                          {r.code}
+                {rows.map((r) => {
+                  const open = expanded === r.code;
+                  return (
+                    <li key={r.code} className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => toggle(r.code)}
+                        className="flex w-full items-start gap-3 text-left"
+                      >
+                        <span className="w-6 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
+                          {r.rank}
                         </span>
-                        <span className="truncate text-sm">{r.name}</span>
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                        <span>
-                          漲跌{" "}
-                          <span
-                            className={cn(
-                              "font-medium tabular-nums",
-                              signedClass(r.changePct),
-                            )}
-                          >
-                            {formatPct(r.changePct)}
-                          </span>
-                        </span>
-                        <span>
-                          收盤{" "}
-                          <span className="tabular-nums text-foreground/80">
-                            {r.close.toFixed(2)}
-                          </span>
-                        </span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[10px] text-muted-foreground">成交</p>
-                      <p className="text-sm font-semibold tabular-nums">
-                        {formatTurnoverYi(r.turnoverYi)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-medium tabular-nums">
+                              {r.code}
+                            </span>
+                            <span className="truncate text-sm">{r.name}</span>
+                            <ChevronDown
+                              className={cn(
+                                "ml-auto size-3.5 shrink-0 text-muted-foreground transition",
+                                open && "rotate-180",
+                              )}
+                            />
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                            <span>
+                              漲跌{" "}
+                              <span
+                                className={cn(
+                                  "font-medium tabular-nums",
+                                  signedClass(r.changePct),
+                                )}
+                              >
+                                {formatPct(r.changePct)}
+                              </span>
+                            </span>
+                            <span>
+                              收盤{" "}
+                              <span className="tabular-nums text-foreground/80">
+                                {r.close.toFixed(2)}
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[10px] text-muted-foreground">成交</p>
+                          <p className="text-sm font-semibold tabular-nums">
+                            {formatTurnoverYi(r.turnoverYi)}
+                          </p>
+                        </div>
+                      </button>
+                      {open ? (
+                        <div className="mt-3 pl-9">
+                          {hasFund(r) ? (
+                            <FundMetricsGrid
+                              forwardPe={r.forwardPe}
+                              nextYearEps={r.nextYearEps}
+                              baseEps={r.baseEps}
+                              epsYoy={r.epsYoy}
+                            />
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground">
+                              尚無基本面資料（同步日終後會批次補上）
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
 
               <div className="hidden overflow-x-auto sm:block">
@@ -227,34 +276,67 @@ export default function TurnoverPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r) => (
-                      <tr
-                        key={r.code}
-                        className="border-b border-border/30 transition hover:bg-muted/30"
-                      >
-                        <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
-                          {r.rank}
-                        </td>
-                        <td className="px-3 py-2.5 font-medium tabular-nums">
-                          {r.code}
-                        </td>
-                        <td className="px-3 py-2.5">{r.name}</td>
-                        <td className="px-3 py-2.5 text-right font-medium tabular-nums">
-                          {formatTurnoverYi(r.turnoverYi)}
-                        </td>
-                        <td
-                          className={cn(
-                            "px-3 py-2.5 text-right tabular-nums",
-                            signedClass(r.changePct),
-                          )}
-                        >
-                          {formatPct(r.changePct)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
-                          {r.close.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
+                    {rows.map((r) => {
+                      const open = expanded === r.code;
+                      return (
+                        <Fragment key={r.code}>
+                          <tr
+                            className="cursor-pointer border-b border-border/30 transition hover:bg-muted/30"
+                            onClick={() => toggle(r.code)}
+                          >
+                            <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+                              {r.rank}
+                            </td>
+                            <td className="px-3 py-2.5 font-medium tabular-nums">
+                              {r.code}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className="inline-flex items-center gap-1.5">
+                                {r.name}
+                                <ChevronDown
+                                  className={cn(
+                                    "size-3.5 text-muted-foreground transition",
+                                    open && "rotate-180",
+                                  )}
+                                />
+                              </span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-medium tabular-nums">
+                              {formatTurnoverYi(r.turnoverYi)}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-3 py-2.5 text-right tabular-nums",
+                                signedClass(r.changePct),
+                              )}
+                            >
+                              {formatPct(r.changePct)}
+                            </td>
+                            <td className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">
+                              {r.close.toFixed(2)}
+                            </td>
+                          </tr>
+                          {open ? (
+                            <tr className="border-b border-border/20 bg-muted/20">
+                              <td colSpan={6} className="px-3 py-3">
+                                {hasFund(r) ? (
+                                  <FundMetricsGrid
+                                    forwardPe={r.forwardPe}
+                                    nextYearEps={r.nextYearEps}
+                                    baseEps={r.baseEps}
+                                    epsYoy={r.epsYoy}
+                                  />
+                                ) : (
+                                  <p className="text-[11px] text-muted-foreground">
+                                    尚無基本面資料（同步日終後會批次補上）
+                                  </p>
+                                )}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

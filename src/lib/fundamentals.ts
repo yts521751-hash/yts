@@ -3,6 +3,7 @@
  * - 最近月營收 YoY：證交所／櫃買 OpenAPI 月營收
  * - EPS 成長率：優先取全市場法人報告共識（Cnyes／FactSet 各家預估中位數 feMedian），
  *   再回退 Yahoo 共識、最後才用公開財報近四季年增推估
+ * - 明年 EPS 依據：若來源有逐家券商列則保留；否則降級為共識統計（高／低／均／中位／家數）
  */
 
 import { loadIndustryMap } from "@/lib/industry-map";
@@ -12,6 +13,32 @@ import {
   readCacheFile,
   writeCacheFile,
 } from "@/lib/tw-market";
+
+/** 單一券商／外資對明年 EPS 的預估列（來源有提供時） */
+export type BrokerEpsEstimate = {
+  /** 券商／外資名稱；共識列可用「FactSet 共識中位數」等 */
+  broker: string;
+  /** EPS 預估值 */
+  eps: number;
+  /** 目標會計年度（西元） */
+  targetYear?: number | null;
+  /** 估計日 YYYY-MM-DD */
+  asOf?: string | null;
+  /** domestic | foreign | consensus | unknown */
+  kind?: "domestic" | "foreign" | "consensus" | "unknown";
+};
+
+/** 共識統計（無逐家列時的降級依據） */
+export type EpsConsensusBasis = {
+  targetYear: number | null;
+  median: number | null;
+  mean: number | null;
+  high: number | null;
+  low: number | null;
+  numEst: number | null;
+  rateDate: string | null;
+  source: string;
+};
 
 export type StockFundamentals = {
   /** 最近月營收年增率 % */
@@ -25,6 +52,10 @@ export type StockFundamentals = {
   /** EPS 成長率 %＝(下一年中位數 − 基準)／|基準| */
   epsGrowth: number | null;
   epsSource: string | null;
+  /** 明年 EPS 逐家／共識列（可為空） */
+  brokers?: BrokerEpsEstimate[];
+  /** 明年 EPS 共識統計（無逐家時仍可展開顯示） */
+  consensusBasis?: EpsConsensusBasis | null;
 };
 
 type RevenueCache = {
@@ -38,6 +69,8 @@ type EpsEntry = {
   baseEps: number | null;
   epsGrowth: number | null;
   epsSource: string | null;
+  brokers?: BrokerEpsEstimate[];
+  consensusBasis?: EpsConsensusBasis | null;
 };
 
 type EpsCache = {
@@ -133,7 +166,6 @@ async function getYahooAuth(): Promise<YahooAuth | null> {
   try {
     const { execFile } = await import("child_process");
     const { promisify } = await import("util");
-    const fs = await import("fs/promises");
     const run = promisify(execFile);
     const jar = `/tmp/yahoo-crumb-${process.pid}.txt`;
     await run(
@@ -168,7 +200,6 @@ async function getYahooAuth(): Promise<YahooAuth | null> {
     );
     const crumb = String(stdout || "").trim();
     if (!crumb || crumb.includes("<") || crumb.includes(" ")) return null;
-    // 保留 cookie jar 路徑供後續 curl -b 使用（#HttpOnly_ 列不能當註解丟掉）
     yahooAuth = { crumb, jar, at: Date.now() };
     return yahooAuth;
   } catch {
@@ -180,12 +211,17 @@ type CnyesEpsRow = {
   financialYear?: number;
   feMean?: number | null;
   feMedian?: number | null;
+  feHigh?: number | null;
+  feLow?: number | null;
   numEst?: number | null;
   rateDate?: string | null;
+  /** 若 API 將來回傳逐家列，儘量解析 */
+  brokers?: unknown;
+  estimates?: unknown;
+  details?: unknown;
 };
 
 function cnyesEpsValue(row: CnyesEpsRow): number | null {
-  // 價值選股以「多家法人中位數」為準；缺中位數再退平均
   if (typeof row.feMedian === "number" && Number.isFinite(row.feMedian)) {
     return row.feMedian;
   }
@@ -193,6 +229,145 @@ function cnyesEpsValue(row: CnyesEpsRow): number | null {
     return row.feMean;
   }
   return null;
+}
+
+function parseBrokerList(
+  raw: unknown,
+  targetYear: number | null | undefined,
+  rateDate: string | null | undefined,
+): BrokerEpsEstimate[] {
+  if (!Array.isArray(raw) || !raw.length) return [];
+  const out: BrokerEpsEstimate[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const broker = String(
+      row.broker ??
+        row.brokerName ??
+        row.institution ??
+        row.orgName ??
+        row.name ??
+        row.firm ??
+        "",
+    ).trim();
+    const eps =
+      parseNum(row.eps) ??
+      parseNum(row.estimate) ??
+      parseNum(row.value) ??
+      parseNum(row.feMean) ??
+      parseNum(row.targetEps);
+    if (!broker || eps == null) continue;
+    out.push({
+      broker,
+      eps: round2(eps),
+      targetYear: targetYear ?? parseNum(row.financialYear) ?? null,
+      asOf:
+        (typeof row.rateDate === "string" && row.rateDate) ||
+        (typeof row.asOf === "string" && row.asOf) ||
+        rateDate ||
+        null,
+      kind: "unknown",
+    });
+  }
+  return out;
+}
+
+function consensusRowsFromCnyes(
+  next: CnyesEpsRow,
+  sourceTag: string,
+): { brokers: BrokerEpsEstimate[]; consensusBasis: EpsConsensusBasis } {
+  const year = next.financialYear ?? null;
+  const rateDate = next.rateDate ?? null;
+  const median =
+    typeof next.feMedian === "number" && Number.isFinite(next.feMedian)
+      ? round2(next.feMedian)
+      : null;
+  const mean =
+    typeof next.feMean === "number" && Number.isFinite(next.feMean)
+      ? round2(next.feMean)
+      : null;
+  const high =
+    typeof next.feHigh === "number" && Number.isFinite(next.feHigh)
+      ? round2(next.feHigh)
+      : null;
+  const low =
+    typeof next.feLow === "number" && Number.isFinite(next.feLow)
+      ? round2(next.feLow)
+      : null;
+  const numEst =
+    typeof next.numEst === "number" && Number.isFinite(next.numEst)
+      ? next.numEst
+      : null;
+
+  const brokersFromApi = [
+    ...parseBrokerList(next.brokers, year, rateDate),
+    ...parseBrokerList(next.estimates, year, rateDate),
+    ...parseBrokerList(next.details, year, rateDate),
+  ];
+
+  const brokers: BrokerEpsEstimate[] =
+    brokersFromApi.length > 0
+      ? brokersFromApi
+      : [
+          ...(median != null
+            ? [
+                {
+                  broker: "FactSet 共識中位數",
+                  eps: median,
+                  targetYear: year,
+                  asOf: rateDate,
+                  kind: "consensus" as const,
+                },
+              ]
+            : []),
+          ...(mean != null && mean !== median
+            ? [
+                {
+                  broker: "FactSet 共識平均",
+                  eps: mean,
+                  targetYear: year,
+                  asOf: rateDate,
+                  kind: "consensus" as const,
+                },
+              ]
+            : []),
+          ...(high != null
+            ? [
+                {
+                  broker: "FactSet 最高估",
+                  eps: high,
+                  targetYear: year,
+                  asOf: rateDate,
+                  kind: "consensus" as const,
+                },
+              ]
+            : []),
+          ...(low != null
+            ? [
+                {
+                  broker: "FactSet 最低估",
+                  eps: low,
+                  targetYear: year,
+                  asOf: rateDate,
+                  kind: "consensus" as const,
+                },
+              ]
+            : []),
+        ];
+
+  return {
+    brokers,
+    consensusBasis: {
+      targetYear: year,
+      median,
+      mean,
+      high,
+      low,
+      numEst,
+      rateDate,
+      source: sourceTag,
+    },
+  };
 }
 
 /** 全市場法人／外資預估 EPS 中位數（Cnyes 轉發 FactSet estimateProfit） */
@@ -223,7 +398,6 @@ async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
     for (const row of rows) {
       const year = row.financialYear!;
       const prev = byYear.get(year);
-      // 同年度取預估家數較多者
       if (!prev || (row.numEst ?? 0) >= (prev.numEst ?? 0)) {
         byYear.set(year, row);
       }
@@ -233,7 +407,6 @@ async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
     let cur = byYear.get(calendarYear) ?? null;
     let next = byYear.get(calendarYear + 1) ?? null;
 
-    // 若今年／明年缺資料，改取連續兩年、且家數較完整的一組
     if (!cur || !next) {
       const years = [...byYear.keys()].sort((a, b) => a - b);
       let best: { cur: CnyesEpsRow; next: CnyesEpsRow; score: number } | null =
@@ -263,11 +436,15 @@ async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
     const nNext = next.numEst ?? 0;
     const usedMedian =
       typeof next.feMedian === "number" && typeof cur.feMedian === "number";
+    const sourceTag = `cnyes-factset-${usedMedian ? "median" : "mean"}:${code}:fy${cur.financialYear}->${next.financialYear}:n=${nCur}/${nNext}`;
+    const { brokers, consensusBasis } = consensusRowsFromCnyes(next, sourceTag);
     return {
       nextYearEps: round2(nextYearEps),
       baseEps: round2(baseEps),
       epsGrowth,
-      epsSource: `cnyes-factset-${usedMedian ? "median" : "mean"}:${code}:fy${cur.financialYear}->${next.financialYear}:n=${nCur}/${nNext}`,
+      epsSource: sourceTag,
+      brokers,
+      consensusBasis,
     };
   } catch {
     return null;
@@ -314,7 +491,13 @@ async function fetchYahooEps(
             earningsTrend?: {
               trend?: Array<{
                 period?: string;
-                earningsEstimate?: { avg?: { raw?: number } };
+                endDate?: string;
+                earningsEstimate?: {
+                  avg?: { raw?: number };
+                  low?: { raw?: number };
+                  high?: { raw?: number };
+                  numberOfAnalysts?: { raw?: number };
+                };
                 growth?: { raw?: number };
               }>;
             };
@@ -343,11 +526,48 @@ async function fetchYahooEps(
       } else if (next?.growth?.raw != null) {
         epsGrowth = round1(next.growth.raw * 100);
       }
+      const sourceTag = `yahoo-consensus:${symbol}`;
+      const est = next?.earningsEstimate;
+      const brokers: BrokerEpsEstimate[] = [];
+      if (nextYearEps != null) {
+        brokers.push({
+          broker: "Yahoo 分析師平均",
+          eps: round2(nextYearEps),
+          targetYear: null,
+          asOf: next?.endDate ?? null,
+          kind: "consensus",
+        });
+      }
+      if (est?.high?.raw != null) {
+        brokers.push({
+          broker: "Yahoo 最高估",
+          eps: round2(est.high.raw),
+          kind: "consensus",
+        });
+      }
+      if (est?.low?.raw != null) {
+        brokers.push({
+          broker: "Yahoo 最低估",
+          eps: round2(est.low.raw),
+          kind: "consensus",
+        });
+      }
       return {
         nextYearEps: nextYearEps != null ? round2(nextYearEps) : null,
         baseEps: baseEps != null ? round2(baseEps) : null,
         epsGrowth,
-        epsSource: `yahoo-consensus:${symbol}`,
+        epsSource: sourceTag,
+        brokers,
+        consensusBasis: {
+          targetYear: null,
+          median: null,
+          mean: nextYearEps != null ? round2(nextYearEps) : null,
+          high: est?.high?.raw != null ? round2(est.high.raw) : null,
+          low: est?.low?.raw != null ? round2(est.low.raw) : null,
+          numEst: est?.numberOfAnalysts?.raw ?? null,
+          rateDate: next?.endDate ?? null,
+          source: sourceTag,
+        },
       };
     } catch {
       /* try next symbol */
@@ -376,7 +596,6 @@ async function mapPool<T>(
   );
 }
 
-
 async function fetchFinmindTtmGrowth(code: string): Promise<EpsEntry | null> {
   try {
     const url =
@@ -400,11 +619,30 @@ async function fetchFinmindTtmGrowth(code: string): Promise<EpsEntry | null> {
     if (!prior) return null;
     const growth = round1(((ttm - prior) / Math.abs(prior)) * 100);
     const nextYear = round2(ttm * (1 + growth / 100));
+    const sourceTag = "finmind-ttm-yoy-projected";
     return {
       nextYearEps: nextYear,
       baseEps: round2(ttm),
       epsGrowth: growth,
-      epsSource: "finmind-ttm-yoy-projected",
+      epsSource: sourceTag,
+      brokers: [
+        {
+          broker: "FinMind 近四季年增推估",
+          eps: nextYear,
+          asOf: last4[last4.length - 1]?.date ?? null,
+          kind: "consensus",
+        },
+      ],
+      consensusBasis: {
+        targetYear: null,
+        median: null,
+        mean: nextYear,
+        high: null,
+        low: null,
+        numEst: null,
+        rateDate: last4[last4.length - 1]?.date ?? null,
+        source: sourceTag,
+      },
     };
   } catch {
     return null;
@@ -439,6 +677,8 @@ export async function enrichStockFundamentals(
     if (!entry?.epsSource) return true;
     // 舊版 Yahoo／平均／財報推估快取改抓全市場法人共識中位數
     if (!entry.epsSource.startsWith("cnyes-factset-median:")) return true;
+    // 舊快取缺依據列 → 重抓一次補 brokers／consensusBasis
+    if (!entry.brokers?.length && !entry.consensusBasis) return true;
     if (!epsFresh) return true;
     return false;
   });
@@ -447,7 +687,6 @@ export async function enrichStockFundamentals(
     const auth = await getYahooAuth();
     await mapPool(needEps, 4, async (code) => {
       const market = industry?.byCode?.[code]?.market;
-      // 優先：全市場法人報告共識中位數（FactSet via Cnyes）
       let eps = await fetchCnyesFactsetEps(code);
       if (!eps && auth) eps = await fetchYahooEps(code, market, auth);
       if (!eps) eps = await fetchFinmindTtmGrowth(code);
@@ -467,7 +706,19 @@ export async function enrichStockFundamentals(
       baseEps: eps?.baseEps ?? null,
       epsGrowth: eps?.epsGrowth ?? null,
       epsSource: eps?.epsSource ?? null,
+      brokers: eps?.brokers ?? [],
+      consensusBasis: eps?.consensusBasis ?? null,
     });
   }
   return result;
+}
+
+/** 讀單一代號基本面（沿用快取；缺則抓） */
+export async function getStockFundamentals(
+  code: string,
+  options?: { force?: boolean },
+): Promise<StockFundamentals | null> {
+  if (!/^\d{4}$/.test(code)) return null;
+  const map = await enrichStockFundamentals([code], options);
+  return map.get(code) ?? null;
 }

@@ -53,28 +53,30 @@ async function sumTwseTable(
 }
 
 async function loadTwseExclusions(ymd: string): Promise<Map<string, number>> {
-  const afterHours = await sumTwseTable(
-    `https://www.twse.com.tw/exchangeReport/BFT41U?response=json&date=${ymd}&selectType=ALL`,
-    0,
-    4,
-  );
-  const oddAfter = await sumTwseTable(
-    `https://www.twse.com.tw/exchangeReport/TWT53U?response=json&date=${ymd}`,
-    0,
-    4,
-  );
-  const oddDay = await sumTwseTable(
-    `https://www.twse.com.tw/exchangeReport/TWTC7U?response=json&date=${ymd}`,
-    0,
-    4,
-  );
-
-  const blockPayload = await fetchJson<{
-    stat?: string;
-    data?: string[][];
-  }>(
-    `https://www.twse.com.tw/rwd/zh/block/BFIAUU?date=${ymd}&selectType=S&response=json`,
-  );
+  // 四支排除額報表彼此獨立，並行抓取以縮短日終／補缺延遲
+  const [afterHours, oddAfter, oddDay, blockPayload] = await Promise.all([
+    sumTwseTable(
+      `https://www.twse.com.tw/exchangeReport/BFT41U?response=json&date=${ymd}&selectType=ALL`,
+      0,
+      4,
+    ),
+    sumTwseTable(
+      `https://www.twse.com.tw/exchangeReport/TWT53U?response=json&date=${ymd}`,
+      0,
+      4,
+    ),
+    sumTwseTable(
+      `https://www.twse.com.tw/exchangeReport/TWTC7U?response=json&date=${ymd}`,
+      0,
+      4,
+    ),
+    fetchJson<{
+      stat?: string;
+      data?: string[][];
+    }>(
+      `https://www.twse.com.tw/rwd/zh/block/BFIAUU?date=${ymd}&selectType=S&response=json`,
+    ),
+  ]);
   const block = new Map<string, number>();
   for (const row of blockPayload?.data ?? []) {
     addAmt(block, String(row[0] ?? "").trim(), parseNumber(row[5]));

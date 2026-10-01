@@ -6,6 +6,7 @@
 import { enrichStockFundamentals } from "@/lib/fundamentals";
 import { applyRegularTurnover } from "@/lib/regular-turnover";
 import { isCommonStock } from "@/lib/stock-filter";
+import { loadIndustryMap } from "@/lib/industry-map";
 import {
   getCachedDayQuotes,
   listCachedTradingDays,
@@ -31,6 +32,30 @@ export type ValuePickRow = {
   /** 前瞻本益比 = close / nextYearEps */
   forwardPe: number;
   epsSource: string | null;
+  /** 明年 EPS 依據列（券商或共識統計） */
+  brokers?: import("@/lib/fundamentals").BrokerEpsEstimate[];
+  consensusBasis?: import("@/lib/fundamentals").EpsConsensusBasis | null;
+};
+
+/** 單股查詢結果（不一定通過價值篩選） */
+export type StockValueLookup = {
+  code: string;
+  name: string;
+  close: number;
+  changePct: number;
+  dayAmt: number;
+  nextYearEps: number | null;
+  baseEps: number | null;
+  epsYoy: number | null;
+  forwardPe: number | null;
+  epsSource: string | null;
+  revenueYoy: number | null;
+  revenueMonth: string | null;
+  brokers: import("@/lib/fundamentals").BrokerEpsEstimate[];
+  consensusBasis: import("@/lib/fundamentals").EpsConsensusBasis | null;
+  passesScreen: boolean;
+  ymd: string;
+  date: string;
 };
 
 export type ValuePicksPayload = {
@@ -204,6 +229,8 @@ export async function buildValuePicks(options?: {
       epsYoy: round1(epsYoy),
       forwardPe: round2(forwardPe),
       epsSource: f.epsSource,
+      brokers: f.brokers ?? [],
+      consensusBasis: f.consensusBasis ?? null,
     });
   }
 
@@ -227,4 +254,118 @@ export async function buildValuePicks(options?: {
   };
   await writeCacheFile(CACHE, payload);
   return payload;
+}
+
+/**
+ * 以代號或名稱查單股，回傳與價值選股相同口徑的指標＋明年 EPS 依據。
+ */
+export async function lookupStockValue(
+  query: string,
+): Promise<StockValueLookup | null> {
+  const q = query.trim();
+  if (!q) return null;
+
+  const days = await listCachedTradingDays(1, 40);
+  const ymd = days[0];
+  if (!ymd) return null;
+  const quotes = await getCachedDayQuotes(ymd);
+  if (!quotes?.size) return null;
+
+  let code: string | null = null;
+  let name = "";
+
+  if (/^\d{4}$/.test(q)) {
+    const row = quotes.get(q);
+    if (row) {
+      code = q;
+      name = row.name.trim() || q;
+    }
+  }
+
+  if (!code) {
+    const needle = q.toLowerCase();
+    for (const row of quotes.values()) {
+      if (!isCommonStock(row.code, row.name)) continue;
+      if (row.name.trim() === q || row.name.toLowerCase().includes(needle)) {
+        code = row.code;
+        name = row.name.trim() || row.code;
+        break;
+      }
+    }
+  }
+
+  if (!code) {
+    const map = await loadIndustryMap().catch(() => null);
+    if (map?.stocks?.length) {
+      const needle = q.toLowerCase();
+      const hit =
+        map.stocks.find((s) => s.code === q) ||
+        map.stocks.find(
+          (s) =>
+            s.name === q ||
+            s.name.toLowerCase().includes(needle) ||
+            needle.includes(s.name.toLowerCase()),
+        );
+      if (hit) {
+        code = hit.code;
+        name = hit.name;
+      }
+    }
+  }
+
+  if (!code) return null;
+
+  const quote = quotes.get(code);
+  const close = quote?.close ?? 0;
+  const changePct = quote?.changePct ?? 0;
+  if (quote) name = quote.name.trim() || name || code;
+
+  const regular = await applyRegularTurnover(quotes, ymd, {
+    skipNetwork: true,
+  });
+  const dayAmt = round2((regular.get(code) ?? quote?.turnover ?? 0) / 1e8);
+
+  const fundMap = await enrichStockFundamentals([code], { force: false });
+  const f = fundMap.get(code);
+  const nextYearEps = f?.nextYearEps ?? null;
+  const baseEps = f?.baseEps ?? null;
+  const epsYoy = f?.epsGrowth ?? null;
+  const forwardPe =
+    nextYearEps != null && nextYearEps > 0 && close > 0
+      ? round2(close / nextYearEps)
+      : null;
+
+  const passesScreen = Boolean(
+    nextYearEps != null &&
+      nextYearEps > 0 &&
+      baseEps != null &&
+      baseEps > 0 &&
+      epsYoy != null &&
+      epsYoy > MIN_EPS_YOY &&
+      forwardPe != null &&
+      forwardPe > 0 &&
+      forwardPe < MAX_FORWARD_PE &&
+      dayAmt >= MIN_DAY_AMT_YI &&
+      f?.epsSource?.startsWith("cnyes-factset-"),
+  );
+
+  return {
+    code,
+    name: name || code,
+    close: round2(close),
+    changePct: round2(changePct),
+    dayAmt,
+    nextYearEps: nextYearEps != null ? round2(nextYearEps) : null,
+    baseEps: baseEps != null ? round2(baseEps) : null,
+    epsYoy: epsYoy != null ? round1(epsYoy) : null,
+    forwardPe,
+    epsSource: f?.epsSource ?? null,
+    revenueYoy: f?.revenueYoy ?? null,
+    revenueMonth: f?.revenueMonth ?? null,
+    brokers: f?.brokers ?? [],
+    consensusBasis: f?.consensusBasis ?? null,
+    passesScreen,
+    ymd,
+    date: ymdToIso(ymd),
+  };
 }
