@@ -137,6 +137,50 @@ describe("broker-targets extract", () => {
     assert.equal(rows[0]?.target, 450);
     assert.equal(rows[0]?.eps, 35);
   });
+
+  it("parses multi-broker 分別給到 list", () => {
+    const text =
+      "日系外資大和資本看好，給予目標價到2460元；摩根士丹利（大摩）、美銀、高盛、花旗等則分別給到1550元、1700元、2500元及1600元。";
+    const rows = extractBrokerTargetsFromText(text, {
+      stockHints: ["南電", "8046"],
+    });
+    const by = Object.fromEntries(rows.map((r) => [r.broker, r.target]));
+    assert.equal(by["大和"], 2460);
+    assert.equal(by["摩根士丹利"], 1550);
+    assert.equal(by["美銀"], 1700);
+    assert.equal(by["高盛"], 2500);
+    assert.equal(by["花旗"], 1600);
+  });
+
+  it("parses 分別給予股名＋價目＋目標價 suffix", () => {
+    const text =
+      "其他外資摩根士丹利（大摩）、美銀、高盛、花旗則分別給予南電1550元、1700元、2500元及1600元目標價。";
+    const rows = extractBrokerTargetsFromText(text, {
+      stockHints: ["南電"],
+    });
+    const by = Object.fromEntries(rows.map((r) => [r.broker, r.target]));
+    assert.equal(by["摩根士丹利"], 1550);
+    assert.equal(by["美銀"], 1700);
+    assert.equal(by["高盛"], 2500);
+    assert.equal(by["花旗"], 1600);
+  });
+
+  it("ignores year-as-target in 高盛喊2028年 headlines", () => {
+    const rows = extractBrokerTargetsFromText(
+      "高盛喊2028年暴缺51％！欣興、南電、景碩、臻鼎...ABF四雄目標價1次看：他EPS14元→28.8元",
+      { stockHints: ["南電", "8046"] },
+    );
+    assert.ok(!rows.some((r) => r.target === 2028));
+    assert.ok(!rows.some((r) => r.eps === 14));
+  });
+
+  it("skips 這家目標價 ambiguous single-broker headlines", () => {
+    const rows = extractBrokerTargetsFromText(
+      "ABF載板鬼故事連篇 大摩一一拆解 外資按讚欣興、南電 「這家」目標價直上2460元",
+      { stockHints: ["南電", "8046"] },
+    );
+    assert.equal(rows.length, 0);
+  });
 });
 
 describe("shouldApplyBrokerFetch", () => {

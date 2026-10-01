@@ -3,12 +3,13 @@
  *
  * 來源（合併、依券商去重保留最新）：
  * 1) Google News RSS（多查詢／較長 lookback／代號＋股名＋券商 OR）
- * 2) Bing News RSS（標題＋摘要）
- * 3) 鉅亨新聞（Cnyes）搜尋＋文章 og:description
+ * 2) Bing News RSS（ unwrap 真實稿件 URL）＋文章內文／og
+ * 3) 鉅亨新聞（Cnyes）搜尋＋文章 og／段落
  * 4) Yahoo Finance ADR upgradeDowngradeHistory（少數有 ADR）
  *
+ * 解析：多券商「分別給到」清單、單券商句、預估 EPS；擋年份誤抓／他股誤配。
  * Goodinfo 等表格式來源有 Cloudflare，伺服器端無法穩抓。
- * 快取：fundamentals-broker-targets.json；有資料 TTL 24h、空結果 2h。
+ * 快取：fundamentals-broker-targets.json；有資料 TTL 24h、空結果 45m。
  * 展開／查詢懶加載；日終可背景暖機價值選股＋成值前段。
  */
 
@@ -56,11 +57,13 @@ type TargetsCache = {
 
 const CACHE = "fundamentals-broker-targets.json";
 const TTL_HIT_MS = 24 * 60 * 60 * 1000;
-const TTL_EMPTY_MS = 2 * 60 * 60 * 1000;
+const TTL_EMPTY_MS = 45 * 60 * 1000;
 /** 過期但仍可立即回傳的寬限期（背景再刷） */
 const STALE_SERVE_MS = 7 * 24 * 60 * 60 * 1000;
-/** 單檔展開總預算，避免 UI 卡太久 */
-const FETCH_BUDGET_MS = 9_000;
+/** 單檔展開總預算（含文章內文抓取） */
+const FETCH_BUDGET_MS = 14_000;
+/** 標題命中但解析不全時，最多跟抓幾篇原文 og */
+const MAX_PAGE_FETCHES = 8;
 
 type BrokerAlias = {
   display: string;
@@ -136,7 +139,7 @@ const BROKER_ALIASES: BrokerAlias[] = [
   {
     display: "大和",
     kind: "foreign",
-    aliases: ["大和", "大和國泰", "Daiwa"],
+    aliases: ["大和資本", "大和證券", "大和國泰", "大和", "Daiwa"],
   },
   {
     display: "法巴",
@@ -156,7 +159,7 @@ const BROKER_ALIASES: BrokerAlias[] = [
   {
     display: "美林",
     kind: "foreign",
-    aliases: ["美林", "Merrill"],
+    aliases: ["美林證券", "美林", "Merrill"],
   },
   {
     display: "里昂",
@@ -266,9 +269,50 @@ const NAME_ALIASES: Record<string, string[]> = {
   "2408": ["南亞科"],
   "3017": ["奇鋐"],
   "3037": ["欣興"],
-  "8046": ["南電"],
+  /** 南電＝南亞電路板；勿與楠梓電(2316)混淆 */
+  "8046": ["南電", "南亞電路板", "Nan Ya PCB", "Nanya PCB"],
   "6446": ["藥華"],
+  "3189": ["景碩"],
+  "4958": ["臻鼎"],
 };
+
+/** 同篇常見他股，用於避免目標價誤配 */
+const OTHER_STOCK_NAMES = [
+  "台積電",
+  "聯發科",
+  "鴻海",
+  "廣達",
+  "欣興",
+  "景碩",
+  "臻鼎",
+  "華邦",
+  "南亞科",
+  "緯穎",
+  "楠梓電",
+  "奇鋐",
+  "日月光",
+];
+
+function nearestNameToTarget(
+  clause: string,
+  names: string[],
+): { name: string; dist: number } | null {
+  const ti = clause.search(/目標[股]?價/);
+  if (ti < 0) return null;
+  let best: { name: string; dist: number } | null = null;
+  for (const n of names) {
+    if (!n) continue;
+    let from = 0;
+    while (from < clause.length) {
+      const i = clause.indexOf(n, from);
+      if (i < 0) break;
+      const dist = Math.abs(i - ti);
+      if (!best || dist < best.dist) best = { name: n, dist };
+      from = i + Math.max(1, n.length);
+    }
+  }
+  return best;
+}
 
 const stripHtml = (s: string) =>
   s
@@ -283,8 +327,44 @@ const stripHtml = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const decodeXml = (s: string) =>
-  stripHtml(s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1"));
+function decodeXml(s: string) {
+  return stripHtml(
+    s
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">"),
+  );
+}
+
+/** Bing apiclick／導向列的真實稿件 URL */
+function unwrapNewsUrl(link: string): string {
+  if (!link) return link;
+  const raw = link.replace(/&amp;/g, "&").trim();
+  try {
+    const u = new URL(raw);
+    if (
+      /(^|\.)bing\.com$/i.test(u.hostname) &&
+      u.pathname.includes("apiclick")
+    ) {
+      const inner = u.searchParams.get("url");
+      if (inner && /^https?:\/\//i.test(inner)) return inner;
+    }
+  } catch {
+    // keep raw
+  }
+  const m = raw.match(/[?&]url=(https?[^&]+)/i);
+  if (m) {
+    try {
+      return decodeURIComponent(m[1]);
+    } catch {
+      return m[1];
+    }
+  }
+  return raw;
+}
 
 const round0 = (n: number) => Math.round(n);
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -363,6 +443,36 @@ function findAllBrokers(text: string): BrokerAlias[] {
   return out;
 }
 
+/** 由左至右、最長優先，用於「分別給到」多券商對價 */
+function findBrokersInOrder(text: string): BrokerAlias[] {
+  const out: BrokerAlias[] = [];
+  const seen = new Set<string>();
+  let i = 0;
+  while (i < text.length) {
+    let best: { alias: BrokerAlias; len: number } | null = null;
+    for (const b of BROKER_ALIASES) {
+      for (const a of b.aliases) {
+        if (text.startsWith(a, i) && (!best || a.length > best.len)) {
+          best = { alias: b, len: a.length };
+        }
+      }
+    }
+    if (best) {
+      if (!seen.has(best.alias.display)) {
+        seen.add(best.alias.display);
+        out.push(best.alias);
+      }
+      i += best.len;
+    } else {
+      i += 1;
+    }
+  }
+  return out;
+}
+
+const BROKER_NAME_RE =
+  "(?:摩根士丹利|台灣摩根士丹利|大摩|摩根大通|小摩|美銀|美國銀行|高盛|花旗|瑞銀|麥格理|野村|匯豐|巴克萊|傑富瑞|大和資本|大和證券|大和國泰|大和|法巴|德銀|星展|美林證券|美林|里昂證券|里昂|元大|凱基|國泰證|國泰證券|富邦|群益|永豐|中信|兆豐|統一證|台新|第一金|宏遠|本土投顧|本土券商|BofA|Goldman|UBS|Nomura|Citi|Bernstein|Needham|Stifel|Barclays|JPMorgan)";
+
 function stockNameVariants(code: string, name: string): string[] {
   const out = new Set<string>();
   const n = name.trim();
@@ -426,16 +536,97 @@ export function extractBrokerTargetsFromText(
     return row;
   };
 
+  const hints = (options?.stockHints ?? []).filter((h) => h && h.length >= 2);
+
+  /** 優先在含股名的子句裡找券商，降低多股同題誤配 */
+  const clauseFor = (index: number): { start: number; text: string } => {
+    const leftBreak = Math.max(
+      clean.lastIndexOf("。", index),
+      clean.lastIndexOf("；", index),
+      clean.lastIndexOf(";", index),
+      clean.lastIndexOf("\n", index),
+    );
+    const start = leftBreak >= 0 ? leftBreak + 1 : 0;
+    const rightCandidates = [
+      clean.indexOf("。", index),
+      clean.indexOf("；", index),
+      clean.indexOf(";", index),
+      clean.indexOf("\n", index),
+    ].filter((x) => x >= 0);
+    const end =
+      rightCandidates.length > 0
+        ? Math.min(...rightCandidates)
+        : clean.length;
+    return { start, text: clean.slice(start, end) };
+  };
+
   const setTarget = (
     broker: BrokerAlias,
     target: number,
     snippetFrom: number,
     snippetTo: number,
+    force = false,
   ) => {
     if (!Number.isFinite(target) || target < 1 || target > 100000) return;
     if (target < 5) return;
+    const snip = clean.slice(
+      Math.max(0, snippetFrom),
+      Math.min(clean.length, snippetTo + 4),
+    );
+    // 「高盛喊2028年暴缺」勿把年份當目標價（match 常止於數字、不含「年」）
+    if (
+      target >= 2000 &&
+      target <= 2039 &&
+      (new RegExp(`${target}\\s*年`).test(snip) ||
+        /^\s*年/.test(clean.slice(snippetTo, snippetTo + 4)))
+    ) {
+      return;
+    }
+    if (hints.length) {
+      const mid = Math.floor((snippetFrom + snippetTo) / 2);
+      const clause = clauseFor(mid).text;
+      const wider = clean.slice(
+        Math.max(0, mid - 160),
+        Math.min(clean.length, mid + 120),
+      );
+      // 擋「台積電目標價」等他股句混入（同篇可能也提到本股）
+      const otherGlued =
+        /(?:台積電|聯發科|鴻海|廣達|欣興|景碩|臻鼎|華邦|南亞科|緯穎|楠梓電)\s*[「「"]?目標/.test(
+          clause,
+        );
+      const ownGlued = hints.some((h) =>
+        new RegExp(
+          `${h}\\s*[「「"]?目標|目標[股]?價[^。；;\\n]{0,14}${h}`,
+        ).test(clause),
+      );
+      if (otherGlued && !ownGlued) return;
+
+      // 目標價更靠近他股名時（如景碩…目標價1250）勿算到本股
+      // 用 wider：目標價常在下一句，股名在上一句
+      const ownNear = nearestNameToTarget(wider, hints);
+      const otherNear = nearestNameToTarget(
+        wider,
+        OTHER_STOCK_NAMES.filter((n) => !hints.includes(n)),
+      );
+      if (
+        !force &&
+        otherNear &&
+        (!ownNear || otherNear.dist + 8 < ownNear.dist) &&
+        otherNear.dist <= 100
+      ) {
+        return;
+      }
+      // 「這大廠／該股」未點名本股時略過
+      if (
+        !force &&
+        /這[家大]?廠|該股|此股|「這/.test(clause) &&
+        !hints.some((h) => clause.includes(h))
+      ) {
+        return;
+      }
+    }
     const row = ensure(broker, snippetFrom, snippetTo);
-    if (row.target == null) row.target = round0(target);
+    if (row.target == null || force) row.target = round0(target);
   };
 
   const setEps = (
@@ -456,25 +647,34 @@ export function extractBrokerTargetsFromText(
   };
 
   const brokerNear = (index: number, span: number) => {
-    // 稍加長左側視窗：目標價句與 EPS 句常隔開較遠
-    const left = clean.slice(Math.max(0, index - 100), index);
-    let best: { alias: BrokerAlias; pos: number; len: number } | null = null;
-    for (const b of BROKER_ALIASES) {
-      for (const a of b.aliases) {
-        const pos = left.lastIndexOf(a);
-        if (pos < 0) continue;
-        if (
-          !best ||
-          pos > best.pos ||
-          (pos === best.pos && a.length > best.len)
-        ) {
-          best = { alias: b, pos, len: a.length };
+    const pickLeft = (from: number): BrokerAlias | null => {
+      const left = clean.slice(Math.max(from, index - 100), index);
+      let best: { alias: BrokerAlias; pos: number; len: number } | null = null;
+      for (const b of BROKER_ALIASES) {
+        for (const a of b.aliases) {
+          const pos = left.lastIndexOf(a);
+          if (pos < 0) continue;
+          if (
+            !best ||
+            pos > best.pos ||
+            (pos === best.pos && a.length > best.len)
+          ) {
+            best = { alias: b, pos, len: a.length };
+          }
         }
       }
+      return best?.alias ?? null;
+    };
+    const right = clean.slice(
+      index,
+      Math.min(clean.length, index + span + 48),
+    );
+    const clause = clauseFor(index);
+    // 若子句含股名提示，只在該子句找券商，避免跨句誤抓
+    if (hints.length && hints.some((h) => clause.text.includes(h))) {
+      return pickLeft(clause.start) || findBroker(right);
     }
-    if (best) return best.alias;
-    const right = clean.slice(index, Math.min(clean.length, index + span + 48));
-    return findBroker(right) || findBroker(clean);
+    return pickLeft(0) || findBroker(right) || findBroker(clean);
   };
 
   let m: RegExpExecArray | null;
@@ -490,6 +690,28 @@ export function extractBrokerTargetsFromText(
     setTarget(broker, price, Math.max(0, m.index - 36), m.index + m[0].length);
   }
 
+  // A2) 多券商「分別給到／給予」對價清單（必須早於單券商句，force 覆寫）
+  const reMultiBrokers = new RegExp(
+    `((?:${BROKER_NAME_RE}[^、,，。；;\\n]{0,16}?[、,，/／與和及]\\s*){1,8}${BROKER_NAME_RE})(?:等)?[^。；;\\n]{0,28}?分別(?:給予?|給到|給出|看至?|喊至?)[^0-9]{0,24}?([0-9]{2,5}(?:\\.[0-9]+)?(?:\\s*元?\\s*[、,，及與和]\\s*[0-9]{2,5}(?:\\.[0-9]+)?){1,8})\\s*元?`,
+    "g",
+  );
+  while ((m = reMultiBrokers.exec(clean))) {
+    const brokers = findBrokersInOrder(m[1]);
+    const prices = [...m[2].matchAll(/([0-9]{2,5}(?:\.[0-9]+)?)/g)]
+      .map((x) => parsePriceToken(x[1]))
+      .filter((n): n is number => n != null);
+    const n = Math.min(brokers.length, prices.length);
+    for (let i = 0; i < n; i++) {
+      setTarget(
+        brokers[i],
+        prices[i],
+        m.index,
+        m.index + m[0].length,
+        true,
+      );
+    }
+  }
+
   // B) 目標價…(調升|上調|維持|上看)?…(至|到|為|看至|上看|飆|衝) N
   const reToPrice =
     /目標[股]?價[^0-9由]{0,28}?(?:上[調修升]|調[升降]|下[調修]|維[持持]|上看)?[^0-9]{0,12}?(?:至|到|為|看至|上看|飆(?:至|到|上)?|衝(?:至|到|上)?|升至)\s*([0-9]{2,5}(?:\.[0-9]+)?)\s*元?/g;
@@ -502,11 +724,25 @@ export function extractBrokerTargetsFromText(
   }
 
   // C) 「高盛喊 7000」「美銀給…750」「里昂喊升…至 3700」
-  const reBrokerVerb =
-    /(摩根士丹利|台灣摩根士丹利|大摩|摩根大通|小摩|美銀|美國銀行|高盛|花旗|瑞銀|麥格理|野村|匯豐|巴克萊|傑富瑞|大和|法巴|德銀|星展|美林|里昂證券|里昂|元大|凱基|國泰證|國泰證券|富邦|群益|永豐|中信|兆豐|統一證|台新|第一金|宏遠|本土投顧|本土券商|BofA|Goldman|UBS|Nomura|Citi|Bernstein|Needham|Stifel|Barclays|JPMorgan)[^0-9]{0,48}?(?:喊(?:到|上|出)?|給|上看|升至|調升至|調降至|上調至|下修至|目標[股]?價[^0-9由]{0,20}?(?:至|到|為|看|喊|飆|衝)?)[^0-9]{0,8}?([0-9]{2,5}(?:\.[0-9]+)?)\s*元?/g;
+  const reBrokerVerb = new RegExp(
+    `${BROKER_NAME_RE}[^0-9]{0,48}?(?:喊(?:到|上|出)?|給|上看|升至|調升至|調降至|上調至|下修至|目標[股]?價[^0-9由]{0,20}?(?:至|到|為|看|喊|飆|衝)?)[^0-9]{0,8}?([0-9]{2,5}(?:\\.[0-9]+)?)\\s*元?`,
+    "g",
+  );
   while ((m = reBrokerVerb.exec(clean))) {
-    const broker = findBroker(m[1]);
-    const price = parsePriceToken(m[2]);
+    if (/這家|該股|此股/.test(m[0]) && hints.length > 1) {
+      // 多股同題＋「這家」時券商常是評述者而非報價者
+      continue;
+    }
+    if (/這家/.test(m[0])) continue;
+    // 「…上看2460」若無「目標／給／喊」錨點，易把評述文誤當報價
+    if (
+      /上看/.test(m[0]) &&
+      !/目標|給|喊|調[升降]|升至|下修/.test(m[0].replace(/上看/g, ""))
+    ) {
+      continue;
+    }
+    const broker = findBroker(m[0]);
+    const price = parsePriceToken(m[1]);
     if (!broker || price == null) continue;
     setTarget(broker, price, m.index, m.index + m[0].length);
   }
@@ -523,34 +759,46 @@ export function extractBrokerTargetsFromText(
   }
 
   // D2) 「嗨喊2310元目標價」「喊出 3500 元目標價」
-  const reVerbThenTarget =
-    /(摩根士丹利|大摩|小摩|美銀|高盛|花旗|瑞銀|麥格理|野村|匯豐|巴克萊|傑富瑞|大和|法巴|德銀|星展|里昂|元大|凱基|富邦|群益|永豐|中信|兆豐|台新|第一金|宏遠)[^0-9]{0,24}?(?:嗨?喊|給出?|上看)\s*([0-9]{2,5}(?:\.[0-9]+)?)\s*元?\s*目標[股]?價/g;
+  const reVerbThenTarget = new RegExp(
+    `${BROKER_NAME_RE}[^0-9]{0,24}?(?:嗨?喊|給出?|上看)\\s*([0-9]{2,5}(?:\\.[0-9]+)?)\\s*元?\\s*目標[股]?價`,
+    "g",
+  );
   while ((m = reVerbThenTarget.exec(clean))) {
-    const broker = findBroker(m[1]);
-    const price = parsePriceToken(m[2]);
+    const broker = findBroker(m[0]);
+    const price = parsePriceToken(m[1]);
     if (!broker || price == null) continue;
     setTarget(broker, price, m.index, m.index + m[0].length);
   }
 
   // E) 全文僅一家券商＋任一絕對目標價
   if (![...byDisplay.values()].some((r) => r.target != null)) {
-    const brokers = findAllBrokers(clean);
-    const fromTo = clean.match(
-      /目標[股]?價[^。]{0,48}?由\s*[0-9.]+[^0-9]{0,20}?(?:上[調修升]|調[升降]|至|到|提升至)\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
-    );
-    const pm = clean.match(
-      /目標[股]?價[^0-9由]{0,24}(?:至|到|為|看至|上看|喊(?:到|上|出)?|飆|衝)?\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
-    );
-    const raw = fromTo?.[1] ?? pm?.[1];
-    if (brokers.length === 1 && raw) {
-      const delta =
-        /目標[股]?價[^0-9]{0,8}(?:上[調修升]|調[升降]|下[調修]|砍)[^0-9至到看喊給為飆衝]{0,6}[0-9]/.test(
-          clean,
-        ) && !/(?:至|到|為|看|喊|給|飆|衝)/.test(clean);
-      if (!delta) {
-        const price = parsePriceToken(raw);
-        if (price != null) {
-          setTarget(brokers[0], price, 0, Math.min(100, clean.length));
+    const scope =
+      hints.length > 0
+        ? clean
+            .split(/[。；;\n]/)
+            .filter((c) => hints.some((h) => c.includes(h)))
+            .join("。") || clean
+        : clean;
+    // 「這家」目標價＝未點名，常誤配評述券商
+    if (!/這家/.test(scope)) {
+      const brokers = findAllBrokers(scope);
+      const fromTo = scope.match(
+        /目標[股]?價[^。]{0,48}?由\s*[0-9.]+[^0-9]{0,20}?(?:上[調修升]|調[升降]|至|到|提升至)\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
+      );
+      const pm = scope.match(
+        /目標[股]?價[^0-9由]{0,24}(?:至|到|為|看至|上看|喊(?:到|上|出)?|飆|衝|直上)?\s*([0-9]{2,5}(?:\.[0-9]+)?)/,
+      );
+      const raw = fromTo?.[1] ?? pm?.[1];
+      if (brokers.length === 1 && raw) {
+        const delta =
+          /目標[股]?價[^0-9]{0,8}(?:上[調修升]|調[升降]|下[調修]|砍)[^0-9至到看喊給為飆衝]{0,6}[0-9]/.test(
+            scope,
+          ) && !/(?:至|到|為|看|喊|給|飆|衝)/.test(scope);
+        if (!delta) {
+          const price = parsePriceToken(raw);
+          if (price != null) {
+            setTarget(brokers[0], price, 0, Math.min(100, clean.length));
+          }
         }
       }
     }
@@ -581,11 +829,35 @@ export function extractBrokerTargetsFromText(
     if (/目標[股]?價/.test(around) && /%|％/.test(around) && eps > 50) {
       return;
     }
+    // 百分比／缺口句別當 EPS（如「缺口14%」）
+    if (/%|％/.test(around)) return;
+    // 「他EPS14元」多半指另一檔，勿掛到標題開頭的券商
+    if (/他\s*(?:之)?(?:每股盈[餘余]|每股純益|EPS)/i.test(
+      clean.slice(Math.max(0, matchIndex - 6), matchIndex + 8),
+    )) {
+      return;
+    }
+    // 「EPS14元→28.8」箭頭區間常是他股對照
+    if (/→|->|➞/.test(clean.slice(matchIndex, matchIndex + matchLen + 12))) {
+      return;
+    }
     const yearSlice =
       yearHint + clean.slice(Math.max(0, matchIndex - 20), matchIndex);
     const epsYear = inferEpsYear(yearSlice);
-    const broker = brokerNear(matchIndex, matchLen);
+    // EPS 必須有近距券商，禁止全文亂抓第一家
+    const left = clean.slice(Math.max(0, matchIndex - 72), matchIndex);
+    const right = clean.slice(
+      matchIndex,
+      Math.min(clean.length, matchIndex + matchLen + 36),
+    );
+    const broker = findBroker(left) || findBroker(right);
     if (!broker) return;
+    if (hints.length) {
+      const clause = clauseFor(matchIndex).text;
+      if (!hints.some((h) => clause.includes(h)) && !hints.some((h) => left.includes(h))) {
+        return;
+      }
+    }
     if (eps >= 800 && hasTarget) return;
     setEps(
       broker,
@@ -620,18 +892,7 @@ export function extractBrokerTargetsFromText(
   const reEpsAlt =
     /(?:預估\s*)?(?:每股盈[餘余]|每股純益|EPS)\s*(?:預估|估測)?[^0-9]{0,20}?(?:上[調修升]|調[升降]|下[調修]|至|到|為|上看|達)\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
   while ((m = reEpsAlt.exec(clean))) {
-    const eps = parseEpsToken(m[1]);
-    if (eps == null || eps >= 800) continue;
-    const broker = brokerNear(m.index, m[0].length);
-    if (!broker) continue;
-    const yearSlice = clean.slice(Math.max(0, m.index - 20), m.index);
-    setEps(
-      broker,
-      eps,
-      inferEpsYear(yearSlice),
-      Math.max(0, m.index - 24),
-      m.index + m[0].length,
-    );
+    applyEpsMatch(m[1], m.index, m[0].length, "");
   }
 
   // F3) 「預估明年每股純益6.2元」——純益在「預估…明年」之後
@@ -641,8 +902,8 @@ export function extractBrokerTargetsFromText(
     applyEpsMatch(m[2], m.index, m[0].length, m[1] || "");
   }
 
-  // 若有股名提示且多券商句，不額外過濾（已靠 brokerNear）
-  void options?.stockHints;
+  // 股名提示已用於 brokerNear／E 子句限縮
+  void hints;
 
   const out: BrokerTargetPrice[] = [];
   for (const row of byDisplay.values()) {
@@ -689,31 +950,62 @@ async function cnyesSearch(q: string, limit = 12): Promise<CnyesSearchItem[]> {
 }
 
 async function fetchArticleHint(newsId: number): Promise<string> {
+  return fetchPageHint(`https://news.cnyes.com/news/id/${newsId}`);
+}
+
+/** 抓文章頁 og + 含目標價／券商的段落（og 常被截斷） */
+async function fetchPageHint(url: string): Promise<string> {
+  if (!url || !/^https?:\/\//i.test(url)) return "";
   try {
-    const { execFile } = await import("child_process");
-    const { promisify } = await import("util");
-    const run = promisify(execFile);
-    const { stdout } = await run(
-      "curl",
-      [
-        "-sS",
-        "-L",
-        "-A",
-        "Mozilla/5.0 (compatible; jinliu-bot/1.0)",
-        "--max-time",
-        "10",
-        `https://news.cnyes.com/news/id/${newsId}`,
-      ],
-      { timeout: 12000, maxBuffer: 3 * 1024 * 1024 },
-    );
-    const html = String(stdout || "");
+    const html = await curlGet(url, 12);
+    if (!html || html.length < 40) return "";
     const og =
       html.match(/property="og:description"\s+content="([^"]+)"/)?.[1] ||
       html.match(/content="([^"]+)"\s+property="og:description"/)?.[1] ||
+      html.match(/name="description"\s+content="([^"]+)"/)?.[1] ||
+      html.match(/content="([^"]+)"\s+name="description"/)?.[1] ||
       "";
     const title =
-      html.match(/property="og:title"\s+content="([^"]+)"/)?.[1] || "";
-    return stripHtml(`${title} ${og}`);
+      html.match(/property="og:title"\s+content="([^"]+)"/)?.[1] ||
+      html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ||
+      "";
+    const ld =
+      html.match(
+        /"articleBody"\s*:\s*"((?:\\.|[^"\\]){20,2000})"/,
+      )?.[1] || "";
+    const ldClean = ld
+      ? stripHtml(
+          ld
+            .replace(/\\n/g, " ")
+            .replace(/\\"/g, '"')
+            .replace(/\\u[0-9a-fA-F]{4}/g, " "),
+        )
+      : "";
+    const paras = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)]
+      .map((m) => stripHtml(m[1]))
+      .filter(
+        (p) =>
+          p.length >= 24 &&
+          p.length < 800 &&
+          /目標[股]?價|EPS|每股|分別給|外資|券商|評等|喊到|上看/.test(p),
+      )
+      .slice(0, 8);
+    const parts = [
+      decodeXml(title),
+      decodeXml(og),
+      ldClean,
+      ...paras,
+    ].filter(Boolean);
+    // 去重但保序
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const p of parts) {
+      const key = p.slice(0, 80);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(p);
+    }
+    return out.join("\n").slice(0, 6000);
   } catch {
     return "";
   }
@@ -842,9 +1134,10 @@ function parseRssItems(xml: string): NewsItem[] {
     const block = m[1];
     const descRaw =
       block.match(/<description>([\s\S]*?)<\/description>/)?.[1] || "";
+    const linkRaw = block.match(/<link>([\s\S]*?)<\/link>/)?.[1] || "";
     return {
       title: decodeXml(block.match(/<title>([\s\S]*?)<\/title>/)?.[1] || ""),
-      link: decodeXml(block.match(/<link>([\s\S]*?)<\/link>/)?.[1] || ""),
+      link: unwrapNewsUrl(decodeXml(linkRaw) || linkRaw.replace(/&amp;/g, "&")),
       pubDate: block.match(/<pubDate>([\s\S]*?)<\/pubDate>/)?.[1] || "",
       source: decodeXml(
         block.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1] ||
@@ -872,6 +1165,14 @@ async function bingNewsSearch(q: string): Promise<NewsItem[]> {
   return parseRssItems(xml);
 }
 
+type PageFetchCandidate = {
+  url: string;
+  asOf: string | null;
+  source: string;
+  title: string;
+  priority: number;
+};
+
 function ingestNewsItems(
   items: NewsItem[],
   code: string,
@@ -879,6 +1180,7 @@ function ingestNewsItems(
   byBroker: Map<string, BrokerTargetPrice>,
   sourcePrefix: string,
   seenTitles: Set<string>,
+  pageCandidates: PageFetchCandidate[],
 ) {
   const hints = stockNameVariants(code, name);
   for (const item of items) {
@@ -903,6 +1205,75 @@ function ingestNewsItems(
       stockHints: hints,
     });
     for (const row of found) mergeTarget(byBroker, row);
+
+    const wantsBody =
+      Boolean(item.link) &&
+      !/news\.google\.com/i.test(item.link) &&
+      (/目標[股]?價|外資|券商|評等|EPS/.test(item.title) ||
+        /分別給|目標價到|目標價至|喊到|上看|外資送暖/.test(blob)) &&
+      (found.length < 2 ||
+        !found.some((r) => r.target != null) ||
+        /分別|多家|外資|五大|點評|一覽|送暖/.test(item.title));
+    if (wantsBody && item.link) {
+      let priority = 0;
+      if (/分別|多家|點評|一覽|外資送暖|目標價曝光|五大外資/.test(item.title)) {
+        priority += 5;
+      }
+      if (findBroker(item.title)) priority += 1;
+      if (/目標[股]?價/.test(item.title)) priority += 1;
+      if (found.length === 0) priority += 2;
+      if (/\.(ftnn|ctee|udn|setn|yahoo|chinatimes|ltn)\./i.test(item.link)) {
+        priority += 2;
+      }
+      pageCandidates.push({
+        url: item.link,
+        asOf,
+        source: item.source
+          ? `${sourcePrefix}-page:${item.source}`
+          : `${sourcePrefix}-page`,
+        title: item.title,
+        priority,
+      });
+    }
+  }
+}
+
+async function enrichFromArticlePages(
+  candidates: PageFetchCandidate[],
+  code: string,
+  name: string,
+  byBroker: Map<string, BrokerTargetPrice>,
+) {
+  if (!candidates.length) return;
+  const hints = stockNameVariants(code, name);
+  const seen = new Set<string>();
+  const ranked = [...candidates]
+    .sort((a, b) => b.priority - a.priority)
+    .filter((c) => {
+      if (!c.url || seen.has(c.url)) return false;
+      // Google News 文章頁在 curl 下不會導向原文
+      if (/news\.google\.com/i.test(c.url)) return false;
+      seen.add(c.url);
+      return true;
+    })
+    .slice(0, MAX_PAGE_FETCHES);
+
+  const pages = await Promise.all(
+    ranked.map(async (c) => ({
+      ...c,
+      text: await fetchPageHint(c.url),
+    })),
+  );
+  for (const page of pages) {
+    if (!page.text || page.text.length < 20) continue;
+    if (!relevantToStock(page.text, code, name)) continue;
+    const found = extractBrokerTargetsFromText(page.text, {
+      asOf: page.asOf,
+      source: page.source,
+      url: page.url,
+      stockHints: hints,
+    });
+    for (const row of found) mergeTarget(byBroker, row);
   }
 }
 
@@ -911,23 +1282,39 @@ async function collectFromGoogleNews(
   name: string,
 ): Promise<BrokerTargetPrice[]> {
   const byBroker = new Map<string, BrokerTargetPrice>();
-  const nameMain = stockNameVariants(code, name)[0] || name;
+  const variants = stockNameVariants(code, name);
+  const nameMain = variants[0] || name;
+  const aliasQ = variants
+    .filter((v) => v !== nameMain && v.length >= 2)
+    .slice(0, 2);
   const queries = [
     `${nameMain} 目標價 when:5y`,
     `${nameMain}(${code}) 目標價 when:5y`,
     `${code} 目標價 when:5y`,
     `${nameMain} 目標價 ${BROKER_OR} when:5y`,
     `${nameMain} 外資 目標價 when:5y`,
-    `${nameMain} 目標價一覽 OR 外資點評 when:5y`,
+    `${nameMain} 目標價一覽 OR 外資點評 OR 分別 when:5y`,
+    `${nameMain} 五大外資 OR 分別給到 目標價 when:5y`,
     `${nameMain} EPS 目標價 when:5y`,
+    ...aliasQ.map((a) => `${a} 目標價 when:5y`),
   ];
   const seenTitles = new Set<string>();
+  const pageCandidates: PageFetchCandidate[] = [];
   const batches = await Promise.all(
     queries.map((q) => googleNewsSearch(q).catch(() => [] as NewsItem[])),
   );
   for (const items of batches) {
-    ingestNewsItems(items, code, name, byBroker, "gnews", seenTitles);
+    ingestNewsItems(
+      items,
+      code,
+      name,
+      byBroker,
+      "gnews",
+      seenTitles,
+      pageCandidates,
+    );
   }
+  await enrichFromArticlePages(pageCandidates, code, name, byBroker);
   return [...byBroker.values()];
 }
 
@@ -936,20 +1323,36 @@ async function collectFromBingNews(
   name: string,
 ): Promise<BrokerTargetPrice[]> {
   const byBroker = new Map<string, BrokerTargetPrice>();
-  const nameMain = stockNameVariants(code, name)[0] || name;
+  const variants = stockNameVariants(code, name);
+  const nameMain = variants[0] || name;
   const queries = [
     `${nameMain} 目標價`,
     `${code} 目標價`,
     `${nameMain} 目標價 外資`,
-    `${nameMain} 大摩 OR 美銀 OR 高盛 OR 凱基 目標價`,
+    `${nameMain} 大摩 OR 美銀 OR 高盛 OR 大和 目標價`,
+    `${nameMain} 目標價 分別 OR 點評`,
+    `${nameMain} 五大外資 目標價`,
+    `${nameMain} 分別給予 OR 分別給到 目標價`,
+    `最高目標價 ${nameMain}`,
+    ...variants.slice(1, 3).map((a) => `${a} 目標價`),
   ];
   const seenTitles = new Set<string>();
+  const pageCandidates: PageFetchCandidate[] = [];
   const batches = await Promise.all(
     queries.map((q) => bingNewsSearch(q).catch(() => [] as NewsItem[])),
   );
   for (const items of batches) {
-    ingestNewsItems(items, code, name, byBroker, "bing", seenTitles);
+    ingestNewsItems(
+      items,
+      code,
+      name,
+      byBroker,
+      "bing",
+      seenTitles,
+      pageCandidates,
+    );
   }
+  await enrichFromArticlePages(pageCandidates, code, name, byBroker);
   return [...byBroker.values()];
 }
 
@@ -958,15 +1361,18 @@ async function collectFromCnyes(
   name: string,
 ): Promise<BrokerTargetPrice[]> {
   const byBroker = new Map<string, BrokerTargetPrice>();
-  const nameMain = stockNameVariants(code, name)[0] || name;
+  const variants = stockNameVariants(code, name);
+  const nameMain = variants[0] || name;
   const queries = [
-    `${nameMain}目標價`,
-    `${nameMain} 目標價`,
     `${nameMain}(${code}) 目標價`,
+    `${nameMain} 目標價`,
+    `${code} 目標價`,
     `${nameMain} 外資 目標價`,
-    `${nameMain} 目標價 大摩`,
+    `${nameMain} 目標價 大和`,
     `${nameMain} 目標價 美銀`,
+    `${nameMain} 目標價 高盛`,
     `${nameMain} EPS 目標價`,
+    `${nameMain} 目標價 分別`,
   ];
   const articlesToHint: { id: number; asOf: string | null }[] = [];
   const seenIds = new Set<number>();
@@ -995,11 +1401,13 @@ async function collectFromCnyes(
       });
       for (const row of found) mergeTarget(byBroker, row);
       if (
-        !found.length &&
         item.newsId &&
         !seenIds.has(item.newsId) &&
-        (/目標[股]?價/.test(title) || findBroker(title)) &&
-        articlesToHint.length < 5
+        (/目標[股]?價/.test(title) ||
+          findBroker(title) ||
+          /分別|外資|點評/.test(title)) &&
+        (found.length < 2 || !found.some((r) => r.target != null)) &&
+        articlesToHint.length < 8
       ) {
         seenIds.add(item.newsId);
         articlesToHint.push({ id: item.newsId, asOf });
@@ -1278,6 +1686,15 @@ async function scrapeBrokerTargetPrices(
         next.eps = null;
         next.epsYear = null;
       }
+      // 片段未寫 EPS 卻帶數字 → 多半是他文殘留，清掉
+      if (
+        next.eps != null &&
+        next.snippet &&
+        !/EPS|每股盈[餘余]|每股純益|預估\s*EPS/i.test(next.snippet)
+      ) {
+        next.eps = null;
+        next.epsYear = null;
+      }
       return next;
     })
     .filter((t) => t.target != null || t.eps != null)
@@ -1302,6 +1719,18 @@ async function scrapeBrokerTargetPrices(
       ? null
       : "近數年公開新聞未解析到具名券商目標價或預估 EPS",
   };
+
+  // 預算截斷／暫時抓空時，勿覆蓋既有有效快取
+  const prev = cache.byCode[stockCode];
+  if (
+    !targets.length &&
+    prev?.targets?.length &&
+    Date.now() - Date.parse(prev.builtAt || "") < STALE_SERVE_MS
+  ) {
+    const { memo } = brokerTargetsFlightBag();
+    memo.set(stockCode, { at: Date.now(), value: prev });
+    return prev;
+  }
 
   cache.byCode[stockCode] = payload;
   cache.builtAt = new Date().toISOString();
