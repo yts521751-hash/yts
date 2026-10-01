@@ -227,15 +227,18 @@ export async function fillTradingDayGaps(options?: {
       currentYmd: ymd,
       phase: "fetch",
     });
-    const quotes = await loadMergedQuotesDay(ymd);
+    // 報價與法人互不依賴：並行抓取縮短單日牆鐘時間
+    const [quotes] = await Promise.all([
+      loadMergedQuotesDay(ymd),
+      loadMergedInstiDay(ymd),
+    ]);
     if (quotes?.quotes?.length) {
       fetched++;
       fetchedYmds.push(ymd);
       existingSet.add(ymd);
-      await loadMergedInstiDay(ymd);
-      await sleep(180);
-    } else {
       await sleep(120);
+    } else {
+      await sleep(80);
     }
   }
 
@@ -273,10 +276,11 @@ export async function fillTradingDayGaps(options?: {
     );
   }
 
-  // 只為「本次新抓到的日」確保法人檔（已有檔略過）；不再每次掃 25 日
+  // 只為「本次新抓到的日」確保法人檔（已有檔略過）；並行、不再每次掃 25 日
   quoteDays = await listCachedTradingDays(needDays, lookback);
-  for (const ymd of [...new Set(fetchedYmds)]) {
-    await loadMergedInstiDay(ymd);
+  const needInsti = [...new Set(fetchedYmds)];
+  if (needInsti.length) {
+    await Promise.all(needInsti.map((ymd) => loadMergedInstiDay(ymd)));
   }
 
   const totalFetched = fetched + depthFetched;

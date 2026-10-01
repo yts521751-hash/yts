@@ -24,9 +24,9 @@ import type {
 } from "@/lib/value-picks";
 import { cn } from "@/lib/utils";
 import {
-  EpsBasisDetail,
+  BrokerTargetsDetail,
   FundMetricsGrid,
-} from "@/components/eps-basis-detail";
+} from "@/components/broker-targets-detail";
 
 type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
 
@@ -207,7 +207,7 @@ export function ValuePicksClient({
           達 {data?.criteria.minDayAmtYi ?? 10} 億以上的個股。
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          EPS 來源：Cnyes／FactSet 法人共識中位數
+          EPS 來源：Cnyes／FactSet 法人共識中位數（篩選用）；展開列顯示內外資券商目標價
           {data?.date ? ` · 行情日 ${data.date}` : ""}
           {data?.scanned != null ? ` · 掃描 ${data.scanned} 檔` : ""}
           {data?.builtAt
@@ -288,12 +288,12 @@ export function ValuePicksClient({
               baseEps={lookup.baseEps}
               epsYoy={lookup.epsYoy}
             />
-            <EpsBasisDetail
+            <BrokerTargetsDetail
               className="mt-3"
-              brokers={lookup.brokers}
-              consensusBasis={lookup.consensusBasis}
-              epsSource={lookup.epsSource}
+              code={lookup.code}
+              name={lookup.name}
               defaultOpen
+              prefetch
             />
           </div>
         ) : null}
@@ -320,7 +320,7 @@ export function ValuePicksClient({
         ) : (
           <>
             <p className="mt-5 text-xs text-muted-foreground">
-              共 {rows.length} 檔 · 點列可展開明年 EPS 依據 · 點欄位可排序
+              共 {rows.length} 檔 · 點列可展開券商目標價依據 · 點欄位可排序
             </p>
 
             {/* 手機卡片 */}
@@ -379,11 +379,10 @@ export function ValuePicksClient({
                       成交 {formatTurnoverYi(r.dayAmt)}
                     </div>
                     {open ? (
-                      <EpsBasisDetail
+                      <BrokerTargetsDetail
                         className="mt-3"
-                        brokers={r.brokers}
-                        consensusBasis={r.consensusBasis}
-                        epsSource={r.epsSource}
+                        code={r.code}
+                        name={r.name}
                         defaultOpen
                       />
                     ) : null}
@@ -493,10 +492,9 @@ export function ValuePicksClient({
                         {open ? (
                           <tr className="border-t border-border/20 bg-muted/20">
                             <td colSpan={8} className="px-3 py-3">
-                              <EpsBasisDetail
-                                brokers={r.brokers}
-                                consensusBasis={r.consensusBasis}
-                                epsSource={r.epsSource}
+                              <BrokerTargetsDetail
+                                code={r.code}
+                                name={r.name}
                                 defaultOpen
                               />
                             </td>

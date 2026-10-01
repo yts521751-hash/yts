@@ -145,11 +145,8 @@ export async function buildSectorKline(
     const disk = await readDiskKline(id);
     if (disk?.candles?.length && disk.candles.length >= minBars) {
       const latest = await getLatestCachedTradingDay();
-      const freshEnough =
-        !latest ||
-        disk.quoteDays?.[0] === latest ||
-        (disk.quoteDays?.length ?? 0) >= minBars - 2;
-      if (freshEnough) {
+      // 必須對齊最新報價日；不可因「根數夠」就把落後日當新鮮
+      if (!latest || disk.quoteDays?.[0] === latest) {
         memSet(disk);
         return { ...disk, source: "cache" };
       }

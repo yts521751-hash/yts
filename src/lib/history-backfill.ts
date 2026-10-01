@@ -134,7 +134,7 @@ export async function runHistoryBackfill(reason: string) {
       label:
         gap.fetched > 0
           ? smallGap
-            ? `日終增量更新（補了 ${gap.fetched} 日）`
+            ? `輕量日終（補了 ${gap.fetched} 日：報價＋法人＋資金流）`
             : "日終大包（含產業 K／均線）"
           : "檢查日終大包是否最新",
     });

@@ -22,7 +22,7 @@ function fmtEps(n: number | null | undefined) {
   return n.toFixed(2);
 }
 
-/** 明年 EPS 依據：逐家券商列，或共識統計降級顯示 */
+/** 明年 EPS 依據：共識統計（成交值等次要展開可复用；價值選股改用券商目標價） */
 export function EpsBasisDetail({
   brokers,
   consensusBasis,
@@ -31,7 +31,8 @@ export function EpsBasisDetail({
   defaultOpen = false,
 }: EpsBasisProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const rows = brokers?.length ? brokers : [];
+  // 過濾掉純 FactSet／Yahoo 共識列，避免再當「逐家券商」展示
+  const rows = (brokers ?? []).filter((r) => r.kind !== "consensus");
   const hasConsensus =
     consensusBasis &&
     (consensusBasis.median != null ||
@@ -42,14 +43,11 @@ export function EpsBasisDetail({
   if (!hasAny) {
     return (
       <p className={cn("text-[11px] text-muted-foreground", className)}>
-        尚無明年 EPS 依據明細
+        尚無 EPS 共識明細
         {epsSource ? `（來源 ${epsSource}）` : ""}
       </p>
     );
   }
-
-  const onlyConsensus =
-    rows.length > 0 && rows.every((r) => r.kind === "consensus");
 
   return (
     <div className={cn("text-[11px]", className)}>
@@ -60,13 +58,12 @@ export function EpsBasisDetail({
         aria-expanded={open}
       >
         <span className="font-medium text-foreground/90">
-          明年 EPS 依據
+          EPS 共識摘要
           {consensusBasis?.numEst != null
             ? ` · ${consensusBasis.numEst} 家`
             : rows.length
               ? ` · ${rows.length} 列`
               : ""}
-          {onlyConsensus ? "（共識統計）" : ""}
         </span>
         <ChevronDown
           className={cn(
@@ -132,11 +129,9 @@ export function EpsBasisDetail({
             </ul>
           ) : null}
 
-          {onlyConsensus || (!rows.length && hasConsensus) ? (
-            <p className="text-[10px] leading-relaxed text-muted-foreground">
-              目前公開來源僅提供法人共識彙總（中位數／平均／高低與家數），尚未取得逐家券商名稱列；有逐家資料時會自動列出。
-            </p>
-          ) : null}
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            此為法人 EPS 共識彙總。價值選股的「依據」改列逐家券商目標價。
+          </p>
         </div>
       ) : null}
     </div>

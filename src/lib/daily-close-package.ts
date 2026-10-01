@@ -258,6 +258,130 @@ async function runDailyClosePackageUnlocked(
     valuePicks: false,
   };
   let asOf: string | null = null;
+
+  // —— 輕量路徑（≈1 日）：quotes+insti 已由 gap-fill 補齊 →
+  // flow（本機日檔、略過 K 暖機）→ 並行 stocks／wind／turnover／value；
+  // 略過均線全掃（開頁／背景再補）；產業 K 改懶加載。
+  if (smallGap && !options?.force) {
+    markStep("輕量日終：資金流（本機日檔）", 42, 55, 0, 2);
+    const flowStep = await step("flow", async () => {
+      const { rebuildFlowPayload } = await import("@/lib/build-flow");
+      return rebuildFlowPayload({
+        promote: true,
+        cacheOnly: true,
+        skipEnsureHistory: true,
+        skipKlineWarm: true,
+        manageProgress: false,
+      });
+    });
+    steps.push({
+      name: flowStep.name,
+      ok: flowStep.ok,
+      detail: flowStep.detail ?? "tiny-gap:cacheOnly+skipKlineWarm",
+      ms: flowStep.ms,
+    });
+    if (flowStep.ok && flowStep.value) {
+      artifacts.flow = true;
+      artifacts.quotesWarm = true;
+      // 小缺口略過全產業 K 暖機；沿用前次齊備旗標（開頁會對齊最新日）
+      artifacts.klines = Boolean(prevMeta?.artifacts?.klines);
+      asOf = flowStep.value.brief?.date ?? null;
+    }
+
+    markStep("輕量日終：並行更新衍生", 55, 96, 1, 2);
+    const parallelT0 = Date.now();
+    const [stocksStep, windStep, turnoverStep, valueStep] = await Promise.all([
+      step("stocks", async () => {
+        const { listCachedTradingDays } = await import("@/lib/tw-market");
+        const { warmTurnoverExclusions } = await import(
+          "@/lib/regular-turnover"
+        );
+        const { buildStockFlowRanking } = await import("@/lib/stock-flow");
+        const days = await listCachedTradingDays(25, 60);
+        if (days.length) {
+          await warmTurnoverExclusions(days.slice(0, 1), {
+            forceLatest: days[0],
+            concurrency: 4,
+          });
+        }
+        return buildStockFlowRanking(50, {
+          force: true,
+          forceFundamentals: false,
+          skipWarmExclusions: true,
+        });
+      }),
+      step("wind", async () => {
+        const { computeWindPayload } = await import("@/lib/wind-gauge");
+        // 小缺口：允許用較新快取，避免無謂重打指數源
+        return computeWindPayload({ force: false, allowNetwork: true });
+      }),
+      step("turnover-close", async () => {
+        const { buildTurnoverRanking } = await import("@/lib/turnover");
+        return buildTurnoverRanking(50, { force: true });
+      }),
+      step("value-picks", async () => {
+        const { buildValuePicks } = await import("@/lib/value-picks");
+        // 沿用 EPS 快取；不強制重抓數百檔
+        return buildValuePicks({ force: false });
+      }),
+    ]);
+
+    const parallelMs = Date.now() - parallelT0;
+    for (const s of [stocksStep, windStep, turnoverStep, valueStep]) {
+      steps.push({
+        name: s.name,
+        ok: s.ok,
+        detail: s.detail,
+        ms: s.ms,
+      });
+    }
+    steps.push({
+      name: "parallel-bundle",
+      ok: true,
+      detail: `stocks+wind+turnover+value wall=${parallelMs}ms`,
+      ms: parallelMs,
+    });
+
+    artifacts.stocks = Boolean(stocksStep.ok && stocksStep.value?.rows?.length);
+    artifacts.wind = Boolean(
+      windStep.ok && windStep.value?.twse && windStep.value?.tpex,
+    );
+    // 小缺口略過 ma 全掃；沿用前次
+    artifacts.ma = Boolean(prevMeta?.artifacts?.ma);
+    steps.push({
+      name: "ma-screener",
+      ok: true,
+      detail: "tiny-gap:skipped（沿用快取／開頁再補）",
+      ms: 0,
+    });
+    artifacts.turnoverClose = Boolean(
+      turnoverStep.ok && turnoverStep.value?.rows?.length,
+    );
+    artifacts.valuePicks = Boolean(
+      valueStep.ok && valueStep.value?.rows != null,
+    );
+
+    const meta: DailyCloseMeta = {
+      asOf,
+      builtAt: new Date().toISOString(),
+      reason: `${reason}:tiny-gap`,
+      steps,
+      artifacts,
+      skipped: false,
+      gap: gapMeta,
+    };
+    await writeCacheFile(DAILY_CLOSE_META_CACHE, meta).catch(() => null);
+    await flushUploadsSafe();
+
+    const okCount = steps.filter((s) => s.ok).length;
+    console.log(
+      `[daily-close] done (${reason}:tiny-gap): ${okCount}/${steps.length} ok asOf=${asOf ?? "—"} ` +
+        `complete=${artifactsComplete(artifacts)} target=${target} ` +
+        `ms=${steps.map((s) => `${s.name}:${s.ms}`).join(",")}`,
+    );
+    return meta;
+  }
+
   const totalSteps = 6;
 
   // 1) 資金流定稿
@@ -274,6 +398,7 @@ async function runDailyClosePackageUnlocked(
       promote: true,
       cacheOnly: Boolean(options?.skipGapFill || smallGap),
       skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
+      skipKlineWarm: Boolean(smallGap),
       manageProgress: false,
     });
   });
@@ -286,25 +411,20 @@ async function runDailyClosePackageUnlocked(
   if (flowStep.ok && flowStep.value) {
     artifacts.flow = true;
     artifacts.quotesWarm = true;
-    artifacts.klines = true;
+    artifacts.klines = !smallGap;
     asOf = flowStep.value.brief?.date ?? null;
   }
 
-  // 2) 個股資金流排行（不再雙重 warm；小缺口不 force EPS）
-  markStep(
-    smallGap ? "更新個股金流（僅最新日排除額）" : "重算個股金流",
-    52,
-    68,
-    1,
-    totalSteps,
-  );
+  // 2–6) 完整包：小缺口已 early-return；此處為多日／force 路徑。
+  // 仍盡量並行非依賴步驟以縮短牆鐘時間。
+  markStep("更新個股金流／風度／均線／成交／價值", 52, 98, 1, totalSteps);
+
   const stocksStep = await step("stocks", async () => {
     const { listCachedTradingDays } = await import("@/lib/tw-market");
     const { warmTurnoverExclusions } = await import("@/lib/regular-turnover");
     const { buildStockFlowRanking } = await import("@/lib/stock-flow");
     const days = await listCachedTradingDays(25, 60);
     if (days.length) {
-      // 小缺口：只暖最新日；完整包才暖近月
       const warmDays = smallGap ? days.slice(0, 1) : days;
       await warmTurnoverExclusions(warmDays, {
         forceLatest: days[0],
@@ -327,75 +447,53 @@ async function runDailyClosePackageUnlocked(
   });
   artifacts.stocks = Boolean(stocksStep.ok && stocksStep.value?.rows?.length);
 
-  // 3) 風度儀表
-  markStep("更新風度儀表", 68, 76, 2, totalSteps);
-  const windStep = await step("wind", async () => {
-    const { computeWindPayload } = await import("@/lib/wind-gauge");
-    return computeWindPayload({ force: true, allowNetwork: true });
-  });
-  steps.push({
-    name: windStep.name,
-    ok: windStep.ok,
-    detail: windStep.detail,
-    ms: windStep.ms,
-  });
-  artifacts.wind = Boolean(windStep.ok && windStep.value?.twse && windStep.value?.tpex);
+  // wind / ma / turnover / value 互不依賴 → 並行
+  const [windStep, maStep, turnoverStep, valueStep] = await Promise.all([
+    step("wind", async () => {
+      const { computeWindPayload } = await import("@/lib/wind-gauge");
+      return computeWindPayload({ force: true, allowNetwork: true });
+    }),
+    step("ma-screener", async () => {
+      const { buildMaScreener } = await import("@/lib/ma-screener");
+      return buildMaScreener({
+        forceRebuildMissing: true,
+        skipDiskCache: true,
+        skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
+      });
+    }),
+    step("turnover-close", async () => {
+      const { buildTurnoverRanking } = await import("@/lib/turnover");
+      return buildTurnoverRanking(50, { force: true });
+    }),
+    step("value-picks", async () => {
+      const { buildValuePicks } = await import("@/lib/value-picks");
+      return buildValuePicks({ force: true });
+    }),
+  ]);
 
-  // 4) 產業均線掃描
-  markStep(
-    smallGap ? "更新均線掃描（略過歷史回補）" : "重算均線掃描",
-    76,
-    86,
-    3,
-    totalSteps,
-  );
-  const maStep = await step("ma-screener", async () => {
-    const { buildMaScreener } = await import("@/lib/ma-screener");
-    return buildMaScreener({
-      forceRebuildMissing: true,
-      skipDiskCache: true,
-      skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
+  for (const s of [windStep, maStep, turnoverStep, valueStep]) {
+    steps.push({
+      name: s.name,
+      ok: s.ok,
+      detail: s.detail,
+      ms: s.ms,
     });
-  });
-  steps.push({
-    name: maStep.name,
-    ok: maStep.ok,
-    detail: maStep.detail,
-    ms: maStep.ms,
-  });
+  }
+  artifacts.wind = Boolean(
+    windStep.ok && windStep.value?.twse && windStep.value?.tpex,
+  );
   artifacts.ma = Boolean(maStep.ok && maStep.value?.rows?.length);
-
-  // 5) 收盤版成交排行
-  markStep("更新成交排行", 86, 92, 4, totalSteps);
-  const turnoverStep = await step("turnover-close", async () => {
-    const { buildTurnoverRanking } = await import("@/lib/turnover");
-    return buildTurnoverRanking(50, { force: true });
-  });
-  steps.push({
-    name: turnoverStep.name,
-    ok: turnoverStep.ok,
-    detail: turnoverStep.detail,
-    ms: turnoverStep.ms,
-  });
   artifacts.turnoverClose = Boolean(
     turnoverStep.ok && turnoverStep.value?.rows?.length,
   );
-
-  // 6) 價值選股
-  markStep("更新價值選股", 92, 98, 5, totalSteps);
-  const valueStep = await step("value-picks", async () => {
-    const { buildValuePicks } = await import("@/lib/value-picks");
-    return buildValuePicks({ force: true });
-  });
-  steps.push({
-    name: valueStep.name,
-    ok: valueStep.ok,
-    detail: valueStep.detail,
-    ms: valueStep.ms,
-  });
   artifacts.valuePicks = Boolean(
     valueStep.ok && valueStep.value?.rows != null,
   );
+  if (flowStep.ok && !smallGap) {
+    artifacts.klines = true;
+  } else if (smallGap) {
+    artifacts.klines = Boolean(prevMeta?.artifacts?.klines);
+  }
 
   const meta: DailyCloseMeta = {
     asOf,
