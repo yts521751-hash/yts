@@ -32,10 +32,12 @@
 | 進入 | `/us`（或頂部／各頁「台股／美股」切換） |
 | 金流公式 | 主 80%：`signedFlowFromQuote`；輔 20%：相對成交量活動壓力代理（**非**外資／投信／自營）；rvol 缺則 100% 價格流 |
 | 宇宙 | 流動性普通股（人工板塊＋AI／半導體題材）；排除 ETF／ETN |
-| 報價 | Yahoo chart OHLCV；成交金額＝收盤×股數（億美元） |
+| 報價 | Yahoo chart OHLCV；金流／歷史用 Yahoo volume |
+| 成值排行 | **收盤價 × Nasdaq Share Volume ÷ 1e8**（億美元）；Nasdaq 失敗回退 Yahoo volume。例：MU≈331.3、NVDA≈278、AAPL≈166.5、META≈139.9 |
+| 成值名稱 | 英文全名＋中文短名（精選對照表＋回退） |
 | 風度 | S&P 500（^GSPC）／Nasdaq（^IXIC） |
 | 情緒 | 既有 CBOE VIX 路徑 |
-| 價值選股 | Yahoo EPS；門檻改美元（成交 ≥ 1 億美元）；無月營收，季營收 YoY 僅附帶 |
+| 價值選股 | EPS 優先 **Nasdaq yearly forecast**（免 crumb），其次 Yahoo earningsTrend／forwardEps；門檻 EPS YoY&gt;25%、前瞻 PE&lt;40、成交 ≥ 0.5 億美元；無月營收 |
 | 同步 | `/us` 首頁「同步資料」→ `/api/us/sync`；快取 `us/*`，R2 同前綴 |
 | API | `/api/us/flow`、`stocks`、`turnover`、`wind`、`value`、`ma-screener`、`sector/[id]`、`sync` |
 

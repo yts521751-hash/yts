@@ -11,10 +11,13 @@ type Row = {
   rank: number;
   code: string;
   name: string;
+  nameEn?: string;
+  nameZh?: string;
   dayAmt: number;
   changePct: number;
   close: number;
   volume?: number;
+  volumeSource?: string;
 };
 
 export default function UsTurnoverPage() {
@@ -82,7 +85,8 @@ export default function UsTurnoverPage() {
         </h1>
         <p className="mt-1 text-xs text-muted-foreground">
           {date ? `資料日 ${date} · ` : ""}
-          {basis || "正規盤成交金額＝收盤價×成交股數÷1e8（單位：億美元）"}
+          {basis ||
+            "成值＝收盤價×Nasdaq成交股數÷1e8（單位：億美元；失敗時回退 Yahoo volume）"}
         </p>
 
         {loading ? (
@@ -93,12 +97,13 @@ export default function UsTurnoverPage() {
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto border border-border">
-            <table className="w-full min-w-[640px] text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="bg-muted/40 font-mono text-[11px] text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">代號</th>
-                  <th className="px-3 py-2">名稱</th>
+                  <th className="px-3 py-2">英文名稱</th>
+                  <th className="px-3 py-2">中文</th>
                   <th className="px-3 py-2 text-right">成值（億美元）</th>
                   <th className="px-3 py-2 text-right">漲跌</th>
                   <th className="px-3 py-2 text-right">收盤</th>
@@ -112,7 +117,10 @@ export default function UsTurnoverPage() {
                         {r.rank}
                       </td>
                       <td className="px-3 py-2 font-mono font-medium">{r.code}</td>
-                      <td className="px-3 py-2">{r.name}</td>
+                      <td className="px-3 py-2">{r.nameEn || r.name}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {r.nameZh || "—"}
+                      </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         {formatUsTurnoverYi(r.dayAmt)}
                       </td>

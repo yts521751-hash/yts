@@ -1,9 +1,12 @@
 /**
- * 美股成交金額排行（正規盤 close×volume，單位億美元）。
+ * 美股成交金額排行（成值）。
  *
- * 公式：dayAmtYi = (收盤價 USD × 成交股數) / 1e8
- * 例：MU 收盤 1065、量 3050 萬股 → 約 325 億美元（與市場美元成交額同口徑）。
- * 不含盤後；不套用台股 regular-turnover 排除。
+ * 公式：dayAmtYi = (收盤價 USD × Nasdaq Share Volume) / 1e8
+ * 單位：億美元（1e8 USD）。
+ *
+ * 為何用 Nasdaq volume：Yahoo daily chart volume 常略低於交易所／媒體口徑；
+ * 以 MU/NVDA/AAPL/META 驗證，Nasdaq volume × close 可對齊常見「成值」參考值。
+ * Nasdaq 失敗時回退 Yahoo chart volume（close×volume/1e8）。
  */
 
 import {
@@ -15,16 +18,28 @@ import {
   writeUsCacheFile,
   ymdToIso,
 } from "@/lib/us-market";
+import {
+  cleanNasdaqCompanyName,
+  fetchNasdaqQuoteInfoMap,
+} from "@/lib/nasdaq-us";
+import { resolveUsDisplayNames } from "@/lib/us-company-names";
 
 export type UsTurnoverRow = {
   rank: number;
   code: string;
+  /** 列表主欄：英文（中文） */
   name: string;
+  /** 英文全名／短名 */
+  nameEn: string;
+  /** 中文短名 */
+  nameZh: string;
   close: number;
   changePct: number;
   /** 億美元（USD dollar volume / 1e8） */
   dayAmt: number;
   volume: number;
+  /** volume 來源 */
+  volumeSource?: "nasdaq" | "yahoo";
 };
 
 export type UsTurnoverPayload = {
@@ -39,8 +54,9 @@ export type UsTurnoverPayload = {
   market: "us";
 };
 
-const AMOUNT_BASIS =
-  "美股正規盤成交金額＝收盤價(USD)×成交股數÷1e8（單位：億美元；Yahoo daily bar，不含盤後）";
+export const AMOUNT_BASIS =
+  "美股成值＝收盤價(USD)×Nasdaq成交股數÷1e8（單位：億美元；Nasdaq 失敗時回退 Yahoo daily bar volume；不含盤後）";
+
 /** 1 億美元 */
 export const US_YI_USD = 1e8;
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -58,7 +74,12 @@ export async function buildUsTurnoverRanking(
   const want = Math.min(100, Math.max(10, limit));
   if (!options?.force) {
     const cached = await readUsCacheFile<UsTurnoverPayload>(US_TURNOVER_CACHE);
-    if (cached?.rows?.length) {
+    // 舊快取缺 nameEn／或仍寫 Yahoo-only 口徑 → 強制重算
+    const staleBasis =
+      cached?.amountBasis &&
+      !cached.amountBasis.includes("Nasdaq");
+    const missingNames = cached?.rows?.some((r) => !r.nameEn || !r.nameZh);
+    if (cached?.rows?.length && !staleBasis && !missingNames) {
       return {
         ...cached,
         rows: cached.rows.slice(0, want),
@@ -73,19 +94,57 @@ export async function buildUsTurnoverRanking(
   const quotes = await getUsCachedDayQuotes(days[0]);
   if (!quotes?.size) return null;
 
-  const rows = [...quotes.values()]
+  const candidates = [...quotes.values()]
     .filter((q) => isUsCommonStock(q.code, q.name) && q.turnover > 0)
-    .sort((a, b) => b.turnover - a.turnover)
-    .slice(0, want)
-    .map((q, i) => ({
-      rank: i + 1,
-      code: q.code.toUpperCase(),
-      name: q.name || q.code,
+    .sort((a, b) => b.turnover - a.turnover);
+
+  // 對候選抓 Nasdaq 官方量（宇宙約百檔，併發可接受）
+  const nasdaqMap = await fetchNasdaqQuoteInfoMap(
+    candidates.map((q) => q.code),
+    6,
+  );
+
+  const enriched = candidates.map((q) => {
+    const code = q.code.toUpperCase();
+    const nq = nasdaqMap.get(code);
+    const nasdaqVol =
+      nq?.volume != null && nq.volume > 0 ? nq.volume : null;
+    const volume = nasdaqVol ?? q.volume ?? 0;
+    const volumeSource: "nasdaq" | "yahoo" = nasdaqVol ? "nasdaq" : "yahoo";
+    const dollar = q.close * Math.max(0, volume);
+    const names = resolveUsDisplayNames({
+      code,
+      yahooName: q.name,
+      nasdaqName: cleanNasdaqCompanyName(nq?.companyName),
+      longName: cleanNasdaqCompanyName(nq?.companyName) || q.name,
+    });
+    return {
+      code,
+      name: names.name,
+      nameEn: names.nameEn,
+      nameZh: names.nameZh,
       close: round2(q.close),
       changePct: round2(q.changePct),
-      dayAmt: round1(usdTurnoverToYi(q.turnover)),
-      volume: q.volume ?? 0,
-    }));
+      dayAmt: round1(usdTurnoverToYi(dollar)),
+      volume,
+      volumeSource,
+      _sort: dollar,
+    };
+  });
+
+  enriched.sort((a, b) => b._sort - a._sort);
+  const rows: UsTurnoverRow[] = enriched.slice(0, want).map((r, i) => ({
+    rank: i + 1,
+    code: r.code,
+    name: r.name,
+    nameEn: r.nameEn,
+    nameZh: r.nameZh,
+    close: r.close,
+    changePct: r.changePct,
+    dayAmt: r.dayAmt,
+    volume: r.volume,
+    volumeSource: r.volumeSource,
+  }));
 
   const payload: UsTurnoverPayload = {
     date: ymdToIso(days[0]),
@@ -108,7 +167,10 @@ export async function getUsTurnoverRanking(
   const want = Math.min(100, Math.max(10, limit));
   if (!options?.force) {
     const cached = await readUsCacheFile<UsTurnoverPayload>(US_TURNOVER_CACHE);
-    if (cached?.rows?.length) {
+    const staleBasis =
+      cached?.amountBasis && !cached.amountBasis.includes("Nasdaq");
+    const missingNames = cached?.rows?.some((r) => !r.nameEn || !r.nameZh);
+    if (cached?.rows?.length && !staleBasis && !missingNames) {
       return {
         ...cached,
         rows: cached.rows.slice(0, want),
