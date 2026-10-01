@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { SectorFlow, TideStatus } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import { cpScore } from "@/lib/mock-data";
-import { formatHeat, formatPct, formatYi, formatYiSigned, signedClass } from "@/lib/format";
+import { formatHeat, formatMarketYi, formatMarketYiSigned, formatPct, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 import { statusFromFlow } from "@/lib/money-flow";
+import type { MarketId } from "@/components/market-switch";
 
 export type RankPeriod = "day" | "d3" | "d5";
 
@@ -32,6 +33,7 @@ type Props = {
   /** 與板塊明細共用的時間維度（受控） */
   period?: RankPeriod;
   onPeriodChange?: (period: RankPeriod) => void;
+  market?: MarketId;
 };
 
 const KIND_LABEL: Record<Exclude<KindFilter, "all">, string> = {
@@ -147,6 +149,7 @@ export function SectorRanking({
   kindFilter = "all",
   period: periodProp,
   onPeriodChange,
+  market = "tw",
 }: Props) {
   const [periodInner, setPeriodInner] = useState<RankPeriod>("day");
   const period = periodProp ?? periodInner;
@@ -354,7 +357,7 @@ export function SectorRanking({
                 ? formatPct(sortMetric)
                 : sortKey === "cp"
                   ? sortMetric.toFixed(1)
-                  : formatYiSigned(sortMetric);
+                  : formatMarketYiSigned(sortMetric, market);
           return (
             <button
               key={s.id}
@@ -390,7 +393,7 @@ export function SectorRanking({
                       : period === "d3"
                         ? "3日成交"
                         : "5日成交"}{" "}
-                    {formatYi(amt)}
+                    {formatMarketYi(amt, market)}
                   </span>
                   <span className={signedClass(flow)}>
                     {period === "day"
@@ -398,7 +401,7 @@ export function SectorRanking({
                       : period === "d3"
                         ? "3日流"
                         : "5日流"}{" "}
-                    {formatYiSigned(flow)}
+                    {formatMarketYiSigned(flow, market)}
                   </span>
                 </div>
               </div>
@@ -499,7 +502,7 @@ export function SectorRanking({
                     </div>
                   </td>
                   <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3">
-                    {formatYi(amt)}
+                    {formatMarketYi(amt, market)}
                   </td>
                   <td
                     className={cn(
@@ -507,7 +510,7 @@ export function SectorRanking({
                       signedClass(flow),
                     )}
                   >
-                    {formatYiSigned(flow)}
+                    {formatMarketYiSigned(flow, market)}
                   </td>
                   <td
                     className={cn(
@@ -515,7 +518,7 @@ export function SectorRanking({
                       signedClass(s.accel),
                     )}
                   >
-                    {formatYiSigned(s.accel)}
+                    {formatMarketYiSigned(s.accel, market)}
                   </td>
                   <td
                     className={cn(
@@ -523,7 +526,7 @@ export function SectorRanking({
                       signedClass(s.d20Flow),
                     )}
                   >
-                    {formatYiSigned(s.d20Flow, 0)}
+                    {formatMarketYiSigned(s.d20Flow, market, 0)}
                   </td>
                   <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums text-muted-foreground sm:px-3">
                     {formatHeat(s.heat)}

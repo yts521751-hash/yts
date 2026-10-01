@@ -40,6 +40,7 @@ import {
   FundMetricsGrid,
 } from "@/components/broker-targets-detail";
 import { MarketSwitch } from "@/components/market-switch";
+import { UsStockName } from "@/components/us-stock-name";
 
 type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
 
@@ -554,15 +555,31 @@ export function ValuePicksClient({
                       onClick={() => toggleExpand(r.code)}
                       className="flex w-full items-start justify-between gap-3 text-left"
                     >
-                      <div className="min-w-0">
-                        <div className="font-medium">
-                          <span className="tabular-nums text-muted-foreground">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
                             {r.rank}.
-                          </span>{" "}
-                          {r.name}
+                          </span>
+                          <span className="shrink-0 font-medium tabular-nums">
+                            {r.code}
+                          </span>
                         </div>
-                        <div className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                          {r.code} · {r.close.toFixed(r.close >= 100 ? 0 : 2)}
+                        {market === "us" ? (
+                          <UsStockName
+                            code={r.code}
+                            nameEn={r.nameEn}
+                            nameZh={r.nameZh}
+                            name={r.name}
+                            variant="stack"
+                            className="mt-0.5"
+                          />
+                        ) : (
+                          <div className="mt-0.5 truncate font-medium">
+                            {r.name}
+                          </div>
+                        )}
+                        <div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                          {r.close.toFixed(r.close >= 100 ? 0 : 2)}
                           <span
                             className={cn("ml-1.5", signedClass(r.changePct))}
                           >
@@ -570,7 +587,7 @@ export function ValuePicksClient({
                           </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 text-right text-[11px]">
+                      <div className="flex shrink-0 items-center gap-2 text-right text-[11px]">
                         <div>
                           <div className="text-muted-foreground">EPS YoY</div>
                           <div className="font-semibold tabular-nums text-[var(--mk-up)]">
@@ -671,18 +688,45 @@ export function ValuePicksClient({
                             {r.rank}
                           </td>
                           <td className="px-3 py-2.5">
-                            <div className="flex items-center gap-1.5 font-medium">
-                              {r.name}
-                              <ChevronDown
-                                className={cn(
-                                  "size-3.5 text-muted-foreground transition",
-                                  open && "rotate-180",
-                                )}
-                              />
-                            </div>
-                            <div className="text-[11px] tabular-nums text-muted-foreground">
-                              {r.code}
-                            </div>
+                            {market === "us" ? (
+                              <div className="flex items-start gap-1.5">
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-medium tabular-nums">
+                                    {r.code}
+                                  </div>
+                                  <UsStockName
+                                    code={r.code}
+                                    nameEn={r.nameEn}
+                                    nameZh={r.nameZh}
+                                    name={r.name}
+                                    variant="stack"
+                                    emphasize={false}
+                                    className="text-[11px] text-muted-foreground"
+                                  />
+                                </div>
+                                <ChevronDown
+                                  className={cn(
+                                    "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition",
+                                    open && "rotate-180",
+                                  )}
+                                />
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center gap-1.5 font-medium">
+                                  {r.name}
+                                  <ChevronDown
+                                    className={cn(
+                                      "size-3.5 text-muted-foreground transition",
+                                      open && "rotate-180",
+                                    )}
+                                  />
+                                </div>
+                                <div className="text-[11px] tabular-nums text-muted-foreground">
+                                  {r.code}
+                                </div>
+                              </>
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right tabular-nums">
                             {r.close.toFixed(r.close >= 100 ? 0 : 2)}

@@ -643,9 +643,9 @@ export function HomeApp({
         </section>
 
         {boardMode === "sector" ? (
-          <FlowBulletin title="板塊金流公布欄" rows={sectorBulletinRows} />
+          <FlowBulletin title="板塊金流公布欄" rows={sectorBulletinRows} market={market} />
         ) : (
-          <FlowBulletin title="個股金流公布欄" rows={stockBulletinRows} />
+          <FlowBulletin title="個股金流公布欄" rows={stockBulletinRows} market={market} />
         )}
 
         {boardMode === "sector" && sectors.length > 0 && (
@@ -669,6 +669,7 @@ export function HomeApp({
                   kindFilter="all"
                   period={flowPeriod}
                   onPeriodChange={setFlowPeriod}
+                  market={market}
                 />
               </div>
               <div className="hidden lg:block">
@@ -723,7 +724,7 @@ export function HomeApp({
                 </button>
               </div>
             ) : (
-              <StockRanking rows={stocks} limit={20} />
+              <StockRanking rows={stocks} limit={20} market={market} />
             )}
           </section>
         )}
@@ -731,7 +732,11 @@ export function HomeApp({
 
       <footer className="relative z-10 space-y-1 border-t border-border/40 py-4 text-center text-[11px] text-muted-foreground">
         <p>金流看板</p>
-        <p>資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料</p>
+        <p>
+          {market === "us"
+            ? "資料來源：Yahoo Finance、Nasdaq 公開行情"
+            : "資料來源：臺灣證券交易所、證券櫃檯買賣中心公開資料"}
+        </p>
       </footer>
     </div>
   );

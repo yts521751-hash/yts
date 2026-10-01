@@ -7,15 +7,16 @@ import type { SectorFlow } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import {
   formatHeat,
+  formatMarketYi,
+  formatMarketYiSigned,
   formatPct,
-  formatYi,
-  formatYiSigned,
   signedClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CandlestickChart, X } from "lucide-react";
 import { marketFromPath } from "@/components/market-switch";
+import { UsStockName } from "@/components/us-stock-name";
 
 type StockPeriod = "day" | "d3" | "d5";
 
@@ -101,27 +102,30 @@ export function SectorDetail({
       <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3">
         <Metric
           label="當日淨流"
-          value={formatYiSigned(sector.dayFlow)}
+          value={formatMarketYiSigned(sector.dayFlow, market)}
           tone={sector.dayFlow}
         />
         <Metric
           label="流入／流出"
-          value={`${formatYi(sector.dayIn)} / ${formatYi(sector.dayOut)}`}
+          value={`${formatMarketYi(sector.dayIn, market)} / ${formatMarketYi(sector.dayOut, market)}`}
         />
-        <Metric label="成交額" value={formatYi(sector.dayAmt)} />
+        <Metric
+          label="成交額"
+          value={formatMarketYi(sector.dayAmt, market)}
+        />
         <Metric
           label="近 3 日流"
-          value={formatYiSigned(sector.d3Flow)}
+          value={formatMarketYiSigned(sector.d3Flow, market)}
           tone={sector.d3Flow}
         />
         <Metric
           label="近 5 日流"
-          value={formatYiSigned(sector.d5Flow)}
+          value={formatMarketYiSigned(sector.d5Flow, market)}
           tone={sector.d5Flow}
         />
         <Metric
           label="加速度/日"
-          value={formatYiSigned(sector.accel)}
+          value={formatMarketYiSigned(sector.accel, market)}
           tone={sector.accel}
         />
         <Metric label="量能熱度" value={formatHeat(sector.heat)} />
@@ -227,16 +231,33 @@ export function SectorDetail({
                   className="border-t border-border/40 transition hover:bg-muted/40"
                 >
                   <td className="px-2 py-2">
-                    <div className="font-medium">{s.name}</div>
-                    <div className="text-[11px] tabular-nums text-muted-foreground">
-                      {s.code}
-                    </div>
+                    {market === "us" ? (
+                      <>
+                        <div className="font-medium tabular-nums">{s.code}</div>
+                        <UsStockName
+                          code={s.code}
+                          name={s.name}
+                          variant="compact"
+                          emphasize={false}
+                          className="text-[11px] text-muted-foreground"
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <div className="font-medium">{s.name}</div>
+                        <div className="text-[11px] tabular-nums text-muted-foreground">
+                          {s.code}
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">
-                    {s.close != null && s.close > 0 ? s.close.toFixed(s.close >= 100 ? 0 : 2) : "—"}
+                    {s.close != null && s.close > 0
+                      ? s.close.toFixed(s.close >= 100 ? 0 : 2)
+                      : "—"}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">
-                    {formatYi(amt)}
+                    {formatMarketYi(amt, market)}
                   </td>
                   <td
                     className={cn(
@@ -244,7 +265,7 @@ export function SectorDetail({
                       signedClass(flow),
                     )}
                   >
-                    {formatYiSigned(flow)}
+                    {formatMarketYiSigned(flow, market)}
                   </td>
                   <td
                     className={cn(

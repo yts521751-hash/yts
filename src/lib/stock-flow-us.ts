@@ -16,12 +16,15 @@ import {
   ymdToIso,
   type UsQuoteRow,
 } from "@/lib/us-market";
+import { resolveUsDisplayNames } from "@/lib/us-company-names";
 
 export type UsStockFlowRow = StockFlow & {
   accel: number;
   heat: number;
   close: number;
   rvol?: number | null;
+  nameEn?: string;
+  nameZh?: string;
 };
 
 export type UsStockFlowPayload = {
@@ -145,9 +148,16 @@ export async function buildUsStockFlowRanking(
     const avg5Amt = d5Amt / Math.max(n5, 1);
     const avg20Amt = d20Amt / Math.max(n20, 1);
 
+    const names = resolveUsDisplayNames({
+      code,
+      yahooName: latestQ.name,
+    });
+
     rows.push({
       code,
-      name: latestQ.name.trim() || code,
+      name: names.name,
+      nameEn: names.nameEn,
+      nameZh: names.nameZh,
       dayAmt: round2(dayParts.amt),
       dayFlow: round1(dayParts.flow),
       dayIn: round1(dayParts.inflow),

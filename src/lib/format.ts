@@ -25,6 +25,47 @@ export function formatYiSigned(n: number, digits = 1): string {
   return `${sign}${n.toFixed(digits)} 億`;
 }
 
+/** 美股淨流／成交：單位億美元 */
+export function formatUsYi(n: number, digits = 1): string {
+  const abs = Math.abs(n);
+  if (abs >= 100) return `${n.toFixed(0)} 億美元`;
+  return `${n.toFixed(digits)} 億美元`;
+}
+
+export function formatUsYiSigned(n: number, digits = 1): string {
+  const sign = n > 0 ? "+" : "";
+  const abs = Math.abs(n);
+  if (abs >= 100) return `${sign}${n.toFixed(0)} 億美元`;
+  return `${sign}${n.toFixed(digits)} 億美元`;
+}
+
+export type MarketFormatId = "tw" | "us";
+
+export function formatMarketYi(
+  n: number,
+  market: MarketFormatId = "tw",
+  digits = 1,
+): string {
+  return market === "us" ? formatUsYi(n, digits) : formatYi(n, digits);
+}
+
+export function formatMarketYiSigned(
+  n: number,
+  market: MarketFormatId = "tw",
+  digits = 1,
+): string {
+  return market === "us"
+    ? formatUsYiSigned(n, digits)
+    : formatYiSigned(n, digits);
+}
+
+export function formatMarketTurnoverYi(
+  n: number,
+  market: MarketFormatId = "tw",
+): string {
+  return market === "us" ? formatUsTurnoverYi(n) : formatTurnoverYi(n);
+}
+
 export function formatPct(n: number, digits = 2): string {
   const sign = n > 0 ? "+" : "";
   return `${sign}${n.toFixed(digits)}%`;

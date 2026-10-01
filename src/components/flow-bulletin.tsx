@@ -1,6 +1,6 @@
 "use client";
 
-import { formatYiSigned, signedClass } from "@/lib/format";
+import { formatMarketYiSigned, signedClass } from "@/lib/format";
 import {
   buildFlowBulletin,
   type BulletinRow,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/flow-bulletin";
 import { cn } from "@/lib/utils";
 import { useMemo } from "react";
+import type { MarketId } from "@/components/market-switch";
 
 const TONE_STYLE: Record<
   BulletinTone,
@@ -38,9 +39,10 @@ const TONE_STYLE: Record<
 type Props = {
   title: string;
   rows: BulletinRow[];
+  market?: MarketId;
 };
 
-export function FlowBulletin({ title, rows }: Props) {
+export function FlowBulletin({ title, rows, market = "tw" }: Props) {
   const sections = useMemo(() => buildFlowBulletin(rows), [rows]);
 
   return (
@@ -97,7 +99,7 @@ export function FlowBulletin({ title, rows }: Props) {
                           signedClass(item.dayFlow),
                         )}
                       >
-                        {formatYiSigned(item.dayFlow)}
+                        {formatMarketYiSigned(item.dayFlow, market)}
                       </span>
                     </li>
                   ))}

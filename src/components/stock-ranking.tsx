@@ -4,14 +4,16 @@ import { useMemo, useState } from "react";
 import type { StockFlow } from "@/lib/types";
 import {
   formatHeat,
+  formatMarketTurnoverYi,
+  formatMarketYiSigned,
   formatPct,
-  formatTurnoverYi,
-  formatYiSigned,
   signedClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
+import { UsStockName } from "@/components/us-stock-name";
+import type { MarketId } from "@/components/market-switch";
 
 export type StockRankPeriod = "day" | "d3" | "d5";
 
@@ -26,11 +28,14 @@ export type StockFlowRankRow = StockFlow & {
   epsGrowth?: number | null;
   nextYearEps?: number | null;
   baseEps?: number | null;
+  nameEn?: string;
+  nameZh?: string;
 };
 
 type Props = {
   rows: StockFlowRankRow[];
   limit?: number;
+  market?: MarketId;
 };
 
 type ColDef = {
@@ -68,10 +73,15 @@ function sortValue(
 
 const RANK_LIMIT = 20;
 
-export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
+export function StockRanking({
+  rows,
+  limit = RANK_LIMIT,
+  market = "tw",
+}: Props) {
   const [period, setPeriod] = useState<StockRankPeriod>("day");
   const [sortKey, setSortKey] = useState<SortKey>("amt");
   const [asc, setAsc] = useState(false);
+  const isUs = market === "us";
 
   const columns = useMemo<ColDef[]>(
     () => [
@@ -233,53 +243,89 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
           return (
             <div
               key={s.code}
-              className="flex w-full items-center gap-3 border border-border/50 bg-[var(--panel)] px-3 py-2.5 text-left"
+              className="flex w-full items-start gap-3 border border-border/50 bg-[var(--panel)] px-3 py-2.5 text-left"
             >
-              <span className="w-6 shrink-0 text-center text-xs tabular-nums text-muted-foreground">
+              <span className="w-6 shrink-0 pt-0.5 text-center text-xs tabular-nums text-muted-foreground">
                 {i + 1}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{s.name}</p>
-                <p className="text-[11px] tabular-nums text-muted-foreground">
-                  {s.code}
-                  {s.close != null && s.close > 0
-                    ? ` · ${s.close.toLocaleString("zh-TW")}`
-                    : ""}
-                  <span className={cn("ml-2", signedClass(s.changePct))}>
+                {isUs ? (
+                  <>
+                    <p className="font-medium tabular-nums">{s.code}</p>
+                    <UsStockName
+                      code={s.code}
+                      nameEn={s.nameEn}
+                      nameZh={s.nameZh}
+                      name={s.name}
+                      variant="stack"
+                      className="mt-0.5"
+                    />
+                  </>
+                ) : (
+                  <p className="truncate font-medium">{s.name}</p>
+                )}
+                <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                  {!isUs ? (
+                    <>
+                      {s.code}
+                      {s.close != null && s.close > 0
+                        ? ` · ${s.close.toLocaleString("zh-TW")}`
+                        : ""}
+                    </>
+                  ) : s.close != null && s.close > 0 ? (
+                    <span>{s.close.toLocaleString("en-US")}</span>
+                  ) : null}
+                  <span
+                    className={cn(
+                      (!isUs || (s.close != null && s.close > 0)) && "ml-2",
+                      signedClass(s.changePct),
+                    )}
+                  >
                     {formatPct(s.changePct)}
                   </span>
                 </p>
               </div>
               <div className="shrink-0 text-right text-xs">
-                <p className="whitespace-nowrap tabular-nums">{formatTurnoverYi(amt)}</p>
+                <p className="whitespace-nowrap tabular-nums">
+                  {formatMarketTurnoverYi(amt, market)}
+                </p>
                 <p
                   className={cn(
                     "whitespace-nowrap font-medium tabular-nums",
                     signedClass(flow),
                   )}
                 >
-                  {formatYiSigned(flow)}
+                  {formatMarketYiSigned(flow, market)}
                 </p>
-                <p className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
-                  營收YoY{" "}
-                  <span
-                    className={cn(
-                      s.revenueYoy == null
-                        ? ""
-                        : signedClass(s.revenueYoy),
-                    )}
-                  >
-                    {s.revenueYoy == null ? "—" : formatPct(s.revenueYoy)}
-                  </span>
-                  {" · "}EPS{" "}
-                  <span
-                    className={cn(
-                      s.epsGrowth == null ? "" : signedClass(s.epsGrowth),
-                    )}
-                  >
-                    {s.epsGrowth == null ? "—" : formatPct(s.epsGrowth)}
-                  </span>
-                </p>
+                {!isUs ? (
+                  <p className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
+                    營收YoY{" "}
+                    <span
+                      className={cn(
+                        s.revenueYoy == null
+                          ? ""
+                          : signedClass(s.revenueYoy),
+                      )}
+                    >
+                      {s.revenueYoy == null ? "—" : formatPct(s.revenueYoy)}
+                    </span>
+                    {" · "}EPS{" "}
+                    <span
+                      className={cn(
+                        s.epsGrowth == null ? "" : signedClass(s.epsGrowth),
+                      )}
+                    >
+                      {s.epsGrowth == null ? "—" : formatPct(s.epsGrowth)}
+                    </span>
+                  </p>
+                ) : s.epsGrowth != null ? (
+                  <p className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
+                    EPS{" "}
+                    <span className={signedClass(s.epsGrowth)}>
+                      {formatPct(s.epsGrowth)}
+                    </span>
+                  </p>
+                ) : null}
               </div>
             </div>
           );
@@ -343,13 +389,30 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                     {i + 1}
                   </td>
                   <td className="px-2 py-2.5 sm:px-3">
-                    <div className="truncate font-medium">{s.name}</div>
-                    <div className="truncate text-[11px] tabular-nums text-muted-foreground">
-                      {s.code}
-                      {s.close != null && s.close > 0
-                        ? ` · ${s.close.toLocaleString("zh-TW")}`
-                        : ""}
-                    </div>
+                    {isUs ? (
+                      <>
+                        <div className="font-medium tabular-nums">{s.code}</div>
+                        <UsStockName
+                          code={s.code}
+                          nameEn={s.nameEn}
+                          nameZh={s.nameZh}
+                          name={s.name}
+                          variant="compact"
+                          className="text-[11px] text-muted-foreground"
+                          emphasize={false}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <div className="truncate font-medium">{s.name}</div>
+                        <div className="truncate text-[11px] tabular-nums text-muted-foreground">
+                          {s.code}
+                          {s.close != null && s.close > 0
+                            ? ` · ${s.close.toLocaleString("zh-TW")}`
+                            : ""}
+                        </div>
+                      </>
+                    )}
                   </td>
                   <td
                     className={cn(
@@ -360,7 +423,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                     {formatPct(s.changePct)}
                   </td>
                   <td className="px-2 py-2.5 text-right whitespace-nowrap tabular-nums sm:px-3">
-                    {formatTurnoverYi(amt)}
+                    {formatMarketTurnoverYi(amt, market)}
                   </td>
                   <td
                     className={cn(
@@ -368,7 +431,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                       signedClass(flow),
                     )}
                   >
-                    {formatYiSigned(flow)}
+                    {formatMarketYiSigned(flow, market)}
                   </td>
                   <td
                     className={cn(
@@ -376,7 +439,7 @@ export function StockRanking({ rows, limit = RANK_LIMIT }: Props) {
                       signedClass(s.accel ?? 0),
                     )}
                   >
-                    {formatYiSigned(s.accel ?? 0)}
+                    {formatMarketYiSigned(s.accel ?? 0, market)}
                   </td>
                   <td className="hidden px-2 py-2.5 text-right whitespace-nowrap tabular-nums lg:table-cell sm:px-3">
                     {formatHeat(s.heat ?? 1)}

@@ -54,7 +54,7 @@ export function MarketSwitch({ className }: { className?: string }) {
       <Link
         href={twHref}
         className={cn(
-          "px-2.5 py-1 transition",
+          "min-h-9 min-w-[3rem] px-3 py-2 transition sm:min-h-0 sm:px-2.5 sm:py-1",
           market === "tw"
             ? "bg-[var(--mk-anchor)] font-semibold text-white"
             : "text-muted-foreground hover:text-foreground",
@@ -65,7 +65,7 @@ export function MarketSwitch({ className }: { className?: string }) {
       <Link
         href={usHref}
         className={cn(
-          "px-2.5 py-1 transition",
+          "min-h-9 min-w-[3rem] px-3 py-2 transition sm:min-h-0 sm:px-2.5 sm:py-1",
           market === "us"
             ? "bg-[var(--mk-anchor)] font-semibold text-white"
             : "text-muted-foreground hover:text-foreground",

@@ -19,6 +19,10 @@ export type ValuePickRow = {
   rank: number;
   code: string;
   name: string;
+  /** 美股：英文全名 */
+  nameEn?: string;
+  /** 美股：中文短名 */
+  nameZh?: string;
   close: number;
   changePct: number;
   /** 當日一般成交（億） */
