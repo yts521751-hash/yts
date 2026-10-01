@@ -11,20 +11,33 @@ export function MobileNav() {
   const market = marketFromPath(pathname);
   const prefix = market === "us" ? "/us" : "";
 
-  const ITEMS = [
-    { href: prefix || "/", label: "資金流", icon: Home },
-    { href: `${prefix}/ma`, label: "均線", icon: Activity },
-    { href: `${prefix}/wind`, label: "風度", icon: Gauge },
-    { href: `${prefix}/turnover`, label: "成交", icon: BarChart3 },
-    { href: `${prefix}/value`, label: "價值", icon: Gem },
-  ] as const;
+  const ITEMS =
+    market === "us"
+      ? ([
+          { href: "/us", label: "資金流", icon: Home },
+          { href: `${prefix}/wind`, label: "風度", icon: Gauge },
+          { href: `${prefix}/turnover`, label: "成交", icon: BarChart3 },
+          { href: `${prefix}/value`, label: "價值", icon: Gem },
+        ] as const)
+      : ([
+          { href: "/", label: "資金流", icon: Home },
+          { href: "/ma", label: "均線", icon: Activity },
+          { href: "/wind", label: "風度", icon: Gauge },
+          { href: "/turnover", label: "成交", icon: BarChart3 },
+          { href: "/value", label: "價值", icon: Gem },
+        ] as const);
 
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border/60 bg-[var(--panel)]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
       aria-label="主要導覽"
     >
-      <ul className="mx-auto grid max-w-lg grid-cols-5 gap-0.5 px-1.5 pt-1.5 pb-1">
+      <ul
+        className={cn(
+          "mx-auto grid max-w-lg gap-0.5 px-1.5 pt-1.5 pb-1",
+          market === "us" ? "grid-cols-4" : "grid-cols-5",
+        )}
+      >
         {ITEMS.map(({ href, label, icon: Icon }) => {
           const active =
             href === "/" || href === "/us"

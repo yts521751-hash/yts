@@ -538,13 +538,19 @@ export function HomeApp({
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  手機／電腦共用成交額→淨流排序 ·{" "}
-                  <Link
-                    href={market === "us" ? "/us/ma" : "/ma"}
-                    className="text-[var(--mk-anchor)] underline-offset-2 hover:underline"
-                  >
-                    產業均線掃描
-                  </Link>
+                  {market === "us" ? (
+                    "手機／電腦共用成交額→淨流排序（美股：成交×漲跌＋相對成交量）"
+                  ) : (
+                    <>
+                      手機／電腦共用成交額→淨流排序 ·{" "}
+                      <Link
+                        href="/ma"
+                        className="text-[var(--mk-anchor)] underline-offset-2 hover:underline"
+                      >
+                        產業均線掃描
+                      </Link>
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -651,11 +657,13 @@ export function HomeApp({
                   selectedId={selected?.id}
                   onSelect={(s) => {
                     setSelected(s);
-                    // 點選板塊時預熱產業 K 線，稍後開啟幾乎不用等
-                    void fetch(
-                      `${apiBase}/sector/${encodeURIComponent(s.id)}?days=80`,
-                      { cache: "force-cache" },
-                    ).catch(() => null);
+                    // 台股：點選板塊時預熱產業 K 線；美股版不提供 K 線入口
+                    if (market !== "us") {
+                      void fetch(
+                        `${apiBase}/sector/${encodeURIComponent(s.id)}?days=80`,
+                        { cache: "force-cache" },
+                      ).catch(() => null);
+                    }
                   }}
                   filter={filter}
                   kindFilter="all"

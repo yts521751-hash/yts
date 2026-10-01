@@ -127,33 +127,35 @@ export function SectorDetail({
         <Metric label="量能熱度" value={formatHeat(sector.heat)} />
       </div>
 
-      <div className="px-4 pb-2">
-        <Link
-          href={`/sectors/${encodeURIComponent(sector.id)}?from=home`}
-          prefetch
-          onMouseEnter={() => {
-            // 滑過就預熱 API／路由，點進去幾乎秒開
-            void fetch(
-              `/api/sector/${encodeURIComponent(sector.id)}?days=80`,
-              { cache: "force-cache" },
-            ).catch(() => null);
-          }}
-          onTouchStart={() => {
-            void fetch(
-              `/api/sector/${encodeURIComponent(sector.id)}?days=80`,
-              { cache: "force-cache" },
-            ).catch(() => null);
-          }}
-          onClick={(e) => {
-            // 避免行動版底層 sheet／overlay 攔截導致「打不開」
-            e.stopPropagation();
-          }}
-          className="inline-flex w-full items-center justify-center gap-2 border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium transition hover:bg-muted/70"
-        >
-          <CandlestickChart className="size-4" />
-          產業 K 線
-        </Link>
-      </div>
+      {market !== "us" ? (
+        <div className="px-4 pb-2">
+          <Link
+            href={`${sectorPageBase}/${encodeURIComponent(sector.id)}?from=home`}
+            prefetch
+            onMouseEnter={() => {
+              // 滑過就預熱 API／路由，點進去幾乎秒開
+              void fetch(
+                `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
+                { cache: "force-cache" },
+              ).catch(() => null);
+            }}
+            onTouchStart={() => {
+              void fetch(
+                `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
+                { cache: "force-cache" },
+              ).catch(() => null);
+            }}
+            onClick={(e) => {
+              // 避免行動版底層 sheet／overlay 攔截導致「打不開」
+              e.stopPropagation();
+            }}
+            className="inline-flex w-full items-center justify-center gap-2 border border-border/60 bg-muted/40 px-3 py-2 text-sm font-medium transition hover:bg-muted/70"
+          >
+            <CandlestickChart className="size-4" />
+            產業 K 線
+          </Link>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-2">
         <p className="text-xs font-medium text-muted-foreground">成分股金流</p>

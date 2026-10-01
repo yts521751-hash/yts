@@ -105,13 +105,18 @@ export function AppHeader({
           </button>
 
           <div className="hidden items-center gap-2 sm:flex">
-            {(
-              [
-                [`${prefix}/ma`, "均線掃描"],
-                [`${prefix}/wind`, "風度"],
-                [`${prefix}/turnover`, "成交排行"],
-                [`${prefix}/value`, "價值選股"],
-              ] as const
+            {(market === "us"
+              ? ([
+                  [`${prefix}/wind`, "風度"],
+                  [`${prefix}/turnover`, "成交排行"],
+                  [`${prefix}/value`, "價值選股"],
+                ] as const)
+              : ([
+                  [`${prefix}/ma`, "均線掃描"],
+                  [`${prefix}/wind`, "風度"],
+                  [`${prefix}/turnover`, "成交排行"],
+                  [`${prefix}/value`, "價值選股"],
+                ] as const)
             ).map(([href, label]) => (
               <Link
                 key={href}

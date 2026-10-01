@@ -170,6 +170,8 @@ async function fetchYahooChart(
       const result = data.chart?.result?.[0];
       const ts = result?.timestamp ?? [];
       const q = result?.indicators?.quote?.[0];
+      const shortName = String(result?.meta?.shortName || "").trim();
+      if (shortName) nameMemo.set(symbol.toUpperCase(), shortName);
       if (!ts.length || !q) continue;
       const bars: ChartBar[] = [];
       let prevClose = 0;
@@ -507,10 +509,11 @@ export async function promoteUsStagingToActive() {
 export function isUsCommonStock(code: string, name?: string): boolean {
   const c = code.toUpperCase();
   if (!/^[A-Z]{1,5}$/.test(c)) return false;
-  // 常見槓桿／反向／商品 ETF 前綴／後綴
+  // 常見槓桿／反向／商品 ETF
   if (/^(SQQQ|TQQQ|SPXU|SPXL|UVXY|VIXY|SOXL|SOXS)$/.test(c)) return false;
   const n = (name || "").toUpperCase();
-  if (/\bETF\b|\bETN\b|TRUST|FUND|WARRANT|UNIT\b/.test(n)) return false;
+  // 用字界，避免誤傷含 FUND／TRUST 子字串的普通股名稱
+  if (/\b(ETF|ETN|TRUST|FUND|WARRANT|UNITS?)\b/.test(n)) return false;
   return true;
 }
 

@@ -13,6 +13,11 @@ export function formatTurnoverYi(n: number): string {
   return `${n.toFixed(1)} 億`;
 }
 
+/** 美股成交金額：單位億美元（1 億美元 = 1e8 USD） */
+export function formatUsTurnoverYi(n: number): string {
+  return `${n.toFixed(1)} 億美元`;
+}
+
 export function formatYiSigned(n: number, digits = 1): string {
   const sign = n > 0 ? "+" : "";
   const abs = Math.abs(n);

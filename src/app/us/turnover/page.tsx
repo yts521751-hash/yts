@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
-import { formatPct, formatTurnoverYi, signedClass } from "@/lib/format";
+import { formatPct, formatUsTurnoverYi, signedClass } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MarketSwitch } from "@/components/market-switch";
 
@@ -78,11 +78,11 @@ export default function UsTurnoverPage() {
         </div>
 
         <h1 className="font-[family-name:var(--font-display)] text-2xl font-semibold tracking-tight">
-          美股成交排行
+          美股成交排行（成值）
         </h1>
         <p className="mt-1 text-xs text-muted-foreground">
           {date ? `資料日 ${date} · ` : ""}
-          {basis || "正規盤成交金額（億美元）"}
+          {basis || "正規盤成交金額＝收盤價×成交股數÷1e8（單位：億美元）"}
         </p>
 
         {loading ? (
@@ -99,7 +99,7 @@ export default function UsTurnoverPage() {
                   <th className="px-3 py-2">#</th>
                   <th className="px-3 py-2">代號</th>
                   <th className="px-3 py-2">名稱</th>
-                  <th className="px-3 py-2 text-right">成交（億美元）</th>
+                  <th className="px-3 py-2 text-right">成值（億美元）</th>
                   <th className="px-3 py-2 text-right">漲跌</th>
                   <th className="px-3 py-2 text-right">收盤</th>
                 </tr>
@@ -114,7 +114,7 @@ export default function UsTurnoverPage() {
                       <td className="px-3 py-2 font-mono font-medium">{r.code}</td>
                       <td className="px-3 py-2">{r.name}</td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {formatTurnoverYi(r.dayAmt)}
+                        {formatUsTurnoverYi(r.dayAmt)}
                       </td>
                       <td
                         className={cn(

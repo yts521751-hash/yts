@@ -112,12 +112,13 @@ export async function runUsDailyClosePackage(
           promote: true,
           cacheOnly: true,
           manageProgress: false,
-          skipKlineWarm: false,
+          // 美股 UI 已移除產業 K／均線入口，日終略過暖機加速同步
+          skipKlineWarm: true,
         }),
       );
       steps.push(flowStep);
       artifacts.flow = flowStep.ok;
-      artifacts.klines = flowStep.ok;
+      artifacts.klines = true; // 有意略過，不算失敗
 
       setRebuildProgress({ percent: 62, label: "美股：個股金流" });
       const { buildUsStockFlowRanking } = await import("@/lib/stock-flow-us");
@@ -141,11 +142,8 @@ export async function runUsDailyClosePackage(
       steps.push(windStep);
       artifacts.wind = windStep.ok;
 
-      setRebuildProgress({ percent: 88, label: "美股：均線掃描" });
-      const { buildUsMaScreener } = await import("@/lib/ma-screener-us");
-      const maStep = await step("ma", () => buildUsMaScreener({ force: true }));
-      steps.push(maStep);
-      artifacts.ma = Boolean(maStep.ok && maStep.value?.rows?.length);
+      // 均線掃描 API stub 保留，日終不再強制重算（美股導覽已移除）
+      artifacts.ma = true;
 
       setRebuildProgress({ percent: 94, label: "美股：價值選股" });
       const { buildUsValuePicks } = await import("@/lib/value-picks-us");

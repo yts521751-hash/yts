@@ -25,6 +25,12 @@ export default function UsValuePage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [note, setNote] = useState("");
   const [date, setDate] = useState("");
+  const [emptyReason, setEmptyReason] = useState<string | null>(null);
+  const [criteria, setCriteria] = useState<{
+    minEpsYoy?: number;
+    maxForwardPe?: number;
+    minDayAmtYi?: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,6 +47,8 @@ export default function UsValuePage() {
       setRows(json.rows || []);
       setNote(json.note || "");
       setDate(json.date || "");
+      setEmptyReason(json.emptyReason || null);
+      setCriteria(json.criteria || null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "載入失敗");
     } finally {
@@ -52,6 +60,10 @@ export default function UsValuePage() {
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  const criteriaLabel = criteria
+    ? `EPS YoY > ${criteria.minEpsYoy}%、前瞻 PE < ${criteria.maxForwardPe}、成交 ≥ ${criteria.minDayAmtYi} 億美元`
+    : "EPS YoY > 25%、前瞻 PE < 40、成交 ≥ 0.5 億美元";
 
   return (
     <div className="relative min-h-full flex-1 pb-20 md:pb-6">
@@ -83,7 +95,7 @@ export default function UsValuePage() {
         </h1>
         <p className="mt-1 text-xs text-muted-foreground">
           {date ? `資料日 ${date} · ` : ""}
-          EPS YoY &gt; 50%、前瞻 PE &lt; 35、成交 ≥ 1 億美元
+          {criteriaLabel}
         </p>
         {note ? (
           <p className="mt-2 text-[11px] text-muted-foreground">{note}</p>
@@ -97,7 +109,8 @@ export default function UsValuePage() {
           </p>
         ) : rows.length === 0 ? (
           <p className="mt-6 rounded-2xl border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-            目前沒有通過篩選的標的（Yahoo EPS 覆蓋有限或門檻較嚴）。可先同步美股資料後再重算。
+            {emptyReason ||
+              "目前沒有通過篩選的標的。可先同步美股資料後再重算。"}
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto border border-border">

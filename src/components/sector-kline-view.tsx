@@ -40,12 +40,16 @@ export function SectorKlineView({
   initialMembers = [],
   initialMembersAsOf = null,
   initialError = null,
-  backHref = "/ma",
-  backLabel = "回產業掃描",
+  backHref,
+  backLabel,
 }: Props) {
   const pathname = usePathname();
   const market = marketFromPath(pathname);
   const apiBase = market === "us" ? "/api/us" : "/api";
+  const resolvedBackHref =
+    backHref ?? (market === "us" ? "/us" : "/ma");
+  const resolvedBackLabel =
+    backLabel ?? (market === "us" ? "回美股資金流" : "回產業掃描");
   const [name, setName] = useState(initialName || sectorId);
   const [candles, setCandles] = useState(initialCandles);
   const [members, setMembers] = useState(initialMembers);
@@ -108,11 +112,11 @@ export function SectorKlineView({
       <div className="studio-atmosphere pointer-events-none absolute inset-0" aria-hidden />
       <div className="relative z-10 mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
         <Link
-          href={backHref}
+          href={resolvedBackHref}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          {backLabel}
+          {resolvedBackLabel}
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl font-semibold tracking-tight">
           {name}
