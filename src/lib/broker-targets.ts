@@ -392,7 +392,9 @@ export function extractBrokerTargetsFromText(
     // 統一千分位：3,700 → 3700（保留小數）
     .replace(/(\d),(\d{3})(?!\d)/g, "$1$2");
   const hasTarget = /目標[股]?價/.test(clean);
-  const hasEps = /EPS|每股盈餘|每股盈餘/.test(clean) || /預估\s*EPS|EPS\s*預估|明年\s*EPS|今年\s*EPS/.test(clean);
+  const hasEps =
+    /EPS|每股盈[餘余]|每股純益/.test(clean) ||
+    /預估\s*EPS|EPS\s*預估|明年\s*EPS|今年\s*EPS/.test(clean);
   if (!hasTarget && !hasEps) return [];
 
   type Acc = {
@@ -454,7 +456,8 @@ export function extractBrokerTargetsFromText(
   };
 
   const brokerNear = (index: number, span: number) => {
-    const left = clean.slice(Math.max(0, index - 72), index);
+    // 稍加長左側視窗：目標價句與 EPS 句常隔開較遠
+    const left = clean.slice(Math.max(0, index - 100), index);
     let best: { alias: BrokerAlias; pos: number; len: number } | null = null;
     for (const b of BROKER_ALIASES) {
       for (const a of b.aliases) {
@@ -553,7 +556,7 @@ export function extractBrokerTargetsFromText(
     }
   }
 
-  // F) EPS 句型：明年／今年／YYYY EPS … 至／上看／估 N
+  // F) EPS 句型：明年／今年／YYYY EPS／每股盈餘／每股純益 … 至／上看／估 N
   const inferEpsYear = (slice: string): string | null => {
     const y = slice.match(/(20[2-3][0-9])\s*年?/);
     if (y) return y[1];
@@ -563,29 +566,59 @@ export function extractBrokerTargetsFromText(
     return null;
   };
 
-  const reEps =
-    /((?:明年|今年|全年|前瞻|下一?年|20[2-3][0-9]\s*年?)[^。；;\n]{0,12})?(?:每股盈[餘余]|EPS)\s*(?:預估|估測|估計|預期)?[^0-9]{0,18}?(?:上[調修升]|調[升降]|下[調修]|上看|喊|估|寫|衝|至|到|為)?\s*(?:至|到|為|看)?\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
-  while ((m = reEps.exec(clean))) {
-    const eps = parseEpsToken(m[2]);
-    if (eps == null) continue;
-    // 略過「目標價…59%至」誤抓：要求前後不是「目標價…％」
-    const around = clean.slice(Math.max(0, m.index - 12), m.index + m[0].length);
+  const applyEpsMatch = (
+    epsRaw: string,
+    matchIndex: number,
+    matchLen: number,
+    yearHint: string,
+  ) => {
+    const eps = parseEpsToken(epsRaw);
+    if (eps == null) return;
+    const around = clean.slice(
+      Math.max(0, matchIndex - 12),
+      matchIndex + matchLen,
+    );
     if (/目標[股]?價/.test(around) && /%|％/.test(around) && eps > 50) {
-      // 多半是調幅百分比，不是 EPS
-      continue;
+      return;
     }
-    const yearSlice = (m[1] || "") + clean.slice(Math.max(0, m.index - 16), m.index);
+    const yearSlice =
+      yearHint + clean.slice(Math.max(0, matchIndex - 20), matchIndex);
     const epsYear = inferEpsYear(yearSlice);
-    const broker = brokerNear(m.index, m[0].length);
-    if (!broker) continue;
-    // EPS 若大於 800 且同時像目標價，略過（誤抓）
-    if (eps >= 800 && hasTarget) continue;
-    setEps(broker, eps, epsYear, Math.max(0, m.index - 24), m.index + m[0].length);
+    const broker = brokerNear(matchIndex, matchLen);
+    if (!broker) return;
+    if (eps >= 800 && hasTarget) return;
+    setEps(
+      broker,
+      eps,
+      epsYear,
+      Math.max(0, matchIndex - 24),
+      matchIndex + matchLen,
+    );
+  };
+
+  // F0) 「EPS由 A 上修／調升至 B」優先取 B（避免誤取起點）
+  const reEpsFromTo =
+    /((?:明年|今年|全年|前瞻|下一?年|20[2-3][0-9]\s*年?)[^。；;\n]{0,12})?(?:每股盈[餘余]|每股純益|EPS)\s*(?:預估|估測|估計|預期)?[^0-9]{0,12}?由\s*[0-9.]+[^0-9]{0,20}?(?:上[調修升]|調[升降]|下[調修]|至|到|提升至)\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
+  while ((m = reEpsFromTo.exec(clean))) {
+    applyEpsMatch(m[2], m.index, m[0].length, m[1] || "");
+  }
+
+  // F1) 區間取下限「EPS上看55～60元」；單值「明年EPS 56元」
+  const reEpsRange =
+    /((?:明年|今年|全年|前瞻|下一?年|20[2-3][0-9]\s*年?)[^。；;\n]{0,12})?(?:每股盈[餘余]|每股純益|EPS)\s*(?:預估|估測|估計|預期)?[^0-9]{0,18}?(?:上[調修升]|調[升降]|下[調修]|上看|喊|估|寫|衝|達|至|到|為)?\s*(?:至|到|為|看|達)?\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*(?:～|-|—|–)\s*[0-9]{1,4}(?:\.[0-9]+)?\s*元?/gi;
+  while ((m = reEpsRange.exec(clean))) {
+    applyEpsMatch(m[2], m.index, m[0].length, m[1] || "");
+  }
+
+  const reEpsSingle =
+    /((?:明年|今年|全年|前瞻|下一?年|20[2-3][0-9]\s*年?)[^。；;\n]{0,12})?(?:每股盈[餘余]|每股純益|EPS)\s*(?:預估|估測|估計|預期)?[^0-9]{0,18}?(?:上[調修升]|調[升降]|下[調修]|上看|喊|估|寫|衝|達|至|到|為)?\s*(?:至|到|為|看|達)?\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
+  while ((m = reEpsSingle.exec(clean))) {
+    applyEpsMatch(m[2], m.index, m[0].length, m[1] || "");
   }
 
   // F2) 「EPS預估上修至96.5元」「預估EPS至 160」
   const reEpsAlt =
-    /(?:預估\s*)?EPS\s*(?:預估|估測)?[^0-9]{0,20}?(?:上[調修升]|調[升降]|下[調修]|至|到|為|上看)\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
+    /(?:預估\s*)?(?:每股盈[餘余]|每股純益|EPS)\s*(?:預估|估測)?[^0-9]{0,20}?(?:上[調修升]|調[升降]|下[調修]|至|到|為|上看|達)\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
   while ((m = reEpsAlt.exec(clean))) {
     const eps = parseEpsToken(m[1]);
     if (eps == null || eps >= 800) continue;
@@ -599,6 +632,13 @@ export function extractBrokerTargetsFromText(
       Math.max(0, m.index - 24),
       m.index + m[0].length,
     );
+  }
+
+  // F3) 「預估明年每股純益6.2元」——純益在「預估…明年」之後
+  const reChunYi =
+    /(?:預估|估測|估計)?[^。；;\n]{0,8}?(明年|今年|全年|前瞻|下一?年|20[2-3][0-9]\s*年?)?[^。；;\n]{0,6}?每股純益\s*(?:預估|估測|估|上看|達|至|到|為)?\s*([0-9]{1,4}(?:\.[0-9]+)?)\s*元?/gi;
+  while ((m = reChunYi.exec(clean))) {
+    applyEpsMatch(m[2], m.index, m[0].length, m[1] || "");
   }
 
   // 若有股名提示且多券商句，不額外過濾（已靠 brokerNear）

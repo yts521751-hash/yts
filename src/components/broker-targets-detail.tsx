@@ -233,49 +233,58 @@ export function BrokerTargetsDetail({
           ) : null}
           {targets.length ? (
             <ul className="divide-y divide-border/40 overflow-hidden rounded-lg border border-border/40">
-              {targets.map((r, i) => (
-                <li
-                  key={`${r.broker}-${i}`}
-                  className="flex items-baseline justify-between gap-3 px-2.5 py-1.5"
-                >
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    {r.url ? (
-                      <a
-                        href={r.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="truncate underline-offset-2 hover:underline"
-                        title={r.snippet ?? r.source ?? undefined}
-                      >
-                        {r.broker}
-                      </a>
-                    ) : (
-                      <span title={r.snippet ?? r.source ?? undefined}>
-                        {r.broker}
+              {targets.map((r, i) => {
+                const epsLabel = r.epsYear
+                  ? `預估${r.epsYear} EPS`
+                  : "預估 EPS";
+                const epsValue =
+                  r.eps != null && Number.isFinite(r.eps)
+                    ? r.eps.toFixed(2)
+                    : "—";
+                return (
+                  <li
+                    key={`${r.broker}-${i}`}
+                    className="flex items-baseline justify-between gap-3 px-2.5 py-1.5"
+                  >
+                    <span className="min-w-0 truncate text-muted-foreground">
+                      {r.url ? (
+                        <a
+                          href={r.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate underline-offset-2 hover:underline"
+                          title={r.snippet ?? r.source ?? undefined}
+                        >
+                          {r.broker}
+                        </a>
+                      ) : (
+                        <span title={r.snippet ?? r.source ?? undefined}>
+                          {r.broker}
+                        </span>
+                      )}
+                      {r.kind === "foreign" ? (
+                        <span className="ml-1 text-[10px] opacity-60">外資</span>
+                      ) : r.kind === "domestic" ? (
+                        <span className="ml-1 text-[10px] opacity-60">國內</span>
+                      ) : null}
+                      {r.asOf ? (
+                        <span className="ml-1 text-[10px] opacity-70">
+                          {r.asOf}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 text-right tabular-nums leading-snug">
+                      <span className="font-semibold">
+                        目標價{" "}
+                        {r.target != null ? fmtTarget(r.target) : "—"}
                       </span>
-                    )}
-                    {r.kind === "foreign" ? (
-                      <span className="ml-1 text-[10px] opacity-60">外資</span>
-                    ) : r.kind === "domestic" ? (
-                      <span className="ml-1 text-[10px] opacity-60">國內</span>
-                    ) : null}
-                    {r.asOf ? (
-                      <span className="ml-1 text-[10px] opacity-70">
-                        {r.asOf}
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        ，{epsLabel} {epsValue}
                       </span>
-                    ) : null}
-                  </span>
-                  <span className="shrink-0 font-semibold tabular-nums">
-                    {r.target != null ? fmtTarget(r.target) : "—"}
-                    {r.eps != null ? (
-                      <span className="ml-1.5 font-normal text-muted-foreground">
-                        EPS {r.eps.toFixed(2)}
-                        {r.epsYear ? `（${r.epsYear}）` : ""}
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
           {targets.length ? (

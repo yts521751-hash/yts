@@ -108,7 +108,6 @@ export function ValuePicksClient({
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const lookupAbortRef = useRef<AbortController | null>(null);
-  const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lookupSeqRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
@@ -244,17 +243,9 @@ export function ValuePicksClient({
     }
   }, [query, data, data?.rows, data?.ymd, data?.date]);
 
-  const scheduleLookup = useCallback(() => {
-    if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
-    lookupDebounceRef.current = setTimeout(() => {
-      void runLookup();
-    }, 180);
-  }, [runLookup]);
-
   useEffect(() => {
     return () => {
       lookupAbortRef.current?.abort();
-      if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
     };
   }, []);
 
@@ -346,10 +337,6 @@ export function ValuePicksClient({
           className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault();
-            if (lookupDebounceRef.current) {
-              clearTimeout(lookupDebounceRef.current);
-              lookupDebounceRef.current = null;
-            }
             void runLookup();
           }}
         >
@@ -357,12 +344,7 @@ export function ValuePicksClient({
             <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
-              onChange={(e) => {
-                const v = e.target.value;
-                setQuery(v);
-                // 四位代號輸入完自動查（debounce＋取消前一次）
-                if (/^\d{4}$/.test(v.trim())) scheduleLookup();
-              }}
+              onChange={(e) => setQuery(e.target.value)}
               placeholder="查詢單一股票（代號或名稱，如 2330／台積電）"
               className="w-full rounded-xl border border-border/50 bg-[var(--panel)]/80 py-2.5 pl-9 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               aria-busy={lookupLoading}

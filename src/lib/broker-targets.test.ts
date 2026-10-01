@@ -109,6 +109,34 @@ describe("broker-targets extract", () => {
     assert.ok(ms);
     assert.equal(ms?.target, 222);
   });
+
+  it("parses EPS from-to taking the destination", () => {
+    const rows = extractBrokerTargetsFromText(
+      "凱基證券將目標價由180上修至220，EPS由12上修至18.5",
+    );
+    assert.equal(rows[0]?.broker, "凱基");
+    assert.equal(rows[0]?.target, 220);
+    assert.equal(rows[0]?.eps, 18.5);
+  });
+
+  it("parses 每股純益 as EPS", () => {
+    const rows = extractBrokerTargetsFromText(
+      "群益投顧看好，目標價上看85元，預估明年每股純益6.2元",
+    );
+    assert.equal(rows[0]?.broker, "群益");
+    assert.equal(rows[0]?.target, 85);
+    assert.equal(rows[0]?.eps, 6.2);
+    assert.equal(rows[0]?.epsYear, "明年");
+  });
+
+  it("parses parenthetical EPS after target", () => {
+    const rows = extractBrokerTargetsFromText(
+      "野村上調目標價至450元（EPS 35）",
+    );
+    assert.equal(rows[0]?.broker, "野村");
+    assert.equal(rows[0]?.target, 450);
+    assert.equal(rows[0]?.eps, 35);
+  });
 });
 
 describe("shouldApplyBrokerFetch", () => {
