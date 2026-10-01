@@ -1,8 +1,15 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { BrokerTargetPrice } from "@/lib/broker-targets";
+import { shouldApplyBrokerFetch } from "@/lib/broker-fetch-guard";
 import { cn } from "@/lib/utils";
 
 export type BrokerTargetsDetailProps = {
@@ -38,6 +45,28 @@ function fmtTarget(n: number) {
   return n >= 100 ? n.toLocaleString("zh-TW") : n.toFixed(1);
 }
 
+function seedForCode(
+  code: string,
+  initialTargets?: BrokerTargetPrice[] | null,
+): {
+  targets: BrokerTargetPrice[];
+  emptyReason: string | null;
+  fetched: boolean;
+} {
+  const hit = clientBrokerCache.get(code);
+  if (hit && Date.now() - hit.at < CLIENT_TTL_MS) {
+    return {
+      targets: hit.targets,
+      emptyReason: hit.emptyReason,
+      fetched: true,
+    };
+  }
+  if (initialTargets != null) {
+    return { targets: initialTargets, emptyReason: null, fetched: true };
+  }
+  return { targets: [], emptyReason: null, fetched: false };
+}
+
 /** 價值選股／查詢：「依據」＝逐家券商目標價（非 FactSet 共識） */
 export function BrokerTargetsDetail({
   code,
@@ -47,61 +76,75 @@ export function BrokerTargetsDetail({
   defaultOpen = false,
   prefetch = false,
 }: BrokerTargetsDetailProps) {
+  const seeded = seedForCode(code, initialTargets);
   const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [targets, setTargets] = useState<BrokerTargetPrice[]>(
-    () => initialTargets ?? [],
+    () => seeded.targets,
   );
-  const [emptyReason, setEmptyReason] = useState<string | null>(null);
-  const [fetched, setFetched] = useState(() => initialTargets != null);
+  const [emptyReason, setEmptyReason] = useState<string | null>(
+    () => seeded.emptyReason,
+  );
+  const [fetched, setFetched] = useState(() => seeded.fetched);
   const abortRef = useRef<AbortController | null>(null);
   const codeRef = useRef(code);
 
-  // 換股時重置，並優先吃本機快取（日終暖機後第二次查詢極快）
-  useEffect(() => {
+  // 換股時在 paint 前清掉舊股清單，避免 B 標題下閃 A 的券商列
+  useLayoutEffect(() => {
     if (codeRef.current === code) return;
     codeRef.current = code;
     abortRef.current?.abort();
-    const hit = clientBrokerCache.get(code);
-    if (hit && Date.now() - hit.at < CLIENT_TTL_MS) {
-      setTargets(hit.targets);
-      setEmptyReason(hit.emptyReason);
-      setFetched(true);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    setTargets(initialTargets ?? []);
-    setEmptyReason(null);
-    setFetched(initialTargets != null);
+    abortRef.current = null;
+    const next = seedForCode(code, initialTargets);
+    setTargets(next.targets);
+    setEmptyReason(next.emptyReason);
+    setFetched(next.fetched);
     setLoading(false);
     setError(null);
   }, [code, initialTargets]);
 
   const load = useCallback(async () => {
-    if (!/^\d{4}$/.test(code)) return;
-    const cached = clientBrokerCache.get(code);
+    const requestCode = code;
+    if (!/^\d{4}$/.test(requestCode)) return;
+    if (codeRef.current !== requestCode) return;
+
+    const cached = clientBrokerCache.get(requestCode);
     if (cached && Date.now() - cached.at < CLIENT_TTL_MS) {
+      if (!shouldApplyBrokerFetch(requestCode, codeRef.current, false)) return;
       setTargets(cached.targets);
       setEmptyReason(cached.emptyReason);
       setFetched(true);
+      setLoading(false);
+      setError(null);
       return;
     }
+
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
     setLoading(true);
     setError(null);
+    // 換股載入時先清空舊列，避免 loading 期間仍顯示上一檔
+    setTargets([]);
+    setEmptyReason(null);
     try {
-      const qs = new URLSearchParams({ code });
+      const qs = new URLSearchParams({ code: requestCode });
       if (name) qs.set("name", name);
       const res = await fetch(`/api/broker-targets?${qs.toString()}`, {
         cache: "no-store",
         signal: ac.signal,
       });
       const json = (await res.json()) as ApiPayload;
-      if (ac.signal.aborted) return;
+      if (
+        !shouldApplyBrokerFetch(
+          requestCode,
+          codeRef.current,
+          ac.signal.aborted,
+        )
+      ) {
+        return;
+      }
       if (!res.ok || json.ok === false) {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
@@ -110,17 +153,29 @@ export function BrokerTargetsDetail({
       setTargets(nextTargets);
       setEmptyReason(nextEmpty);
       setFetched(true);
-      clientBrokerCache.set(code, {
+      clientBrokerCache.set(requestCode, {
         targets: nextTargets,
         emptyReason: nextEmpty,
         at: Date.now(),
       });
     } catch (e) {
-      if (ac.signal.aborted) return;
+      if (
+        !shouldApplyBrokerFetch(
+          requestCode,
+          codeRef.current,
+          ac.signal.aborted,
+        )
+      ) {
+        return;
+      }
       setError(e instanceof Error ? e.message : "載入失敗");
       setFetched(true);
     } finally {
-      if (!ac.signal.aborted) setLoading(false);
+      if (
+        shouldApplyBrokerFetch(requestCode, codeRef.current, ac.signal.aborted)
+      ) {
+        setLoading(false);
+      }
     }
   }, [code, name]);
 

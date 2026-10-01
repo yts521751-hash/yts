@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { extractBrokerTargetsFromText } from "./broker-targets";
+import { shouldApplyBrokerFetch } from "./broker-fetch-guard";
 
 describe("broker-targets extract", () => {
   it("parses 摩根士丹利 target from research sentence", () => {
@@ -107,5 +108,14 @@ describe("broker-targets extract", () => {
     const ms = rows.find((r) => r.broker === "摩根士丹利");
     assert.ok(ms);
     assert.equal(ms?.target, 222);
+  });
+});
+
+describe("shouldApplyBrokerFetch", () => {
+  it("applies only when request code still matches and not aborted", () => {
+    assert.equal(shouldApplyBrokerFetch("2330", "2330", false), true);
+    assert.equal(shouldApplyBrokerFetch("2330", "2454", false), false);
+    assert.equal(shouldApplyBrokerFetch("2330", "2330", true), false);
+    assert.equal(shouldApplyBrokerFetch("2454", "2454", true), false);
   });
 });

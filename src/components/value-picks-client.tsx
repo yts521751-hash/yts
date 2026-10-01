@@ -154,6 +154,7 @@ export function ValuePicksClient({
     if (!q) {
       setLookup(null);
       setLookupError(null);
+      setLookupLoading(false);
       return;
     }
 
@@ -167,6 +168,7 @@ export function ValuePicksClient({
     }
 
     // 本機價值選股列：立刻畫出 PE／EPS，不等 API／券商刮取
+    let paintedInstant = false;
     const localRows = data?.rows ?? [];
     if (localRows.length) {
       const needle = q.toLowerCase();
@@ -187,6 +189,7 @@ export function ValuePicksClient({
         );
         setLookup(instant);
         setLookupError(null);
+        paintedInstant = true;
         lookupClientCache.set(key, { at: Date.now(), value: instant });
         lookupClientCache.set(lookupCacheKey(row.code), {
           at: Date.now(),
@@ -194,6 +197,11 @@ export function ValuePicksClient({
         });
         // 仍背景確認一次（通常命中伺服器記憶體／名單快取）
       }
+    }
+
+    // 換查另一檔時立刻清掉舊卡，避免 A 的券商列掛在載入中的 B
+    if (!paintedInstant) {
+      setLookup(null);
     }
 
     lookupAbortRef.current?.abort();
@@ -416,6 +424,7 @@ export function ValuePicksClient({
               epsYoy={lookup.epsYoy}
             />
             <BrokerTargetsDetail
+              key={lookup.code}
               className="mt-3"
               code={lookup.code}
               name={lookup.name}
@@ -507,6 +516,7 @@ export function ValuePicksClient({
                     </div>
                     {open ? (
                       <BrokerTargetsDetail
+                        key={r.code}
                         className="mt-3"
                         code={r.code}
                         name={r.name}
@@ -620,6 +630,7 @@ export function ValuePicksClient({
                           <tr className="border-t border-border/20 bg-muted/20">
                             <td colSpan={8} className="px-3 py-3">
                               <BrokerTargetsDetail
+                                key={r.code}
                                 code={r.code}
                                 name={r.name}
                                 defaultOpen
