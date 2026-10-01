@@ -342,6 +342,7 @@ export function SectorRanking({
             const amt = periodAmt(s, period);
             const flow = periodFlow(s, period);
             const sortMetric = sortValue(s, sortKey, period);
+            // 成交額是絕對金額，不該帶正號；淨流／加速度才需要帶號
             const sortText =
               sortKey === "heat"
                 ? formatHeat(sortMetric)
@@ -349,7 +350,11 @@ export function SectorRanking({
                   ? formatPct(sortMetric)
                   : sortKey === "cp"
                     ? sortMetric.toFixed(1)
-                    : formatMarketYiSigned(sortMetric, market);
+                    : sortKey === "amt"
+                      ? formatMarketYi(sortMetric, market)
+                      : formatMarketYiSigned(sortMetric, market);
+            const neutralMetric =
+              sortKey === "heat" || sortKey === "cp" || sortKey === "amt";
             const selected = selectedId === s.id;
             return (
               <li key={s.id}>
@@ -381,27 +386,31 @@ export function SectorRanking({
                       <Chip>{KIND_LABEL[kind]}</Chip>
                     </span>
                     <span className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                      <span>
-                        {amtLabel}{" "}
-                        <Amount
-                          text={formatMarketYi(amt, market)}
-                          className="text-foreground/75"
-                        />
-                      </span>
-                      <span>
-                        {flowLabel}{" "}
-                        <Amount
-                          text={formatMarketYiSigned(flow, market)}
-                          className={signedClass(flow)}
-                        />
-                      </span>
+                      {sortKey === "amt" ? null : (
+                        <span>
+                          {amtLabel}{" "}
+                          <Amount
+                            text={formatMarketYi(amt, market)}
+                            className="text-foreground/75"
+                          />
+                        </span>
+                      )}
+                      {sortKey === "flow" ? null : (
+                        <span>
+                          {flowLabel}{" "}
+                          <Amount
+                            text={formatMarketYiSigned(flow, market)}
+                            className={signedClass(flow)}
+                          />
+                        </span>
+                      )}
                     </span>
                   </span>
                   <span className="shrink-0 text-right">
                     <span
                       className={cn(
                         "num block text-[0.9375rem] font-semibold",
-                        sortKey === "heat" || sortKey === "cp"
+                        neutralMetric
                           ? "text-foreground"
                           : signedClass(sortMetric),
                       )}

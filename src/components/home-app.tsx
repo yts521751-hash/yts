@@ -529,7 +529,7 @@ export function HomeApp({
         </>
       }
       notice={
-        error && boardMode === "sector" ? (
+        error && boardMode === "sector" && sectors.length > 0 ? (
           <NoticeBar tone="warn">
             {isDemo
               ? `真實資料暫不可用，已改顯示示範資料：${error}`

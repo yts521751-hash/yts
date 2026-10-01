@@ -696,25 +696,25 @@ export function ValuePicksClient({
                           </td>
                           <td>
                             {market === "us" ? (
-                              <div className="flex items-start gap-1.5">
-                                <div className="min-w-0 flex-1">
-                                  <div className="num font-medium">{r.code}</div>
-                                  <UsStockName
-                                    code={r.code}
-                                    nameEn={r.nameEn}
-                                    nameZh={r.nameZh}
-                                    name={r.name}
-                                    variant="stack"
-                                    emphasize={false}
-                                    className="text-[0.6875rem] text-muted-foreground"
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="num font-medium">{r.code}</span>
+                                  <ChevronDown
+                                    className={cn(
+                                      "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                                      open && "rotate-180",
+                                    )}
+                                    aria-hidden
                                   />
                                 </div>
-                                <ChevronDown
-                                  className={cn(
-                                    "mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-transform",
-                                    open && "rotate-180",
-                                  )}
-                                  aria-hidden
+                                <UsStockName
+                                  code={r.code}
+                                  nameEn={r.nameEn}
+                                  nameZh={r.nameZh}
+                                  name={r.name}
+                                  variant="stack"
+                                  emphasize={false}
+                                  className="text-[0.6875rem] text-muted-foreground"
                                 />
                               </div>
                             ) : (
