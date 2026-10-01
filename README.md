@@ -2,6 +2,9 @@
 
 台股板塊資金流觀測——把成交、漲跌與法人買賣超攤成流入／流出，並提供產業日線、成交排行與價值選股。
 
+**美股版**（同部署）：路徑 `/us`，頂部可切換「台股／美股」。美股無三大法人日表，金流改為 **80% 成交×漲跌 + 20% 相對成交量（vs 近約 20 日均成交）**；文案為「美股金流（成交×漲跌＋相對成交量）」，provenance `yahoo+public`。快取／R2 前綴獨立為 `us/`（不與台股日檔混放）。排程時區 `America/New_York`，平日約 18:00／19:00／20:00 ET 日終大包。
+
+
 ## 功能
 
 - **資金流排行榜**：板塊／個股可切換當日、3 日、5 日成交額與淨流；公布欄四組固定顯示（持續流入／流出、今日轉強／轉弱，無標的也保留空狀態）
@@ -21,9 +24,26 @@
 - **持久快照**：本機寫 `.cache`／`CACHE_DIR`；可接 **Cloudflare R2**（網站功能所需快取皆 write-through／hydrate），redeploy 後自動還原，步驟見 [R2_SETUP.md](./R2_SETUP.md)；亦可掛磁碟到 `/data/cache`
 - 字級、淺／深色
 
+
+## 美股版（MVP）
+
+| 項目 | 說明 |
+|------|------|
+| 進入 | `/us`（或頂部／各頁「台股／美股」切換） |
+| 金流公式 | 主 80%：`signedFlowFromQuote`；輔 20%：相對成交量活動壓力代理（**非**外資／投信／自營）；rvol 缺則 100% 價格流 |
+| 宇宙 | 流動性普通股（人工板塊＋AI／半導體題材）；排除 ETF／ETN |
+| 報價 | Yahoo chart OHLCV；成交金額＝收盤×股數（億美元） |
+| 風度 | S&P 500（^GSPC）／Nasdaq（^IXIC） |
+| 情緒 | 既有 CBOE VIX 路徑 |
+| 價值選股 | Yahoo EPS；門檻改美元（成交 ≥ 1 億美元）；無月營收，季營收 YoY 僅附帶 |
+| 同步 | `/us` 首頁「同步資料」→ `/api/us/sync`；快取 `us/*`，R2 同前綴 |
+| API | `/api/us/flow`、`stocks`、`turnover`、`wind`、`value`、`ma-screener`、`sector/[id]`、`sync` |
+
+已知限制：宇宙為精選成分非全市場；Yahoo 配額／阻擋時同步可能變慢或空窗；券商目標價僅 best-effort（不擋 MVP）。
+
 ## 資料來源
 
-臺灣證券交易所、證券櫃檯買賣中心公開資料（非寫死）。API 會標 `dataProvenance: twse+tpex-public`；僅在完全沒有快取時才回示範資料並標 `isDemo: true`。
+臺灣證券交易所、證券櫃檯買賣中心公開資料（非寫死）。API 會標 `dataProvenance: twse+tpex-public`；僅在完全沒有快取時才回示範資料並標 `isDemo: true`。美股標 `yahoo+public`。
 
 ### 日終大包與讀取路徑（皆經 R2 write-through／hydrate）
 
@@ -41,8 +61,9 @@
 | 基本面 | `fundamentals-*.json` | 個股／價值選股 |
 | 產業／主題 | `industry-map.json`、`auto-themes.json` | 板塊宇宙 |
 | 大包索引 | `daily-close-meta.json` | deploy／同步短路 |
+| **美股**（獨立） | `us/quotes-*`、`us/flow-*`、`us/kline-*`… | `/us`、`/api/us/*` |
 
-編排程式：`src/lib/daily-close-package.ts`；缺口邏輯：`src/lib/gap-sync.ts`／`fillTradingDayGaps`。
+編排程式：`src/lib/daily-close-package.ts`（台）、`daily-close-package-us.ts`（美）；缺口邏輯：`src/lib/gap-sync.ts`／`fillTradingDayGaps`。
 ## 本機執行
 
 ```bash
@@ -51,7 +72,7 @@ npm run build && npm run start
 # 或開發：npm run dev
 ```
 
-預設綁定 `0.0.0.0:43127`（雲端會讀 `PORT`）。本機開啟 [http://127.0.0.1:43127](http://127.0.0.1:43127)。
+預設綁定 `0.0.0.0:43127`（雲端會讀 `PORT`）。本機開啟 [http://127.0.0.1:43127](http://127.0.0.1:43127)；美股 [http://127.0.0.1:43127/us](http://127.0.0.1:43127/us)。
 
 ## 公開發布／持續迭代
 
@@ -72,6 +93,7 @@ npm run build && npm run start
 - `GET /api/wind`（`?force=1` 觸發背景重建）
 - `GET /api/value`（`?force=1` 重算價值選股）
 - `GET /api/ma-screener`（`?force=1` 缺 K 線時補建）
+- 美股對應：`/api/us/*`（同上資源名）
 
 ## 技術
 

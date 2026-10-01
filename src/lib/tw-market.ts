@@ -403,6 +403,9 @@ const pendingCacheSideEffects = new Set<Promise<unknown>>();
 export async function writeCacheFile(name: string, data: unknown) {
   await mkdir(/* turbopackIgnore: true */ CACHE_DIR, { recursive: true });
   const target = path.join(/* turbopackIgnore: true */ CACHE_DIR, name);
+  await mkdir(/* turbopackIgnore: true */ path.dirname(target), {
+    recursive: true,
+  });
   const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
   const body = JSON.stringify(data);
   await writeFile(/* turbopackIgnore: true */ tmp, body, "utf8");

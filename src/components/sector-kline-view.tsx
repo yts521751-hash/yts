@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { marketFromPath } from "@/components/market-switch";
 import { ArrowLeft } from "lucide-react";
 import { SectorKlineChart } from "@/components/sector-kline-chart";
 import { formatTurnoverYi } from "@/lib/format";
@@ -41,6 +43,9 @@ export function SectorKlineView({
   backHref = "/ma",
   backLabel = "回產業掃描",
 }: Props) {
+  const pathname = usePathname();
+  const market = marketFromPath(pathname);
+  const apiBase = market === "us" ? "/api/us" : "/api";
   const [name, setName] = useState(initialName || sectorId);
   const [candles, setCandles] = useState(initialCandles);
   const [members, setMembers] = useState(initialMembers);
@@ -56,7 +61,7 @@ export function SectorKlineView({
       setError(null);
       try {
         const res = await fetch(
-          `/api/sector/${encodeURIComponent(sectorId)}?days=80${force ? "&force=1" : ""}`,
+          `${apiBase}/sector/${encodeURIComponent(sectorId)}?days=80${force ? "&force=1" : ""}`,
           { cache: "no-store" },
         );
         const data = (await res.json()) as Payload;
@@ -80,7 +85,7 @@ export function SectorKlineView({
         setLoading(false);
       }
     },
-    [sectorId],
+    [sectorId, apiBase],
   );
 
   useEffect(() => {

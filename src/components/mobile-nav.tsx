@@ -4,17 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, Gauge, Home, BarChart3, Gem } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-const ITEMS = [
-  { href: "/", label: "資金流", icon: Home },
-  { href: "/ma", label: "均線", icon: Activity },
-  { href: "/wind", label: "風度", icon: Gauge },
-  { href: "/turnover", label: "成交", icon: BarChart3 },
-  { href: "/value", label: "價值", icon: Gem },
-] as const;
+import { marketFromPath } from "@/components/market-switch";
 
 export function MobileNav() {
   const pathname = usePathname();
+  const market = marketFromPath(pathname);
+  const prefix = market === "us" ? "/us" : "";
+
+  const ITEMS = [
+    { href: prefix || "/", label: "資金流", icon: Home },
+    { href: `${prefix}/ma`, label: "均線", icon: Activity },
+    { href: `${prefix}/wind`, label: "風度", icon: Gauge },
+    { href: `${prefix}/turnover`, label: "成交", icon: BarChart3 },
+    { href: `${prefix}/value`, label: "價值", icon: Gem },
+  ] as const;
 
   return (
     <nav
@@ -24,8 +27,8 @@ export function MobileNav() {
       <ul className="mx-auto grid max-w-lg grid-cols-5 gap-0.5 px-1.5 pt-1.5 pb-1">
         {ITEMS.map(({ href, label, icon: Icon }) => {
           const active =
-            href === "/"
-              ? pathname === "/"
+            href === "/" || href === "/us"
+              ? pathname === href
               : pathname === href || pathname.startsWith(`${href}/`);
           return (
             <li key={href}>

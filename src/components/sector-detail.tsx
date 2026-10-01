@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { SectorFlow } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
 import {
@@ -14,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CandlestickChart, X } from "lucide-react";
+import { marketFromPath } from "@/components/market-switch";
 
 type StockPeriod = "day" | "d3" | "d5";
 
@@ -31,6 +33,10 @@ export function SectorDetail({
   period: periodProp,
   onPeriodChange,
 }: Props) {
+  const pathname = usePathname();
+  const market = marketFromPath(pathname);
+  const apiBase = market === "us" ? "/api/us" : "/api";
+  const sectorPageBase = market === "us" ? "/us/sectors" : "/sectors";
   const [periodInner, setPeriodInner] = useState<StockPeriod>("day");
   const stockPeriod = periodProp ?? periodInner;
   const setStockPeriod = (next: StockPeriod) => {

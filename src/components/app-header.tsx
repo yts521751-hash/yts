@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Moon, Sun, Type } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MarketSwitch, type MarketId } from "@/components/market-switch";
 
 type TextSize = "sm" | "md" | "lg";
 
@@ -16,6 +17,7 @@ type Props = {
   onTextSize: (s: TextSize) => void;
   dark: boolean;
   onToggleDark: () => void;
+  market?: MarketId;
 };
 
 export function AppHeader({
@@ -28,13 +30,16 @@ export function AppHeader({
   onTextSize,
   dark,
   onToggleDark,
+  market = "tw",
 }: Props) {
+  const home = market === "us" ? "/us" : "/";
+  const prefix = market === "us" ? "/us" : "";
   return (
     <header className="relative z-20 border-b-2 border-[var(--mk-anchor)]/30 bg-[var(--panel)]">
       <div className="h-1 w-full bg-[var(--mk-anchor)]" />
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <Link href="/" className="group flex items-center gap-2.5">
+          <Link href={home} className="group flex items-center gap-2.5">
             <span className="logo-mark relative flex size-9 items-center justify-center overflow-hidden">
               <span className="absolute inset-0 bg-[var(--mk-anchor)]" />
               <span className="relative font-[family-name:var(--font-display)] text-xs font-bold tracking-[0.2em] text-white">
@@ -46,10 +51,11 @@ export function AppHeader({
                 金流看板
               </p>
               <p className="font-mono text-[10px] tracking-[0.22em] text-muted-foreground uppercase">
-                Cashflow Board
+                {market === "us" ? "US Cashflow Board" : "Cashflow Board"}
               </p>
             </div>
           </Link>
+          <MarketSwitch className="ml-1" />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -101,10 +107,10 @@ export function AppHeader({
           <div className="hidden items-center gap-2 sm:flex">
             {(
               [
-                ["/ma", "均線掃描"],
-                ["/wind", "風度"],
-                ["/turnover", "成交排行"],
-                ["/value", "價值選股"],
+                [`${prefix}/ma`, "均線掃描"],
+                [`${prefix}/wind`, "風度"],
+                [`${prefix}/turnover`, "成交排行"],
+                [`${prefix}/value`, "價值選股"],
               ] as const
             ).map(([href, label]) => (
               <Link
@@ -120,7 +126,11 @@ export function AppHeader({
       </div>
       <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-2 border-t border-border/50 px-4 py-1.5 font-mono text-[11px] text-muted-foreground sm:px-6">
         <p>UPDATED {updatedAt}</p>
-        <p>TWSE · TPEx PUBLIC DATA</p>
+        <p>
+          {market === "us"
+            ? "YAHOO · PUBLIC · 美股金流（成交×漲跌＋相對成交量）"
+            : "TWSE · TPEx PUBLIC DATA"}
+        </p>
       </div>
     </header>
   );

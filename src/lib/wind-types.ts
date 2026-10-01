@@ -14,7 +14,7 @@ export type MaStance =
   | "tangled";
 
 export type WindReading = {
-  market: "twse" | "tpex";
+  market: "twse" | "tpex" | "spx" | "ndx";
   label: string;
   level: WindLevel;
   levelLabel: string;

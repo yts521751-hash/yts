@@ -1,0 +1,236 @@
+/**
+ * 美股板塊宇宙（流動性普通股；刻意排除 ETF／ETN／權證）。
+ * 產業名稱對齊 Yahoo／常見 GICS 粗分；成分以權值與成交熱門為主。
+ */
+
+import type { SectorDef } from "@/lib/sector-universe";
+
+export const US_SECTOR_UNIVERSE: SectorDef[] = [
+  {
+    id: "us-tech",
+    name: "科技",
+    basis: "Yahoo Technology／大型成長科技",
+    kind: "industry",
+    members: [
+      { code: "AAPL", name: "Apple" },
+      { code: "MSFT", name: "Microsoft" },
+      { code: "NVDA", name: "NVIDIA" },
+      { code: "AVGO", name: "Broadcom" },
+      { code: "ORCL", name: "Oracle" },
+      { code: "CRM", name: "Salesforce" },
+      { code: "AMD", name: "AMD" },
+      { code: "ADBE", name: "Adobe" },
+      { code: "CSCO", name: "Cisco" },
+      { code: "INTC", name: "Intel" },
+      { code: "QCOM", name: "Qualcomm" },
+      { code: "TXN", name: "Texas Instruments" },
+      { code: "NOW", name: "ServiceNow" },
+      { code: "INTU", name: "Intuit" },
+      { code: "AMAT", name: "Applied Materials" },
+    ],
+  },
+  {
+    id: "us-comms",
+    name: "通訊服務",
+    basis: "Yahoo Communication Services",
+    kind: "industry",
+    members: [
+      { code: "GOOGL", name: "Alphabet A" },
+      { code: "GOOG", name: "Alphabet C" },
+      { code: "META", name: "Meta" },
+      { code: "NFLX", name: "Netflix" },
+      { code: "DIS", name: "Disney" },
+      { code: "CMCSA", name: "Comcast" },
+      { code: "T", name: "AT&T" },
+      { code: "VZ", name: "Verizon" },
+      { code: "TMUS", name: "T-Mobile" },
+    ],
+  },
+  {
+    id: "us-consumer-cyc",
+    name: "非必需消費",
+    basis: "Yahoo Consumer Cyclical",
+    kind: "industry",
+    members: [
+      { code: "AMZN", name: "Amazon" },
+      { code: "TSLA", name: "Tesla" },
+      { code: "HD", name: "Home Depot" },
+      { code: "MCD", name: "McDonald's" },
+      { code: "NKE", name: "Nike" },
+      { code: "SBUX", name: "Starbucks" },
+      { code: "LOW", name: "Lowe's" },
+      { code: "BKNG", name: "Booking" },
+      { code: "TJX", name: "TJX" },
+      { code: "CMG", name: "Chipotle" },
+    ],
+  },
+  {
+    id: "us-consumer-def",
+    name: "必需消費",
+    basis: "Yahoo Consumer Defensive",
+    kind: "industry",
+    members: [
+      { code: "WMT", name: "Walmart" },
+      { code: "PG", name: "Procter & Gamble" },
+      { code: "KO", name: "Coca-Cola" },
+      { code: "PEP", name: "PepsiCo" },
+      { code: "COST", name: "Costco" },
+      { code: "PM", name: "Philip Morris" },
+      { code: "MO", name: "Altria" },
+      { code: "CL", name: "Colgate" },
+      { code: "MDLZ", name: "Mondelez" },
+    ],
+  },
+  {
+    id: "us-healthcare",
+    name: "醫療保健",
+    basis: "Yahoo Healthcare",
+    kind: "industry",
+    members: [
+      { code: "LLY", name: "Eli Lilly" },
+      { code: "UNH", name: "UnitedHealth" },
+      { code: "JNJ", name: "Johnson & Johnson" },
+      { code: "ABBV", name: "AbbVie" },
+      { code: "MRK", name: "Merck" },
+      { code: "TMO", name: "Thermo Fisher" },
+      { code: "ABT", name: "Abbott" },
+      { code: "ISRG", name: "Intuitive Surgical" },
+      { code: "AMGN", name: "Amgen" },
+      { code: "PFE", name: "Pfizer" },
+      { code: "BMY", name: "Bristol-Myers" },
+      { code: "GILD", name: "Gilead" },
+    ],
+  },
+  {
+    id: "us-financials",
+    name: "金融",
+    basis: "Yahoo Financial Services",
+    kind: "industry",
+    members: [
+      { code: "JPM", name: "JPMorgan" },
+      { code: "V", name: "Visa" },
+      { code: "MA", name: "Mastercard" },
+      { code: "BAC", name: "Bank of America" },
+      { code: "WFC", name: "Wells Fargo" },
+      { code: "GS", name: "Goldman Sachs" },
+      { code: "MS", name: "Morgan Stanley" },
+      { code: "AXP", name: "American Express" },
+      { code: "BLK", name: "BlackRock" },
+      { code: "SCHW", name: "Charles Schwab" },
+      { code: "C", name: "Citigroup" },
+    ],
+  },
+  {
+    id: "us-energy",
+    name: "能源",
+    basis: "Yahoo Energy",
+    kind: "industry",
+    members: [
+      { code: "XOM", name: "Exxon Mobil" },
+      { code: "CVX", name: "Chevron" },
+      { code: "COP", name: "ConocoPhillips" },
+      { code: "SLB", name: "Schlumberger" },
+      { code: "EOG", name: "EOG Resources" },
+      { code: "MPC", name: "Marathon Petroleum" },
+      { code: "PSX", name: "Phillips 66" },
+      { code: "OXY", name: "Occidental" },
+    ],
+  },
+  {
+    id: "us-industrials",
+    name: "工業",
+    basis: "Yahoo Industrials",
+    kind: "industry",
+    members: [
+      { code: "GE", name: "GE Aerospace" },
+      { code: "CAT", name: "Caterpillar" },
+      { code: "RTX", name: "RTX" },
+      { code: "UNP", name: "Union Pacific" },
+      { code: "HON", name: "Honeywell" },
+      { code: "BA", name: "Boeing" },
+      { code: "DE", name: "Deere" },
+      { code: "LMT", name: "Lockheed Martin" },
+      { code: "UPS", name: "UPS" },
+      { code: "GEV", name: "GE Vernova" },
+    ],
+  },
+  {
+    id: "us-materials",
+    name: "原物料",
+    basis: "Yahoo Basic Materials",
+    kind: "industry",
+    members: [
+      { code: "LIN", name: "Linde" },
+      { code: "SHW", name: "Sherwin-Williams" },
+      { code: "APD", name: "Air Products" },
+      { code: "ECL", name: "Ecolab" },
+      { code: "FCX", name: "Freeport-McMoRan" },
+      { code: "NEM", name: "Newmont" },
+      { code: "DOW", name: "Dow" },
+      { code: "NUE", name: "Nucor" },
+    ],
+  },
+  {
+    id: "us-utilities",
+    name: "公用事業",
+    basis: "Yahoo Utilities",
+    kind: "industry",
+    members: [
+      { code: "NEE", name: "NextEra Energy" },
+      { code: "SO", name: "Southern" },
+      { code: "DUK", name: "Duke Energy" },
+      { code: "CEG", name: "Constellation" },
+      { code: "SRE", name: "Sempra" },
+      { code: "AEP", name: "American Electric" },
+      { code: "D", name: "Dominion" },
+    ],
+  },
+  {
+    id: "us-reits",
+    name: "房地產",
+    basis: "Yahoo Real Estate（REIT 普通股）",
+    kind: "industry",
+    members: [
+      { code: "PLD", name: "Prologis" },
+      { code: "AMT", name: "American Tower" },
+      { code: "EQIX", name: "Equinix" },
+      { code: "WELL", name: "Welltower" },
+      { code: "SPG", name: "Simon Property" },
+      { code: "O", name: "Realty Income" },
+      { code: "CCI", name: "Crown Castle" },
+    ],
+  },
+  {
+    id: "us-ai-semi",
+    name: "AI／半導體題材",
+    basis: "人工題材：AI 算力鏈與半導體設備",
+    kind: "theme",
+    members: [
+      { code: "NVDA", name: "NVIDIA" },
+      { code: "AVGO", name: "Broadcom" },
+      { code: "AMD", name: "AMD" },
+      { code: "TSM", name: "TSMC ADR" },
+      { code: "ASML", name: "ASML" },
+      { code: "AMAT", name: "Applied Materials" },
+      { code: "LRCX", name: "Lam Research" },
+      { code: "KLAC", name: "KLA" },
+      { code: "MU", name: "Micron" },
+      { code: "ARM", name: "Arm" },
+      { code: "SMCI", name: "Super Micro" },
+    ],
+  },
+];
+
+/** 宇宙內全部普通股代號（去重） */
+export function listUsWatchCodes(): string[] {
+  const set = new Set<string>();
+  for (const s of US_SECTOR_UNIVERSE) {
+    for (const m of s.members) set.add(m.code.toUpperCase());
+  }
+  return [...set].sort();
+}
+
+export function lookupUsSectorDef(id: string): SectorDef | null {
+  const key = id.trim();
+  return US_SECTOR_UNIVERSE.find((s) => s.id === key) ?? null;
+}

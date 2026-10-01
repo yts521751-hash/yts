@@ -23,6 +23,7 @@ import { readResponseJson } from "@/lib/read-response-json";
 import { countByStatus, migrateSectorIfNeeded } from "@/lib/mock-data";
 import type { MarketBrief, SectorFlow, TideStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import type { MarketId } from "@/components/market-switch";
 
 type TextSize = "sm" | "md" | "lg";
 type LoadState = "loading" | "ready" | "error";
@@ -47,27 +48,47 @@ export type InitialFlowProps = {
 } | null;
 
 /** 同一瀏覽器分頁內跨路由保活，避免從風度／成交頁返回又重抓蓋掉正確收盤資料 */
-let sessionFlow: FlowClientSnapshot | null = null;
+let sessionFlowTw: FlowClientSnapshot | null = null;
+let sessionFlowUs: FlowClientSnapshot | null = null;
 
-function isRealFlowPayload(data: {
-  ok?: boolean;
-  isDemo?: boolean;
-  source?: unknown;
-  sectors?: unknown[];
-}) {
+function isRealFlowPayload(
+  data: {
+    ok?: boolean;
+    isDemo?: boolean;
+    source?: unknown;
+    sectors?: unknown[];
+  },
+  market: MarketId,
+) {
+  const minSectors = market === "us" ? 5 : 20;
   return Boolean(
     data.ok &&
       !data.isDemo &&
       !String(data.source ?? "").includes("demo") &&
-      (data.sectors?.length ?? 0) >= 20,
+      (data.sectors?.length ?? 0) >= minSectors,
   );
 }
 
 export function HomeApp({
   initialFlow = null,
+  market = "tw",
 }: {
   initialFlow?: InitialFlowProps;
+  market?: MarketId;
 }) {
+  const apiBase = market === "us" ? "/api/us" : "/api";
+  const minSectors = market === "us" ? 5 : 20;
+  const flowCacheKey =
+    market === "us" ? `${CLIENT_CACHE_KEYS.flow}:us` : CLIENT_CACHE_KEYS.flow;
+  const stocksCacheKey =
+    market === "us"
+      ? `${CLIENT_CACHE_KEYS.stocks}:us`
+      : CLIENT_CACHE_KEYS.stocks;
+  const getSession = () => (market === "us" ? sessionFlowUs : sessionFlowTw);
+  const setSession = (snap: FlowClientSnapshot | null) => {
+    if (market === "us") sessionFlowUs = snap;
+    else sessionFlowTw = snap;
+  };
   const [filter, setFilter] = useState<TideStatus | "all">("all");
   const [boardMode, setBoardMode] = useState<BoardMode>("sector");
   const [selected, setSelected] = useState<SectorFlow | null>(null);
@@ -92,8 +113,13 @@ export function HomeApp({
   const [textSize, setTextSize] = useState<TextSize>("sm");
   const [dark, setDark] = useState(false);
   const seed = ((): FlowClientSnapshot | null => {
-    if (sessionFlow?.sectors && sessionFlow.sectors.length >= 20) return sessionFlow;
-    if (initialFlow?.sectors && initialFlow.sectors.length >= 20 && initialFlow.brief) {
+    const session = getSession();
+    if (session?.sectors && session.sectors.length >= minSectors) return session;
+    if (
+      initialFlow?.sectors &&
+      initialFlow.sectors.length >= minSectors &&
+      initialFlow.brief
+    ) {
       return {
         sectors: initialFlow.sectors,
         brief: initialFlow.brief,
@@ -102,9 +128,9 @@ export function HomeApp({
     }
     // 首屏就讀本機快取（不要等 useEffect），手機／電腦都先畫上個交易日
     if (typeof window !== "undefined") {
-      const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
-      if (cached?.sectors && cached.sectors.length >= 20 && cached.brief) {
-        sessionFlow = cached;
+      const cached = readClientCache<FlowClientSnapshot>(flowCacheKey);
+      if (cached?.sectors && cached.sectors.length >= minSectors && cached.brief) {
+        setSession(cached);
         return cached;
       }
     }
@@ -150,7 +176,7 @@ export function HomeApp({
       // SSR 真實資料才寫入 session／本機；避免把 demo／空殼蓋掉分頁內已有的正確收盤
       if (
         initialFlow?.sectors &&
-        initialFlow.sectors.length >= 20 &&
+        initialFlow.sectors.length >= minSectors &&
         initialFlow.brief &&
         !initialFlow.isDemo &&
         !String(initialFlow.source || "").includes("demo")
@@ -160,33 +186,31 @@ export function HomeApp({
           brief: initialFlow.brief,
           source: initialFlow.source || "ssr",
         };
-        sessionFlow = snap;
-        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, snap);
+        setSession(snap);
+        writeClientCache<FlowClientSnapshot>(flowCacheKey, snap);
       }
 
       // 已有 session／SSR 種子就不要再用可能更舊的 localStorage 覆蓋
       if (
         !initialFlow?.sectors?.length &&
-        (sessionFlow?.sectors?.length ?? 0) < 20
+        (getSession()?.sectors?.length ?? 0) < minSectors
       ) {
-        const cached = readClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow);
-        if (cached?.sectors && cached.sectors.length >= 20) {
+        const cached = readClientCache<FlowClientSnapshot>(flowCacheKey);
+        if (cached?.sectors && cached.sectors.length >= minSectors) {
           const next = cached.sectors.map(migrateSectorIfNeeded);
           const snap: FlowClientSnapshot = {
             sectors: next,
             brief: cached.brief,
             source: cached.source || "client-cache",
           };
-          sessionFlow = snap;
+          setSession(snap);
           setSectors(next);
           setBrief(cached.brief);
           setSource(cached.source || "client-cache");
           setLoadState("ready");
         }
       }
-      const cachedStocks = readClientCache<StocksClientSnapshot>(
-        CLIENT_CACHE_KEYS.stocks,
-      );
+      const cachedStocks = readClientCache<StocksClientSnapshot>(stocksCacheKey);
       if (cachedStocks?.rows?.length) {
         setStocks(cachedStocks.rows);
         setStocksDate(cachedStocks.date || "");
@@ -194,7 +218,8 @@ export function HomeApp({
     } catch {
       /* ignore */
     }
-  }, []);
+    // mount hydrate once per market
+  }, [market]);
 
   const sectorsRef = useRef(sectors);
   const sourceRef = useRef(source);
@@ -207,12 +232,12 @@ export function HomeApp({
 
   const loadFlow = useCallback(async () => {
     const hadReal =
-      sectorsRef.current.length >= 20 &&
+      sectorsRef.current.length >= minSectors &&
       !String(sourceRef.current).includes("demo");
     // 已有正確畫面時靜默核對，不要打「讀取中」
     if (!hadReal) setRefreshing(true);
     try {
-      const res = await fetch("/api/flow", { cache: "no-store" });
+      const res = await fetch(`${apiBase}/flow`, { cache: "no-store" });
       const data = await readResponseJson<{
         ok?: boolean;
         error?: string;
@@ -223,12 +248,15 @@ export function HomeApp({
       }>(res, "資金流載入失敗");
       if (!data.sectors?.length) throw new Error(data.error || "沒有板塊資料");
       const next = (data.sectors as SectorFlow[]).map(migrateSectorIfNeeded);
-      const nextReal = isRealFlowPayload({
-        ok: data.ok,
-        isDemo: data.isDemo,
-        source: data.source,
-        sectors: next,
-      });
+      const nextReal = isRealFlowPayload(
+        {
+          ok: data.ok,
+          isDemo: data.isDemo,
+          source: data.source,
+          sectors: next,
+        },
+        market,
+      );
 
       // 有真實收盤資料時，拒絕被 demo／半套結果蓋掉
       if (hadReal && !nextReal) return;
@@ -251,8 +279,8 @@ export function HomeApp({
           brief: data.brief as MarketBrief,
           source: String(data.source ?? ""),
         };
-        sessionFlow = snap;
-        writeClientCache<FlowClientSnapshot>(CLIENT_CACHE_KEYS.flow, snap);
+        setSession(snap);
+        writeClientCache<FlowClientSnapshot>(flowCacheKey, snap);
       }
       setSelected((prev) => {
         if (!prev) return prev;
@@ -266,18 +294,18 @@ export function HomeApp({
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [apiBase, flowCacheKey, market, minSectors]);
 
   /** 前景同步：同一條 /api/sync 串流推進度，跑完再刷新畫面 */
   const runForegroundSync = useCallback(async () => {
     if (syncing) return;
     setError(null);
     setSyncing(true);
-    setSyncProgress({ percent: 1, label: "開始同步…" });
+    setSyncProgress({ percent: 1, label: market === "us" ? "開始同步美股…" : "開始同步…" });
     let ok = false;
     let errMsg: string | null = null;
     try {
-      const res = await fetch("/api/sync", { cache: "no-store" });
+      const res = await fetch(`${apiBase}/sync`, { cache: "no-store" });
       if (!res.ok || !res.body) {
         throw new Error(`同步請求失敗（HTTP ${res.status}）`);
       }
@@ -345,14 +373,14 @@ export function HomeApp({
         setSyncProgress(null);
       }, 800);
     }
-  }, [syncing, loadFlow]);
+  }, [syncing, loadFlow, apiBase, market]);
 
   const loadStocks = useCallback(async (force = false) => {
     setStocksLoading(true);
     setStocksError(null);
     try {
       const res = await fetch(
-        `/api/stocks?limit=50${force ? "&force=1" : ""}`,
+        `${apiBase}/stocks?limit=50${force ? "&force=1" : ""}`,
         { cache: "no-store" },
       );
       const data = await readResponseJson<{
@@ -366,7 +394,7 @@ export function HomeApp({
       }
       setStocks(data.rows as StockFlowRankRow[]);
       setStocksDate(String(data.date || ""));
-      writeClientCache<StocksClientSnapshot>(CLIENT_CACHE_KEYS.stocks, {
+      writeClientCache<StocksClientSnapshot>(stocksCacheKey, {
         rows: data.rows as StockFlowRankRow[],
         date: String(data.date || ""),
       });
@@ -375,7 +403,7 @@ export function HomeApp({
     } finally {
       setStocksLoading(false);
     }
-  }, []);
+  }, [apiBase, stocksCacheKey]);
 
   useEffect(() => {
     void loadFlow();
@@ -492,6 +520,7 @@ export function HomeApp({
         onTextSize={onTextSize}
         dark={dark}
         onToggleDark={onToggleDark}
+        market={market}
       />
 
       <main className="relative z-10 mx-auto flex w-full max-w-[1400px] flex-1 flex-col gap-4 px-4 py-4 sm:px-6 sm:py-6">
@@ -503,13 +532,15 @@ export function HomeApp({
               </h1>
               {boardMode === "stock" && stocksDate ? (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  資料日 {stocksDate} · 與板塊相同金流公式（成交×漲跌 80%＋法人 20%）
+                  {market === "us"
+                    ? `資料日 ${stocksDate} · 美股金流（成交×漲跌＋相對成交量）`
+                    : `資料日 ${stocksDate} · 與板塊相同金流公式（成交×漲跌 80%＋法人 20%）`}
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-muted-foreground">
                   手機／電腦共用成交額→淨流排序 ·{" "}
                   <Link
-                    href="/ma"
+                    href={market === "us" ? "/us/ma" : "/ma"}
                     className="text-[var(--mk-anchor)] underline-offset-2 hover:underline"
                   >
                     產業均線掃描
@@ -622,7 +653,7 @@ export function HomeApp({
                     setSelected(s);
                     // 點選板塊時預熱產業 K 線，稍後開啟幾乎不用等
                     void fetch(
-                      `/api/sector/${encodeURIComponent(s.id)}?days=80`,
+                      `${apiBase}/sector/${encodeURIComponent(s.id)}?days=80`,
                       { cache: "force-cache" },
                     ).catch(() => null);
                   }}

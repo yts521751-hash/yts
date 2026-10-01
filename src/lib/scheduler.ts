@@ -172,8 +172,47 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線＋成交排行）；開盤前暖機 08:50；新聞每 5 分鐘`;
+  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線＋成交排行）；開盤前暖機 08:50；新聞每 5 分鐘；美股日終 America/New_York 18:00／19:00／20:00`;
   console.log(`[scheduler] started: ${state.description}`);
+
+  // 美股日終大包：週一至週五 18:00／19:00／20:00 America/New_York
+  const usTz = process.env.US_SYNC_TZ?.trim() || "America/New_York";
+  const usExprs = (
+    process.env.US_SYNC_CRON?.trim() ||
+    "0 18 * * 1-5;0 19 * * 1-5;0 20 * * 1-5"
+  )
+    .split(/[;|]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const expr of usExprs) {
+    if (!cron.validate(expr)) {
+      console.error(`[scheduler] invalid US cron: ${expr}`);
+      continue;
+    }
+    const task = cron.schedule(
+      expr,
+      () => {
+        void (async () => {
+          console.log(`[scheduler] US daily-close (${expr} ${usTz})`);
+          try {
+            const { runUsDailyClosePackage } = await import(
+              "@/lib/daily-close-package-us"
+            );
+            await runUsDailyClosePackage(`cron-us:${expr}`);
+          } catch (e) {
+            console.error("[scheduler] US daily-close failed", e);
+          }
+        })();
+      },
+      { timezone: usTz },
+    );
+    b.tasks.push(task);
+  }
+  if (usExprs.length) {
+    console.log(
+      `[scheduler] US cron: ${usExprs.join(" / ")} (${usTz})`,
+    );
+  }
 
   // 週一至週五 08:50：開盤前暖機（行情／風度），讓 09:00 後頁面有最新快取
   const morningExpr = process.env.MORNING_CRON?.trim() || "50 8 * * 1-5";
