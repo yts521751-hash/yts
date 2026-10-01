@@ -407,6 +407,16 @@ export function HomeApp({
     void loadStocks(false);
   }, [boardMode, stocks.length, stocksLoading, loadStocks]);
 
+  // 行動版板塊明細 sheet：Esc 關閉
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+
 
   const counts = useMemo(() => countByStatus(sectors), [sectors]);
   const isDemo = brief?.isDemo === true || source.includes("demo");

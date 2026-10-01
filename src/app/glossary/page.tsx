@@ -10,7 +10,7 @@ type Term = {
 
 const GROUP_LABEL: Record<Term["group"], string> = {
   board: "看板與分類",
-  flow: "資金流怎麼算",
+  flow: "資金流公式",
   pages: "各頁怎麼看",
   ops: "資料與同步",
 };

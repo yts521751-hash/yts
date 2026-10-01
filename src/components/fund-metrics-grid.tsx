@@ -24,7 +24,7 @@ export function FundMetricsGrid({
     <div
       className={cn(
         "grid gap-2",
-        omitYoy ? "grid-cols-2" : "grid-cols-3",
+        omitYoy ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3",
         className,
       )}
     >
