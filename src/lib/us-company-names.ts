@@ -110,6 +110,14 @@ export const US_NAME_ZH: Record<string, string> = {
   SQ: "Block",
   PYPL: "PayPal",
   SHOP: "Shopify",
+  SPCX: "SpaceX／太空探索",
+  SNDK: "SanDisk／閃迪",
+  BE: "Bloom Energy",
+  MRNA: "Moderna／莫德納",
+  HOOD: "Robinhood",
+  SOFI: "SoFi",
+  GILD: "吉立亞",
+  BMY: "必治妥施貴寶",
 };
 
 /**

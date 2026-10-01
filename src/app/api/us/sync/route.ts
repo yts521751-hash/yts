@@ -23,11 +23,19 @@ type SyncEvent =
       error?: string;
       asOf?: string | null;
       artifacts?: Record<string, boolean>;
+      skippedCurrent?: boolean;
       market: "us";
+      gap?: {
+        watermark?: string | null;
+        targetYmd?: string;
+        fetchedSymbols?: number;
+        skippedSymbols?: number;
+        wroteDays?: boolean;
+      };
     };
 
 /**
- * 美股前景同步：NDJSON 進度，跑完美股日終大包。
+ * 美股前景同步：NDJSON 進度，跑完美股日終大包（含 R2 hydrate／skip-current）。
  */
 export async function GET() {
   const encoder = new TextEncoder();
@@ -78,16 +86,32 @@ export async function GET() {
         }
 
         const meta = await runUsDailyClosePackage("api-us-sync");
-        pushProgress(100, "美股同步完成", false);
+        const skippedCurrent = Boolean(meta.skipped);
+        pushProgress(
+          100,
+          skippedCurrent ? "資料已是最新" : "美股同步完成",
+          false,
+        );
         send({
           type: "done",
-          ok: Boolean(meta.artifacts.flow),
+          ok: Boolean(meta.artifacts.flow) || skippedCurrent,
           asOf: meta.asOf,
           artifacts: meta.artifacts,
+          skippedCurrent,
           market: "us",
-          error: meta.artifacts.flow
-            ? undefined
-            : meta.steps.find((s) => !s.ok)?.detail || "美股大包未完成",
+          gap: meta.gap
+            ? {
+                watermark: meta.gap.watermark,
+                targetYmd: meta.gap.target,
+                fetchedSymbols: meta.gap.fetchedSymbols,
+                skippedSymbols: meta.gap.skippedSymbols,
+                wroteDays: meta.gap.wroteDays,
+              }
+            : undefined,
+          error:
+            meta.artifacts.flow || skippedCurrent
+              ? undefined
+              : meta.steps.find((s) => !s.ok)?.detail || "美股大包未完成",
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

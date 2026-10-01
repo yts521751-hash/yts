@@ -284,16 +284,180 @@ async function mapPool<T, R>(
   return out;
 }
 
+export type SyncUsQuotesResult = {
+  days: string[];
+  /** 實際打 Yahoo 的代號數（0＝完全沿用本機／R2） */
+  fetchedSymbols: number;
+  skippedSymbols: number;
+  /** 水位是否已涵蓋目標交易日 */
+  coveredTarget: boolean;
+  target: string;
+  watermark: string | null;
+  /** 本次是否寫入／合併了日檔 */
+  wroteDays: boolean;
+};
+
 /**
  * 從宇宙成分 Yahoo 日 K 組裝 us/quotes-YYYYMMDD.json。
  * 回傳寫入／更新的交易日（新→舊）。
+ *
+ * 增量行為（force=false）：
+ * - 最新日檔已涵蓋 target 且宇宙代號齊 → 略過網路，直接回傳既有日清單
+ * - 僅缺少數新宇宙代號 → 只抓缺碼並 merge 進既有日檔（不覆蓋掉舊成分）
+ * - 水位落後 target → 重抓全宇宙組日檔
  */
 export async function syncUsQuoteDays(options?: {
   force?: boolean;
   symbols?: string[];
+  /** YYYYMMDD；預設用美東同步目標日 */
+  targetYmd?: string;
   onProgress?: (done: number, total: number, label?: string) => void;
 }): Promise<string[]> {
-  const symbols = options?.symbols ?? listUsWatchCodes();
+  const result = await ensureUsQuotesUpToDate(options);
+  return result.days;
+}
+
+export async function ensureUsQuotesUpToDate(options?: {
+  force?: boolean;
+  symbols?: string[];
+  targetYmd?: string;
+  onProgress?: (done: number, total: number, label?: string) => void;
+}): Promise<SyncUsQuotesResult> {
+  const { resolveUsSyncTargetYmd } = await import("@/lib/gap-sync-us");
+  const symbols = (options?.symbols ?? listUsWatchCodes()).map((s) =>
+    s.toUpperCase(),
+  );
+  const target = options?.targetYmd ?? resolveUsSyncTargetYmd();
+  const existingDays = await listUsCachedTradingDays(US_HISTORY_TRADING_DAYS);
+  const watermark = existingDays[0] ?? null;
+
+  if (!options?.force && watermark && watermark >= target) {
+    const latestQuotes = await getUsCachedDayQuotes(watermark);
+    const have = new Set(
+      [...(latestQuotes?.keys() ?? [])].map((c) => c.toUpperCase()),
+    );
+    const missing = symbols.filter((s) => !have.has(s));
+    // 宇宙幾乎齊（允許少數 Yahoo 失敗）：略過全量重抓
+    if (missing.length === 0) {
+      options?.onProgress?.(symbols.length, symbols.length, "quotes-cached");
+      return {
+        days: existingDays,
+        fetchedSymbols: 0,
+        skippedSymbols: symbols.length,
+        coveredTarget: true,
+        target,
+        watermark,
+        wroteDays: false,
+      };
+    }
+    if (missing.length <= Math.max(8, Math.ceil(symbols.length * 0.15))) {
+      const merged = await mergeMissingUsSymbols(missing, {
+        force: true,
+        onProgress: options?.onProgress,
+      });
+      return {
+        days: merged.days.length ? merged.days : existingDays,
+        fetchedSymbols: missing.length,
+        skippedSymbols: symbols.length - missing.length,
+        coveredTarget: true,
+        target,
+        watermark: merged.days[0] ?? watermark,
+        wroteDays: merged.wroteDays,
+      };
+    }
+  }
+
+  const full = await fetchAndWriteUsQuoteDays(symbols, {
+    force: Boolean(options?.force) || Boolean(watermark && watermark < target),
+    onProgress: options?.onProgress,
+  });
+  const days = full.days;
+  const newWatermark = days[0] ?? null;
+  return {
+    days,
+    fetchedSymbols: symbols.length,
+    skippedSymbols: 0,
+    coveredTarget: Boolean(newWatermark && newWatermark >= target),
+    target,
+    watermark: newWatermark,
+    wroteDays: days.length > 0,
+  };
+}
+
+/** 只抓缺碼並 merge 進既有 us/quotes-*（保留舊宇宙） */
+async function mergeMissingUsSymbols(
+  missing: string[],
+  options?: {
+    force?: boolean;
+    onProgress?: (done: number, total: number, label?: string) => void;
+  },
+): Promise<{ days: string[]; wroteDays: boolean }> {
+  const byDay = new Map<string, Map<string, UsQuoteRow>>();
+  let done = 0;
+  await mapPool(missing, 5, async (sym) => {
+    const hist = await loadSymbolHistory(sym, { force: options?.force });
+    done++;
+    options?.onProgress?.(done, missing.length, sym);
+    if (!hist?.bars?.length) return;
+    for (const b of hist.bars) {
+      let dayMap = byDay.get(b.ymd);
+      if (!dayMap) {
+        dayMap = new Map();
+        byDay.set(b.ymd, dayMap);
+      }
+      dayMap.set(sym, {
+        code: sym,
+        name: hist.name || sym,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        changePct: b.changePct,
+        turnover: b.turnover,
+        volume: b.volume,
+      });
+    }
+  });
+
+  const touchDays = [...byDay.keys()].sort((a, b) => b.localeCompare(a));
+  let wrote = false;
+  for (const ymd of touchDays) {
+    const incoming = byDay.get(ymd);
+    if (!incoming?.size) continue;
+    const prev = await readUsCacheFile<UsDayQuoteCache>(usQuotesCacheName(ymd));
+    const map = new Map<string, UsQuoteRow>();
+    for (const q of prev?.quotes ?? []) {
+      map.set(q.code.toUpperCase(), { ...q, code: q.code.toUpperCase() });
+    }
+    for (const [code, q] of incoming) {
+      map.set(code.toUpperCase(), q);
+    }
+    if (map.size < 10) continue;
+    const bundle: UsDayQuoteCache = {
+      ymd,
+      quotes: [...map.values()],
+      indexChangePct: prev?.indexChangePct ?? null,
+      fetchedAt: new Date().toISOString(),
+      source: US_DATA_PROVENANCE,
+    };
+    await writeUsCacheFile(usQuotesCacheName(ymd), bundle);
+    wrote = true;
+  }
+  if (wrote) {
+    invalidateUsTradingDaysMemo();
+    invalidateUsDayQuotesMemo();
+  }
+  const days = await listUsCachedTradingDays(US_HISTORY_TRADING_DAYS);
+  return { days, wroteDays: wrote };
+}
+
+async function fetchAndWriteUsQuoteDays(
+  symbols: string[],
+  options?: {
+    force?: boolean;
+    onProgress?: (done: number, total: number, label?: string) => void;
+  },
+): Promise<{ days: string[] }> {
   const byDay = new Map<string, Map<string, UsQuoteRow>>();
 
   let done = 0;
@@ -323,7 +487,7 @@ export async function syncUsQuoteDays(options?: {
   });
 
   // S&P 500 指數漲跌（風度／情緒）
-  let indexByYmd = new Map<string, number>();
+  const indexByYmd = new Map<string, number>();
   try {
     const spx = await fetchYahooChart("^GSPC", "6mo");
     if (spx) {
@@ -335,12 +499,24 @@ export async function syncUsQuoteDays(options?: {
 
   const days = [...byDay.keys()].sort((a, b) => b.localeCompare(a));
   for (const ymd of days) {
-    const quotes = [...(byDay.get(ymd)?.values() ?? [])];
-    if (quotes.length < 10) continue;
+    const incoming = byDay.get(ymd);
+    const quotesFromFetch = [...(incoming?.values() ?? [])];
+    if (quotesFromFetch.length < 10) continue;
+
+    // merge 舊日檔：避免 force 重抓時若少數代號失敗把舊成分洗掉
+    const prev = await readUsCacheFile<UsDayQuoteCache>(usQuotesCacheName(ymd));
+    const map = new Map<string, UsQuoteRow>();
+    for (const q of prev?.quotes ?? []) {
+      map.set(q.code.toUpperCase(), { ...q, code: q.code.toUpperCase() });
+    }
+    for (const q of quotesFromFetch) {
+      map.set(q.code.toUpperCase(), q);
+    }
+
     const bundle: UsDayQuoteCache = {
       ymd,
-      quotes,
-      indexChangePct: indexByYmd.get(ymd) ?? null,
+      quotes: [...map.values()],
+      indexChangePct: indexByYmd.get(ymd) ?? prev?.indexChangePct ?? null,
       fetchedAt: new Date().toISOString(),
       source: US_DATA_PROVENANCE,
     };
@@ -348,7 +524,8 @@ export async function syncUsQuoteDays(options?: {
   }
   invalidateUsTradingDaysMemo();
   invalidateUsDayQuotesMemo();
-  return days.filter((ymd) => (byDay.get(ymd)?.size ?? 0) >= 10);
+  const written = days.filter((ymd) => (byDay.get(ymd)?.size ?? 0) >= 10);
+  return { days: written };
 }
 
 let usTradingDaysMemo: { at: number; days: string[] } | null = null;
@@ -505,15 +682,22 @@ export async function promoteUsStagingToActive() {
   });
 }
 
-/** ETF／ETN／權證粗篩（宇宙已人工排除；排行再保險） */
+/** ETF／ETN／權證粗篩（排行／金流用；成值宇宙另見 nasdaq-us screener 過濾） */
 export function isUsCommonStock(code: string, name?: string): boolean {
   const c = code.toUpperCase();
-  if (!/^[A-Z]{1,5}$/.test(c)) return false;
+  if (!/^[A-Z]{1,5}(\.[A-Z])?$/.test(c)) return false;
   // 常見槓桿／反向／商品 ETF
-  if (/^(SQQQ|TQQQ|SPXU|SPXL|UVXY|VIXY|SOXL|SOXS)$/.test(c)) return false;
+  if (/^(SQQQ|TQQQ|SPXU|SPXL|UVXY|VIXY|SOXL|SOXS|SPY|QQQ|IWM|DIA|VOO|IVV|HYG|TLT)$/.test(c)) {
+    return false;
+  }
+  // 權證／單位後綴
+  if (/(WS|WT|WW)$/.test(c)) return false;
+  if (c.length >= 5 && /[WRU]$/.test(c)) return false;
   const n = (name || "").toUpperCase();
   // 用字界，避免誤傷含 FUND／TRUST 子字串的普通股名稱
-  if (/\b(ETF|ETN|TRUST|FUND|WARRANT|UNITS?)\b/.test(n)) return false;
+  if (/\b(ETF|ETN|TRUST|FUND|WARRANT|RIGHTS?|UNITS?|PREFERRED)\b/.test(n)) {
+    return false;
+  }
   return true;
 }
 

@@ -99,6 +99,7 @@ export const US_SECTOR_UNIVERSE: SectorDef[] = [
       { code: "PFE", name: "Pfizer" },
       { code: "BMY", name: "Bristol-Myers" },
       { code: "GILD", name: "Gilead" },
+      { code: "MRNA", name: "Moderna" },
     ],
   },
   {
@@ -118,6 +119,7 @@ export const US_SECTOR_UNIVERSE: SectorDef[] = [
       { code: "BLK", name: "BlackRock" },
       { code: "SCHW", name: "Charles Schwab" },
       { code: "C", name: "Citigroup" },
+      { code: "HOOD", name: "Robinhood" },
     ],
   },
   {
@@ -152,6 +154,8 @@ export const US_SECTOR_UNIVERSE: SectorDef[] = [
       { code: "LMT", name: "Lockheed Martin" },
       { code: "UPS", name: "UPS" },
       { code: "GEV", name: "GE Vernova" },
+      { code: "BE", name: "Bloom Energy" },
+      { code: "SPCX", name: "SpaceX" },
     ],
   },
   {
@@ -217,11 +221,12 @@ export const US_SECTOR_UNIVERSE: SectorDef[] = [
       { code: "MU", name: "Micron" },
       { code: "ARM", name: "Arm" },
       { code: "SMCI", name: "Super Micro" },
+      { code: "SNDK", name: "Sandisk" },
     ],
   },
 ];
 
-/** 宇宙內全部普通股代號（去重） */
+/** 宇宙內全部普通股代號（去重；板塊＋題材成分，供金流／Yahoo 日 K） */
 export function listUsWatchCodes(): string[] {
   const set = new Set<string>();
   for (const s of US_SECTOR_UNIVERSE) {
