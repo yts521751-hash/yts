@@ -57,8 +57,10 @@ type TargetsCache = {
 const CACHE = "fundamentals-broker-targets.json";
 const TTL_HIT_MS = 24 * 60 * 60 * 1000;
 const TTL_EMPTY_MS = 2 * 60 * 60 * 1000;
-/** 單檔展開總預算，避免 UI 卡 30s */
-const FETCH_BUDGET_MS = 14_000;
+/** 過期但仍可立即回傳的寬限期（背景再刷） */
+const STALE_SERVE_MS = 7 * 24 * 60 * 60 * 1000;
+/** 單檔展開總預算，避免 UI 卡太久 */
+const FETCH_BUDGET_MS = 9_000;
 
 type BrokerAlias = {
   display: string;
@@ -1159,69 +1161,64 @@ function withBudget<T>(p: Promise<T>, ms: number): Promise<T | null> {
   });
 }
 
-/**
- * 取得個股內外資券商目標價／預估 EPS 列表（快取優先；可 force）。
- */
-export async function getBrokerTargetPrices(
-  code: string,
-  options?: { name?: string | null; force?: boolean },
-): Promise<BrokerTargetsPayload> {
-  const stockCode = code.trim();
-  const name = (options?.name ?? "").trim() || stockCode;
-  const empty = (reason: string): BrokerTargetsPayload => ({
-    code: stockCode,
-    name,
-    targets: [],
-    builtAt: new Date().toISOString(),
-    source: "multi",
-    emptyReason: reason,
-  });
-
-  if (!/^\d{4}$/.test(stockCode)) {
-    return empty("代號格式不符");
+function brokerTargetsFlightBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuBrokerTargetsFlight?: Map<string, Promise<BrokerTargetsPayload>>;
+    __jinliuBrokerTargetsMemo?: Map<
+      string,
+      { at: number; value: BrokerTargetsPayload }
+    >;
+  };
+  if (!g.__jinliuBrokerTargetsFlight) {
+    g.__jinliuBrokerTargetsFlight = new Map();
   }
+  if (!g.__jinliuBrokerTargetsMemo) {
+    g.__jinliuBrokerTargetsMemo = new Map();
+  }
+  return {
+    flight: g.__jinliuBrokerTargetsFlight,
+    memo: g.__jinliuBrokerTargetsMemo,
+  };
+}
 
+async function scrapeBrokerTargetPrices(
+  stockCode: string,
+  name: string,
+): Promise<BrokerTargetsPayload> {
   let cache =
     (await readCacheFile<TargetsCache>(CACHE)) ?? {
       builtAt: "",
       byCode: {},
     };
-  const cached = cache.byCode[stockCode];
-  if (!options?.force && cached?.builtAt) {
-    const age = Date.now() - Date.parse(cached.builtAt);
-    const ttl = cached.targets?.length ? TTL_HIT_MS : TTL_EMPTY_MS;
-    if (Number.isFinite(age) && age >= 0 && age < ttl) {
-      return cached;
-    }
-  }
 
   const byBroker = new Map<string, BrokerTargetPrice>();
 
-  const [
-    gnewsRows,
-    bingRows,
-    cnyesRows,
-    yahooRows,
-    lastPrice,
-  ] = await Promise.all([
-    withBudget(
-      collectFromGoogleNews(stockCode, name).catch(() => [] as BrokerTargetPrice[]),
-      FETCH_BUDGET_MS,
-    ),
-    withBudget(
-      collectFromBingNews(stockCode, name).catch(() => [] as BrokerTargetPrice[]),
-      FETCH_BUDGET_MS,
-    ),
-    withBudget(
-      collectFromCnyes(stockCode, name).catch(() => [] as BrokerTargetPrice[]),
-      FETCH_BUDGET_MS,
-    ),
-    withBudget(
-      collectFromYahooAdr(stockCode).catch(() => [] as BrokerTargetPrice[]),
-      FETCH_BUDGET_MS,
-    ),
-    withBudget(fetchLastPrice(stockCode), Math.min(8000, FETCH_BUDGET_MS)),
-  ]);
+  const [gnewsRows, bingRows, cnyesRows, yahooRows, lastPrice] =
+    await Promise.all([
+      withBudget(
+        collectFromGoogleNews(stockCode, name).catch(
+          () => [] as BrokerTargetPrice[],
+        ),
+        FETCH_BUDGET_MS,
+      ),
+      withBudget(
+        collectFromBingNews(stockCode, name).catch(
+          () => [] as BrokerTargetPrice[],
+        ),
+        FETCH_BUDGET_MS,
+      ),
+      withBudget(
+        collectFromCnyes(stockCode, name).catch(
+          () => [] as BrokerTargetPrice[],
+        ),
+        FETCH_BUDGET_MS,
+      ),
+      withBudget(
+        collectFromYahooAdr(stockCode).catch(() => [] as BrokerTargetPrice[]),
+        FETCH_BUDGET_MS,
+      ),
+      withBudget(fetchLastPrice(stockCode), Math.min(6000, FETCH_BUDGET_MS)),
+    ]);
 
   for (const batch of [gnewsRows, bingRows, cnyesRows, yahooRows]) {
     if (!batch) continue;
@@ -1269,7 +1266,87 @@ export async function getBrokerTargetPrices(
   cache.byCode[stockCode] = payload;
   cache.builtAt = new Date().toISOString();
   await writeCacheFile(CACHE, cache).catch(() => null);
+  const { memo } = brokerTargetsFlightBag();
+  memo.set(stockCode, { at: Date.now(), value: payload });
   return payload;
+}
+
+/**
+ * 取得個股內外資券商目標價／預估 EPS 列表（快取優先；可 force）。
+ * 日終暖機寫入的快取會直接命中；過期快取先回傳再背景刷新，避免查詢卡在多來源刮取。
+ */
+export async function getBrokerTargetPrices(
+  code: string,
+  options?: { name?: string | null; force?: boolean },
+): Promise<BrokerTargetsPayload> {
+  const stockCode = code.trim();
+  const name = (options?.name ?? "").trim() || stockCode;
+  const empty = (reason: string): BrokerTargetsPayload => ({
+    code: stockCode,
+    name,
+    targets: [],
+    builtAt: new Date().toISOString(),
+    source: "multi",
+    emptyReason: reason,
+  });
+
+  if (!/^\d{4}$/.test(stockCode)) {
+    return empty("代號格式不符");
+  }
+
+  const { flight, memo } = brokerTargetsFlightBag();
+
+  if (!options?.force) {
+    const mem = memo.get(stockCode);
+    if (mem && Date.now() - mem.at < TTL_HIT_MS) {
+      const age = Date.now() - Date.parse(mem.value.builtAt || "");
+      const ttl = mem.value.targets?.length ? TTL_HIT_MS : TTL_EMPTY_MS;
+      if (Number.isFinite(age) && age >= 0 && age < ttl) {
+        return mem.value;
+      }
+    }
+  }
+
+  const cache =
+    (await readCacheFile<TargetsCache>(CACHE)) ?? {
+      builtAt: "",
+      byCode: {},
+    };
+  const cached = cache.byCode[stockCode];
+  if (!options?.force && cached?.builtAt) {
+    const age = Date.now() - Date.parse(cached.builtAt);
+    const ttl = cached.targets?.length ? TTL_HIT_MS : TTL_EMPTY_MS;
+    if (Number.isFinite(age) && age >= 0 && age < ttl) {
+      memo.set(stockCode, { at: Date.now(), value: cached });
+      return cached;
+    }
+    // 過期但仍在寬限內：立刻回傳日終／前次暖機結果，背景刷新
+    if (
+      Number.isFinite(age) &&
+      age >= 0 &&
+      age < STALE_SERVE_MS &&
+      (cached.targets?.length || age < TTL_EMPTY_MS * 6)
+    ) {
+      memo.set(stockCode, { at: Date.now(), value: cached });
+      if (!flight.has(stockCode)) {
+        const p = scrapeBrokerTargetPrices(
+          stockCode,
+          cached.name || name,
+        ).finally(() => flight.delete(stockCode));
+        flight.set(stockCode, p);
+      }
+      return cached;
+    }
+  }
+
+  const existing = flight.get(stockCode);
+  if (existing && !options?.force) return existing;
+
+  const p = scrapeBrokerTargetPrices(stockCode, name).finally(() =>
+    flight.delete(stockCode),
+  );
+  flight.set(stockCode, p);
+  return p;
 }
 
 function warmBag() {

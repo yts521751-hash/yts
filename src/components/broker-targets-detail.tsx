@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { BrokerTargetPrice } from "@/lib/broker-targets";
 import { cn } from "@/lib/utils";
 
@@ -24,29 +24,21 @@ type ApiPayload = {
   source?: string;
 };
 
+type ClientHit = {
+  targets: BrokerTargetPrice[];
+  emptyReason: string | null;
+  at: number;
+};
+
+const CLIENT_TTL_MS = 30 * 60 * 1000;
+const clientBrokerCache = new Map<string, ClientHit>();
+
 function fmtTarget(n: number) {
   if (!Number.isFinite(n)) return "—";
   return n >= 100 ? n.toLocaleString("zh-TW") : n.toFixed(1);
 }
 
-function fmtEps(n: number) {
-  if (!Number.isFinite(n)) return "—";
-  return n >= 100 ? n.toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : n.toFixed(2);
-}
-
-function rowPrimary(r: BrokerTargetPrice): string {
-  const parts: string[] = [];
-  if (r.target != null && Number.isFinite(r.target)) {
-    parts.push(`目標價 ${fmtTarget(r.target)}`);
-  }
-  if (r.eps != null && Number.isFinite(r.eps)) {
-    const year = r.epsYear ? `${r.epsYear} ` : "";
-    parts.push(`預估 ${year}EPS ${fmtEps(r.eps)}`);
-  }
-  return parts.length ? parts.join("，") : "—";
-}
-
-/** 價值選股／查詢：「依據」＝逐家券商目標價／預估 EPS（非 FactSet 共識） */
+/** 價值選股／查詢：「依據」＝逐家券商目標價（非 FactSet 共識） */
 export function BrokerTargetsDetail({
   code,
   name,
@@ -63,9 +55,42 @@ export function BrokerTargetsDetail({
   );
   const [emptyReason, setEmptyReason] = useState<string | null>(null);
   const [fetched, setFetched] = useState(() => initialTargets != null);
+  const abortRef = useRef<AbortController | null>(null);
+  const codeRef = useRef(code);
+
+  // 換股時重置，並優先吃本機快取（日終暖機後第二次查詢極快）
+  useEffect(() => {
+    if (codeRef.current === code) return;
+    codeRef.current = code;
+    abortRef.current?.abort();
+    const hit = clientBrokerCache.get(code);
+    if (hit && Date.now() - hit.at < CLIENT_TTL_MS) {
+      setTargets(hit.targets);
+      setEmptyReason(hit.emptyReason);
+      setFetched(true);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    setTargets(initialTargets ?? []);
+    setEmptyReason(null);
+    setFetched(initialTargets != null);
+    setLoading(false);
+    setError(null);
+  }, [code, initialTargets]);
 
   const load = useCallback(async () => {
     if (!/^\d{4}$/.test(code)) return;
+    const cached = clientBrokerCache.get(code);
+    if (cached && Date.now() - cached.at < CLIENT_TTL_MS) {
+      setTargets(cached.targets);
+      setEmptyReason(cached.emptyReason);
+      setFetched(true);
+      return;
+    }
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
     setLoading(true);
     setError(null);
     try {
@@ -73,19 +98,29 @@ export function BrokerTargetsDetail({
       if (name) qs.set("name", name);
       const res = await fetch(`/api/broker-targets?${qs.toString()}`, {
         cache: "no-store",
+        signal: ac.signal,
       });
       const json = (await res.json()) as ApiPayload;
+      if (ac.signal.aborted) return;
       if (!res.ok || json.ok === false) {
         throw new Error(json.error || `HTTP ${res.status}`);
       }
-      setTargets(json.targets ?? []);
-      setEmptyReason(json.emptyReason ?? null);
+      const nextTargets = json.targets ?? [];
+      const nextEmpty = json.emptyReason ?? null;
+      setTargets(nextTargets);
+      setEmptyReason(nextEmpty);
       setFetched(true);
+      clientBrokerCache.set(code, {
+        targets: nextTargets,
+        emptyReason: nextEmpty,
+        at: Date.now(),
+      });
     } catch (e) {
+      if (ac.signal.aborted) return;
       setError(e instanceof Error ? e.message : "載入失敗");
       setFetched(true);
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   }, [code, name]);
 
@@ -96,6 +131,10 @@ export function BrokerTargetsDetail({
   useEffect(() => {
     if (open && !fetched && !loading) void load();
   }, [open, fetched, loading, load]);
+
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
 
   const countLabel = fetched
     ? targets.length
@@ -112,7 +151,7 @@ export function BrokerTargetsDetail({
         aria-expanded={open}
       >
         <span className="font-medium text-foreground/90">
-          券商／外資報告
+          券商目標價依據
           {countLabel}
           {loading ? " · 載入中…" : ""}
         </span>
@@ -129,14 +168,12 @@ export function BrokerTargetsDetail({
             <p className="text-[11px] text-[var(--mk-ebb)]">{error}</p>
           ) : null}
           {loading && !targets.length ? (
-            <p className="text-muted-foreground">
-              正在查詢內外資券商目標價與預估 EPS…
-            </p>
+            <p className="text-muted-foreground">正在查詢內外資券商目標價…</p>
           ) : null}
           {!loading && fetched && !targets.length ? (
             <p className="leading-relaxed text-muted-foreground">
-              {emptyReason || "尚無逐家券商目標價或預估 EPS"}
-              。僅在公開新聞能辨識「具名券商＋目標價／EPS」時顯示；無具名券商報道時會留空。
+              {emptyReason || "尚無逐家券商目標價"}
+              。僅在公開新聞標題／內文能辨識「券商＋絕對目標價」時顯示；無具名券商報道時會留空。
             </p>
           ) : null}
           {targets.length ? (
@@ -173,8 +210,14 @@ export function BrokerTargetsDetail({
                       </span>
                     ) : null}
                   </span>
-                  <span className="max-w-[58%] shrink-0 text-right font-semibold tabular-nums leading-snug">
-                    {rowPrimary(r)}
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {r.target != null ? fmtTarget(r.target) : "—"}
+                    {r.eps != null ? (
+                      <span className="ml-1.5 font-normal text-muted-foreground">
+                        EPS {r.eps.toFixed(2)}
+                        {r.epsYear ? `（${r.epsYear}）` : ""}
+                      </span>
+                    ) : null}
                   </span>
                 </li>
               ))}
@@ -182,9 +225,9 @@ export function BrokerTargetsDetail({
           ) : null}
           {targets.length ? (
             <p className="text-[10px] leading-relaxed text-muted-foreground">
-              取自 Google／Bing 新聞、鉅亨等公開報道中的具名券商研究（非 FactSet
-              共識彙總）；同券商保留較新一筆，目標價與預估
-              EPS 可分開補齊。點券商名可開啟來源。
+              目標價／EPS 取自 Google 新聞、Bing、鉅亨、Yahoo ADR
+              等公開報道中的具名券商研究（非 FactSet
+              共識彙總）；同券商保留較新一筆。點券商名可開啟來源。
             </p>
           ) : null}
         </div>

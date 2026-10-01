@@ -256,14 +256,86 @@ export async function buildValuePicks(options?: {
   return payload;
 }
 
+const LOOKUP_MEMO_TTL_MS = 5 * 60 * 1000;
+
+function lookupMemoBag() {
+  const g = globalThis as typeof globalThis & {
+    __jinliuValueLookupMemo?: Map<
+      string,
+      { at: number; value: StockValueLookup | null }
+    >;
+  };
+  if (!g.__jinliuValueLookupMemo) g.__jinliuValueLookupMemo = new Map();
+  return g.__jinliuValueLookupMemo;
+}
+
+function normalizeLookupKey(query: string) {
+  return query.trim().toLowerCase();
+}
+
+function lookupFromValueRow(
+  row: ValuePickRow,
+  ymd: string,
+  date: string,
+): StockValueLookup {
+  return {
+    code: row.code,
+    name: row.name,
+    close: row.close,
+    changePct: row.changePct,
+    dayAmt: row.dayAmt,
+    nextYearEps: row.nextYearEps,
+    baseEps: row.baseEps,
+    epsYoy: row.epsYoy,
+    forwardPe: row.forwardPe,
+    epsSource: row.epsSource,
+    revenueYoy: null,
+    revenueMonth: null,
+    brokers: row.brokers ?? [],
+    consensusBasis: row.consensusBasis ?? null,
+    passesScreen: true,
+    ymd,
+    date,
+  };
+}
+
 /**
  * 以代號或名稱查單股，回傳與價值選股相同口徑的指標＋明年 EPS 依據。
+ * 快取優先、不阻塞券商目標價刮取（目標價由 /api/broker-targets 懶載）。
  */
 export async function lookupStockValue(
   query: string,
 ): Promise<StockValueLookup | null> {
   const q = query.trim();
   if (!q) return null;
+
+  const memoKey = normalizeLookupKey(q);
+  const memo = lookupMemoBag();
+  const hit = memo.get(memoKey);
+  if (hit && Date.now() - hit.at < LOOKUP_MEMO_TTL_MS) {
+    return hit.value;
+  }
+
+  // 快路徑：已在價值選股名單 → 直接組結果（含 PE／EPS）
+  const vp = await readValuePicksCache().catch(() => null);
+  if (vp?.rows?.length) {
+    const needle = q.toLowerCase();
+    const row =
+      (/^\d{4}$/.test(q) && vp.rows.find((r) => r.code === q)) ||
+      vp.rows.find(
+        (r) =>
+          r.name === q ||
+          r.name.toLowerCase().includes(needle) ||
+          needle.includes(r.name.toLowerCase()),
+      ) ||
+      null;
+    if (row) {
+      const value = lookupFromValueRow(row, vp.ymd, vp.date);
+      memo.set(memoKey, { at: Date.now(), value });
+      memo.set(normalizeLookupKey(row.code), { at: Date.now(), value });
+      return value;
+    }
+  }
 
   const days = await listCachedTradingDays(1, 40);
   const ymd = days[0];
@@ -298,7 +370,7 @@ export async function lookupStockValue(
     const map = await loadIndustryMap().catch(() => null);
     if (map?.stocks?.length) {
       const needle = q.toLowerCase();
-      const hit =
+      const hitStock =
         map.stocks.find((s) => s.code === q) ||
         map.stocks.find(
           (s) =>
@@ -306,26 +378,36 @@ export async function lookupStockValue(
             s.name.toLowerCase().includes(needle) ||
             needle.includes(s.name.toLowerCase()),
         );
-      if (hit) {
-        code = hit.code;
-        name = hit.name;
+      if (hitStock) {
+        code = hitStock.code;
+        name = hitStock.name;
       }
     }
   }
 
-  if (!code) return null;
+  if (!code) {
+    memo.set(memoKey, { at: Date.now(), value: null });
+    return null;
+  }
+
+  // 代號命中記憶體／名單快取
+  const byCode = memo.get(normalizeLookupKey(code));
+  if (byCode && Date.now() - byCode.at < LOOKUP_MEMO_TTL_MS) {
+    memo.set(memoKey, { at: Date.now(), value: byCode.value });
+    return byCode.value;
+  }
 
   const quote = quotes.get(code);
   const close = quote?.close ?? 0;
   const changePct = quote?.changePct ?? 0;
   if (quote) name = quote.name.trim() || name || code;
 
-  const regular = await applyRegularTurnover(quotes, ymd, {
-    skipNetwork: true,
-  });
+  const [regular, fundMap] = await Promise.all([
+    applyRegularTurnover(quotes, ymd, { skipNetwork: true }),
+    enrichStockFundamentals([code], { force: false, preferStale: true }),
+  ]);
   const dayAmt = round2((regular.get(code) ?? quote?.turnover ?? 0) / 1e8);
 
-  const fundMap = await enrichStockFundamentals([code], { force: false });
   const f = fundMap.get(code);
   const nextYearEps = f?.nextYearEps ?? null;
   const baseEps = f?.baseEps ?? null;
@@ -349,7 +431,7 @@ export async function lookupStockValue(
       f?.epsSource?.startsWith("cnyes-factset-"),
   );
 
-  return {
+  const value: StockValueLookup = {
     code,
     name: name || code,
     close: round2(close),
@@ -368,4 +450,11 @@ export async function lookupStockValue(
     ymd,
     date: ymdToIso(ymd),
   };
+  memo.set(memoKey, { at: Date.now(), value });
+  memo.set(normalizeLookupKey(code), { at: Date.now(), value });
+  if (memo.size > 200) {
+    const first = memo.keys().next().value;
+    if (first) memo.delete(first);
+  }
+  return value;
 }

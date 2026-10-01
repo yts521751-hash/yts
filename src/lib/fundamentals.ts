@@ -113,12 +113,21 @@ function pickYoy(row: Record<string, string>): number | null {
   return null;
 }
 
-async function loadRevenueMap(force = false): Promise<RevenueCache> {
+async function loadRevenueMap(
+  force = false,
+  options?: { preferStale?: boolean },
+): Promise<RevenueCache> {
   if (!force) {
     const cached = await readCacheFile<RevenueCache>(REVENUE_CACHE);
     if (cached?.byCode && cached.builtAt) {
       const age = Date.now() - Date.parse(cached.builtAt);
-      if (Number.isFinite(age) && age >= 0 && age < REVENUE_TTL_MS) return cached;
+      if (Number.isFinite(age) && age >= 0 && age < REVENUE_TTL_MS) {
+        return cached;
+      }
+      // 單股查詢：寧可舊營收也不要卡住整份市場月營收重抓
+      if (options?.preferStale && Object.keys(cached.byCode).length) {
+        return cached;
+      }
     }
   }
 
@@ -370,22 +379,50 @@ function consensusRowsFromCnyes(
   };
 }
 
+/** 短逾時 JSON（單股查詢用；避免 curl 預設 120s） */
+async function fetchJsonQuick<T>(
+  url: string,
+  timeoutMs = 5000,
+): Promise<T | null> {
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "JinMai/1.0 (fundamentals; lookup)",
+        Accept: "application/json,text/plain,*/*",
+      },
+      cache: "no-store",
+      signal: ac.signal,
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** 全市場法人／外資預估 EPS 中位數（Cnyes 轉發 FactSet estimateProfit） */
-async function fetchCnyesFactsetEps(code: string): Promise<EpsEntry | null> {
+async function fetchCnyesFactsetEps(
+  code: string,
+  options?: { quick?: boolean },
+): Promise<EpsEntry | null> {
   const symbol = `TWS:${code}:STOCK`;
   const url =
     "https://marketinfo.api.cnyes.com/mi/api/v1/financialIndicator/estimateProfit/" +
     `${encodeURIComponent(symbol)}?type=eps`;
   try {
-    const payload =
-      (await fetchJsonViaCurl<{
-        statusCode?: number;
-        data?: CnyesEpsRow[] | null;
-      }>(url)) ??
-      (await fetchJson<{
-        statusCode?: number;
-        data?: CnyesEpsRow[] | null;
-      }>(url));
+    type Payload = {
+      statusCode?: number;
+      data?: CnyesEpsRow[] | null;
+    };
+    const payload = options?.quick
+      ? ((await fetchJsonQuick<Payload>(url, 4500)) ??
+        (await fetchJson<Payload>(url, 1)))
+      : ((await fetchJsonViaCurl<Payload>(url)) ??
+        (await fetchJson<Payload>(url)));
     const rows = (payload?.data ?? []).filter((r) => {
       if (typeof r.financialYear !== "number") return false;
       if (cnyesEpsValue(r) == null) return false;
@@ -652,18 +689,25 @@ async function fetchFinmindTtmGrowth(code: string): Promise<EpsEntry | null> {
 /** 為排行個股補上營收 YoY 與 EPS 成長率 */
 export async function enrichStockFundamentals(
   codes: string[],
-  options?: { force?: boolean },
+  options?: {
+    force?: boolean;
+    /** 單股查詢：接受過期快取、短逾時、不預先打 Yahoo crumb */
+    preferStale?: boolean;
+  },
 ): Promise<Map<string, StockFundamentals>> {
   const uniq = [...new Set(codes.filter((c) => /^\d{4}$/.test(c)))];
   const result = new Map<string, StockFundamentals>();
   if (!uniq.length) return result;
 
-  const revenue = await loadRevenueMap(Boolean(options?.force));
-  let epsCache =
-    (await readCacheFile<EpsCache>(EPS_CACHE)) ?? {
-      builtAt: "",
-      byCode: {},
-    };
+  const preferStale = Boolean(options?.preferStale) && !options?.force;
+  const quick = preferStale || uniq.length <= 2;
+
+  const [revenue, epsCacheRaw, industry] = await Promise.all([
+    loadRevenueMap(Boolean(options?.force), { preferStale }),
+    readCacheFile<EpsCache>(EPS_CACHE),
+    loadIndustryMap().catch(() => null),
+  ]);
+  let epsCache = epsCacheRaw ?? { builtAt: "", byCode: {} };
   const epsAge = Date.now() - Date.parse(epsCache.builtAt || "");
   const epsFresh =
     !options?.force &&
@@ -671,10 +715,13 @@ export async function enrichStockFundamentals(
     epsAge >= 0 &&
     epsAge < EPS_TTL_MS;
 
-  const industry = await loadIndustryMap().catch(() => null);
   const needEps = uniq.filter((code) => {
     const entry = epsCache.byCode[code];
     if (!entry?.epsSource) return true;
+    // 單股查詢：只要有可用 EPS 數字就先回，不必同步補 brokers／重抓
+    if (preferStale && entry.nextYearEps != null && entry.baseEps != null) {
+      return false;
+    }
     // 舊版 Yahoo／平均／財報推估快取改抓全市場法人共識中位數
     if (!entry.epsSource.startsWith("cnyes-factset-median:")) return true;
     // 舊快取缺依據列 → 重抓一次補 brokers／consensusBasis
@@ -684,14 +731,23 @@ export async function enrichStockFundamentals(
   });
 
   if (needEps.length) {
-    const auth = await getYahooAuth();
-    await mapPool(needEps, 4, async (code) => {
-      const market = industry?.byCode?.[code]?.market;
-      let eps = await fetchCnyesFactsetEps(code);
-      if (!eps && auth) eps = await fetchYahooEps(code, market, auth);
-      if (!eps) eps = await fetchFinmindTtmGrowth(code);
+    // 先並行打 Cnyes；只有仍缺資料才取 Yahoo crumb（避免每次查詢卡 20s+）
+    await mapPool(needEps, quick ? 2 : 4, async (code) => {
+      const eps = await fetchCnyesFactsetEps(code, { quick });
       if (eps) epsCache.byCode[code] = eps;
     });
+    const stillNeed = needEps.filter((code) => !epsCache.byCode[code]?.epsSource);
+
+    if (stillNeed.length) {
+      const auth = await getYahooAuth();
+      await mapPool(stillNeed, quick ? 2 : 4, async (code) => {
+        const market = industry?.byCode?.[code]?.market;
+        let eps = auth ? await fetchYahooEps(code, market, auth) : null;
+        if (!eps) eps = await fetchFinmindTtmGrowth(code);
+        if (eps) epsCache.byCode[code] = eps;
+      });
+    }
+
     epsCache.builtAt = new Date().toISOString();
     await writeCacheFile(EPS_CACHE, epsCache);
   }
@@ -716,7 +772,7 @@ export async function enrichStockFundamentals(
 /** 讀單一代號基本面（沿用快取；缺則抓） */
 export async function getStockFundamentals(
   code: string,
-  options?: { force?: boolean },
+  options?: { force?: boolean; preferStale?: boolean },
 ): Promise<StockFundamentals | null> {
   if (!/^\d{4}$/.test(code)) return null;
   const map = await enrichStockFundamentals([code], options);

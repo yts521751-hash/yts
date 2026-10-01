@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -29,6 +36,42 @@ import {
 } from "@/components/broker-targets-detail";
 
 type SortKey = "epsYoy" | "forwardPe" | "dayAmt" | "close" | "changePct";
+
+const LOOKUP_CLIENT_TTL_MS = 30 * 60 * 1000;
+const lookupClientCache = new Map<
+  string,
+  { at: number; value: StockValueLookup }
+>();
+
+function lookupCacheKey(q: string) {
+  return q.trim().toLowerCase();
+}
+
+function lookupFromLocalRow(
+  row: ValuePickRow,
+  ymd: string,
+  date: string,
+): StockValueLookup {
+  return {
+    code: row.code,
+    name: row.name,
+    close: row.close,
+    changePct: row.changePct,
+    dayAmt: row.dayAmt,
+    nextYearEps: row.nextYearEps,
+    baseEps: row.baseEps,
+    epsYoy: row.epsYoy,
+    forwardPe: row.forwardPe,
+    epsSource: row.epsSource,
+    revenueYoy: null,
+    revenueMonth: null,
+    brokers: row.brokers ?? [],
+    consensusBasis: row.consensusBasis ?? null,
+    passesScreen: true,
+    ymd,
+    date,
+  };
+}
 
 function sortValue(row: ValuePickRow, key: SortKey) {
   if (key === "forwardPe") return row.forwardPe;
@@ -64,6 +107,9 @@ export function ValuePicksClient({
   const [lookup, setLookup] = useState<StockValueLookup | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const lookupAbortRef = useRef<AbortController | null>(null);
+  const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupSeqRef = useRef(0);
 
   const load = useCallback(async (force = false) => {
     setError(null);
@@ -103,35 +149,106 @@ export function ValuePicksClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const runLookup = useCallback(async () => {
-    const q = query.trim();
+  const runLookup = useCallback(async (raw?: string) => {
+    const q = (raw ?? query).trim();
     if (!q) {
       setLookup(null);
       setLookupError(null);
       return;
     }
+
+    const key = lookupCacheKey(q);
+    const cached = lookupClientCache.get(key);
+    if (cached && Date.now() - cached.at < LOOKUP_CLIENT_TTL_MS) {
+      setLookup(cached.value);
+      setLookupError(null);
+      setLookupLoading(false);
+      return;
+    }
+
+    // 本機價值選股列：立刻畫出 PE／EPS，不等 API／券商刮取
+    const localRows = data?.rows ?? [];
+    if (localRows.length) {
+      const needle = q.toLowerCase();
+      const row =
+        (/^\d{4}$/.test(q) && localRows.find((r) => r.code === q)) ||
+        localRows.find(
+          (r) =>
+            r.name === q ||
+            r.name.toLowerCase().includes(needle) ||
+            needle.includes(r.name.toLowerCase()),
+        ) ||
+        null;
+      if (row && data) {
+        const instant = lookupFromLocalRow(
+          row,
+          data.ymd,
+          data.date,
+        );
+        setLookup(instant);
+        setLookupError(null);
+        lookupClientCache.set(key, { at: Date.now(), value: instant });
+        lookupClientCache.set(lookupCacheKey(row.code), {
+          at: Date.now(),
+          value: instant,
+        });
+        // 仍背景確認一次（通常命中伺服器記憶體／名單快取）
+      }
+    }
+
+    lookupAbortRef.current?.abort();
+    const ac = new AbortController();
+    lookupAbortRef.current = ac;
+    const seq = ++lookupSeqRef.current;
     setLookupLoading(true);
     setLookupError(null);
     try {
       const res = await fetch(`/api/value?q=${encodeURIComponent(q)}`, {
         cache: "no-store",
+        signal: ac.signal,
       });
       const json = (await res.json()) as {
         ok?: boolean;
         error?: string;
         lookup?: StockValueLookup;
       };
+      if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
       if (!res.ok || json.ok === false || !json.lookup) {
         throw new Error(json.error || "查無此股");
       }
       setLookup(json.lookup);
+      lookupClientCache.set(key, { at: Date.now(), value: json.lookup });
+      lookupClientCache.set(lookupCacheKey(json.lookup.code), {
+        at: Date.now(),
+        value: json.lookup,
+      });
     } catch (e) {
-      setLookup(null);
-      setLookupError(e instanceof Error ? e.message : "查詢失敗");
+      if (ac.signal.aborted || seq !== lookupSeqRef.current) return;
+      // 已有本機即時結果時保留畫面
+      if (!lookupClientCache.has(key)) {
+        setLookup(null);
+        setLookupError(e instanceof Error ? e.message : "查詢失敗");
+      }
     } finally {
-      setLookupLoading(false);
+      if (!ac.signal.aborted && seq === lookupSeqRef.current) {
+        setLookupLoading(false);
+      }
     }
-  }, [query]);
+  }, [query, data, data?.rows, data?.ymd, data?.date]);
+
+  const scheduleLookup = useCallback(() => {
+    if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    lookupDebounceRef.current = setTimeout(() => {
+      void runLookup();
+    }, 180);
+  }, [runLookup]);
+
+  useEffect(() => {
+    return () => {
+      lookupAbortRef.current?.abort();
+      if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    };
+  }, []);
 
   const rows = useMemo(() => {
     const list = [...(data?.rows ?? [])];
@@ -221,6 +338,10 @@ export function ValuePicksClient({
           className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center"
           onSubmit={(e) => {
             e.preventDefault();
+            if (lookupDebounceRef.current) {
+              clearTimeout(lookupDebounceRef.current);
+              lookupDebounceRef.current = null;
+            }
             void runLookup();
           }}
         >
@@ -228,17 +349,23 @@ export function ValuePicksClient({
             <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setQuery(v);
+                // 四位代號輸入完自動查（debounce＋取消前一次）
+                if (/^\d{4}$/.test(v.trim())) scheduleLookup();
+              }}
               placeholder="查詢單一股票（代號或名稱，如 2330／台積電）"
               className="w-full rounded-xl border border-border/50 bg-[var(--panel)]/80 py-2.5 pl-9 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              aria-busy={lookupLoading}
             />
           </div>
           <button
             type="submit"
-            disabled={lookupLoading || !query.trim()}
+            disabled={!query.trim()}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border/50 bg-muted/30 px-4 py-2.5 text-xs font-medium transition hover:bg-muted/60 disabled:opacity-50"
           >
-            {lookupLoading ? "查詢中…" : "查詢"}
+            {lookupLoading ? "更新中…" : "查詢"}
           </button>
         </form>
 
