@@ -14,10 +14,13 @@ export function marketHome(market: MarketId) {
   return market === "us" ? "/us" : "/";
 }
 
-/** 美股版不提供均線掃描／產業 K 線，對應路徑改回美股首頁 */
+/** 美股版不提供均線掃描／產業流／產業 K 線，對應路徑改回美股首頁 */
 function usPathWithoutRemovedFeatures(path: string) {
   if (path === "/" || path === "") return "/us";
   if (path === "/ma" || path.startsWith("/ma/")) return "/us";
+  if (path === "/industry-flow" || path.startsWith("/industry-flow/")) {
+    return "/us";
+  }
   if (path === "/sectors" || path.startsWith("/sectors/")) return "/us";
   return `/us${path}`;
 }

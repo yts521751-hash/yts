@@ -37,6 +37,7 @@ function navItems(market: MarketId) {
     ];
   }
   return [
+    { href: "/industry-flow", label: "產業流" },
     { href: "/ma", label: "均線掃描" },
     { href: "/wind", label: "風度" },
     { href: "/turnover", label: "成交排行" },

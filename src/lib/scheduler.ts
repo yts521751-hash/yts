@@ -301,7 +301,8 @@ export function startScheduler() {
         !meta.artifacts.ma ||
         !meta.artifacts.wind ||
         !meta.artifacts.turnoverClose ||
-        !meta.artifacts.valuePicks;
+        !meta.artifacts.valuePicks ||
+        !meta.artifacts.industryFlow;
       if (!active || packageThin) {
         console.log(
           `[scheduler] boot package warm (active=${Boolean(active)} thin=${packageThin})`,

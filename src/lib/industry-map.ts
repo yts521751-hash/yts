@@ -4,12 +4,21 @@
  */
 
 import iconv from "iconv-lite";
+import {
+  industryMegaGroup,
+  industrySectorId,
+  normalizeIndustryName,
+  type IndustryMegaGroup,
+} from "@/lib/industry-taxonomy";
 import { readCacheFile, writeCacheFile } from "@/lib/tw-market";
 
 export type IndustryStock = {
   code: string;
   name: string;
+  /** 正規化後短名（聚合鍵／顯示） */
   industry: string;
+  /** 電子／金融／傳產／其他 */
+  megaGroup: IndustryMegaGroup;
   market: "twse" | "tpex";
 };
 
@@ -22,21 +31,6 @@ export type IndustryMapPayload = {
 };
 
 const CACHE = "industry-map.json";
-
-function normalizeIndustry(raw: string): string {
-  const s = raw.replace(/\s+/g, "").trim();
-  const aliases: Record<string, string> = {
-    觀光事業: "觀光餐旅",
-    生技醫療業: "生技醫療",
-    建材營造業: "建材營造",
-    金融保險業: "金融保險",
-    貿易百貨業: "貿易百貨",
-    油電燃氣業: "油電燃氣",
-    通訊網路業: "通信網路業",
-    其他業: "其他",
-  };
-  return aliases[s] || s;
-}
 
 async function fetchIsinMode(mode: 2 | 4): Promise<IndustryStock[]> {
   const url = `https://isin.twse.com.tw/isin/C_public.jsp?strMode=${mode}`;
@@ -62,11 +56,34 @@ async function fetchIsinMode(mode: 2 | 4): Promise<IndustryStock[]> {
     if (!industryRaw || /認購|認售|牛熊|ETF|ETN/.test(industryRaw)) continue;
     if (/認購|認售|牛熊|權證/.test(board)) continue;
     if (!name || name.length > 16) continue;
-    const industry = normalizeIndustry(industryRaw);
+    const industry = normalizeIndustryName(industryRaw);
     if (!industry || industry.length < 2) continue;
-    out.push({ code, name, industry, market });
+    out.push({
+      code,
+      name,
+      industry,
+      megaGroup: industryMegaGroup(industry),
+      market,
+    });
   }
   return out;
+}
+
+function hydrateLegacy(cached: IndustryMapPayload): IndustryMapPayload {
+  const stocks = (cached.stocks ?? []).map((s) => {
+    const industry = normalizeIndustryName(s.industry);
+    return {
+      ...s,
+      industry,
+      megaGroup: s.megaGroup ?? industryMegaGroup(industry),
+    };
+  });
+  const byCode: Record<string, IndustryStock> = {};
+  for (const s of stocks) byCode[s.code] = s;
+  const industries = [...new Set(stocks.map((s) => s.industry))].sort((a, b) =>
+    a.localeCompare(b, "zh-Hant"),
+  );
+  return { ...cached, stocks, byCode, industries };
 }
 
 export async function loadIndustryMap(
@@ -76,7 +93,9 @@ export async function loadIndustryMap(
     const cached = await readCacheFile<IndustryMapPayload>(CACHE);
     if (cached?.stocks?.length && cached.builtAt) {
       const age = Date.now() - Date.parse(cached.builtAt);
-      if (Number.isFinite(age) && age < 1000 * 60 * 60 * 24 * 3) return cached;
+      if (Number.isFinite(age) && age < 1000 * 60 * 60 * 24 * 3) {
+        return hydrateLegacy(cached);
+      }
     }
   }
 
@@ -91,7 +110,7 @@ export async function loadIndustryMap(
   const stocks = [...merged.values()];
   if (!stocks.length) {
     const cached = await readCacheFile<IndustryMapPayload>(CACHE);
-    if (cached?.stocks?.length) return cached;
+    if (cached?.stocks?.length) return hydrateLegacy(cached);
     throw new Error("無法載入產業分類");
   }
 
@@ -112,6 +131,4 @@ export async function loadIndustryMap(
   return payload;
 }
 
-export function industrySectorId(name: string) {
-  return `ind-${name}`;
-}
+export { industrySectorId, normalizeIndustryName, industryMegaGroup };

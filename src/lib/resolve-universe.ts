@@ -3,6 +3,7 @@
  */
 
 import { industrySectorId, loadIndustryMap } from "@/lib/industry-map";
+import { industryDisplayBasis } from "@/lib/industry-taxonomy";
 import {
   SECTOR_UNIVERSE,
   type SectorDef,
@@ -43,17 +44,13 @@ function topMembersByTurnover(
     .map(({ code, name }) => ({ code, name }));
 }
 
-/** 依當日成交，把官方產業收成可讀的核心觀察名單 */
-export async function buildIndustrySectors(
-  quotes: Map<string, QuoteRow>,
-): Promise<SectorDef[]> {
-  const map = await loadIndustryMap().catch(() => null);
-  if (!map?.stocks?.length) return [];
+type IndustryBucket = { codes: string[]; names: Map<string, string> };
 
-  type Bucket = { codes: string[]; names: Map<string, string> };
-  const byIndustry = new Map<string, Bucket>();
-
-  for (const s of map.stocks) {
+function bucketByIndustry(
+  stocks: { code: string; name: string; industry: string }[],
+): Map<string, IndustryBucket> {
+  const byIndustry = new Map<string, IndustryBucket>();
+  for (const s of stocks) {
     let bucket = byIndustry.get(s.industry);
     if (!bucket) {
       bucket = { codes: [], names: new Map() };
@@ -62,7 +59,20 @@ export async function buildIndustrySectors(
     bucket.codes.push(s.code);
     bucket.names.set(s.code, s.name);
   }
+  return byIndustry;
+}
 
+/**
+ * 首頁板塊金流用：官方產業取當日成交 Top～12 代表性成分
+ * （避免全市場產業淹沒題材排行）。
+ */
+export async function buildIndustrySectors(
+  quotes: Map<string, QuoteRow>,
+): Promise<SectorDef[]> {
+  const map = await loadIndustryMap().catch(() => null);
+  if (!map?.stocks?.length) return [];
+
+  const byIndustry = bucketByIndustry(map.stocks);
   const sectors: SectorDef[] = [];
   for (const [industry, bucket] of byIndustry) {
     const members = topMembersByTurnover(
@@ -78,7 +88,54 @@ export async function buildIndustrySectors(
     sectors.push({
       id: industrySectorId(industry),
       name: industry,
-      basis: "依證交所／櫃買 ISIN 官方產業別（接近三竹產業類型），取當日成交較熱的代表性個股",
+      basis:
+        "依證交所／櫃買 ISIN 官方產業別（接近三竹產業類型），取當日成交較熱的代表性個股",
+      kind: "industry",
+      members,
+    });
+  }
+
+  return sectors.sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+}
+
+/**
+ * 產業流 Tab 用：官方產業全成分滾動（有報價才計入金流；名單含 ISIN 全成員）。
+ */
+export async function buildFullIndustrySectors(
+  quotes?: Map<string, QuoteRow>,
+): Promise<SectorDef[]> {
+  const map = await loadIndustryMap().catch(() => null);
+  if (!map?.stocks?.length) return [];
+
+  const byIndustry = bucketByIndustry(map.stocks);
+  const sectors: SectorDef[] = [];
+  for (const [industry, bucket] of byIndustry) {
+    if (bucket.codes.length < 3) continue;
+    if (
+      (industry === "其他" || industry === "其他業") &&
+      bucket.codes.length < 8
+    ) {
+      continue;
+    }
+    const members: SectorMember[] = bucket.codes.map((code) => ({
+      code,
+      name:
+        bucket.names.get(code) ||
+        quotes?.get(code)?.name ||
+        code,
+    }));
+    // 若有報價，把有成交的排前面（明細 Top 貢獻較直覺）
+    if (quotes?.size) {
+      members.sort(
+        (a, b) =>
+          (quotes.get(b.code)?.turnover ?? 0) -
+          (quotes.get(a.code)?.turnover ?? 0),
+      );
+    }
+    sectors.push({
+      id: industrySectorId(industry),
+      name: industry,
+      basis: industryDisplayBasis(),
       kind: "industry",
       members,
     });
@@ -196,9 +253,10 @@ export async function lookupSectorDef(id: string): Promise<SectorDef | null> {
         return {
           id: decoded,
           name: industry,
-          basis: "官方產業",
+          basis: industryDisplayBasis(),
           kind: "industry",
-          members: members.slice(0, 24).map(({ code, name }) => ({ code, name })),
+          // 明細／K 線：保留全成分（成交排序），不再截 Top-24
+          members: members.map(({ code, name }) => ({ code, name })),
         };
       }
     }

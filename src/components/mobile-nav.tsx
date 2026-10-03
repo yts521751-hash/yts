@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Gauge, Home, BarChart3, Gem } from "lucide-react";
+import {
+  Activity,
+  ArrowLeftRight,
+  Gauge,
+  Home,
+  BarChart3,
+  Gem,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { marketFromPath } from "@/components/market-switch";
 
@@ -20,6 +27,7 @@ export function MobileNav() {
         ] as const)
       : ([
           { href: "/", label: "資金流", icon: Home },
+          { href: "/industry-flow", label: "產業流", icon: ArrowLeftRight },
           { href: "/ma", label: "均線", icon: Activity },
           { href: "/wind", label: "風度", icon: Gauge },
           { href: "/turnover", label: "成交", icon: BarChart3 },
@@ -34,7 +42,7 @@ export function MobileNav() {
       <ul
         className={cn(
           "mx-auto grid max-w-lg",
-          market === "us" ? "grid-cols-4" : "grid-cols-5",
+          market === "us" ? "grid-cols-4" : "grid-cols-6",
         )}
       >
         {items.map(({ href, label, icon: Icon }) => {

@@ -25,9 +25,20 @@ export default async function SectorPage({ params, searchParams }: Props) {
   const raw = (await params).id;
   const id = safeDecode(raw);
   const from = (await searchParams).from;
-  const fromMa = from === "ma";
-  const backHref = fromMa ? "/ma" : from === "home" ? "/" : "/ma";
-  const backLabel = fromMa || from !== "home" ? "回產業掃描" : "回資金流";
+  const backHref =
+    from === "industry-flow"
+      ? "/industry-flow"
+      : from === "ma"
+        ? "/ma"
+        : from === "home"
+          ? "/"
+          : "/ma";
+  const backLabel =
+    from === "industry-flow"
+      ? "回產業流"
+      : from === "home"
+        ? "回資金流"
+        : "回產業掃描";
 
   const def = await lookupSectorDef(id);
 

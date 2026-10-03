@@ -53,6 +53,7 @@ export type DailyCloseMeta = {
     ma: boolean;
     turnoverClose: boolean;
     valuePicks: boolean;
+    industryFlow: boolean;
   };
   /** 本次是否略過衍生重算（已是最新） */
   skipped?: boolean;
@@ -256,6 +257,7 @@ async function runDailyClosePackageUnlocked(
     ma: false,
     turnoverClose: false,
     valuePicks: false,
+    industryFlow: false,
   };
   let asOf: string | null = null;
 
@@ -290,7 +292,8 @@ async function runDailyClosePackageUnlocked(
 
     markStep("輕量日終：並行更新衍生", 55, 96, 1, 2);
     const parallelT0 = Date.now();
-    const [stocksStep, windStep, turnoverStep, valueStep] = await Promise.all([
+    const [stocksStep, windStep, turnoverStep, valueStep, industryStep] =
+      await Promise.all([
       step("stocks", async () => {
         const { listCachedTradingDays } = await import("@/lib/tw-market");
         const { warmTurnoverExclusions } = await import(
@@ -324,10 +327,22 @@ async function runDailyClosePackageUnlocked(
         // 沿用 EPS 快取；不強制重抓數百檔
         return buildValuePicks({ force: false });
       }),
+      step("industry-flow", async () => {
+        const { rebuildIndustryFlowPayload } = await import(
+          "@/lib/build-industry-flow"
+        );
+        return rebuildIndustryFlowPayload({ cacheOnly: true });
+      }),
     ]);
 
     const parallelMs = Date.now() - parallelT0;
-    for (const s of [stocksStep, windStep, turnoverStep, valueStep]) {
+    for (const s of [
+      stocksStep,
+      windStep,
+      turnoverStep,
+      valueStep,
+      industryStep,
+    ]) {
       steps.push({
         name: s.name,
         ok: s.ok,
@@ -338,7 +353,7 @@ async function runDailyClosePackageUnlocked(
     steps.push({
       name: "parallel-bundle",
       ok: true,
-      detail: `stocks+wind+turnover+value wall=${parallelMs}ms`,
+      detail: `stocks+wind+turnover+value+industryFlow wall=${parallelMs}ms`,
       ms: parallelMs,
     });
 
@@ -359,6 +374,9 @@ async function runDailyClosePackageUnlocked(
     );
     artifacts.valuePicks = Boolean(
       valueStep.ok && valueStep.value?.rows != null,
+    );
+    artifacts.industryFlow = Boolean(
+      industryStep.ok && industryStep.value?.rows?.length,
     );
 
     // 背景暖機券商目標價（不阻塞日終）
@@ -457,8 +475,9 @@ async function runDailyClosePackageUnlocked(
   });
   artifacts.stocks = Boolean(stocksStep.ok && stocksStep.value?.rows?.length);
 
-  // wind / ma / turnover / value 互不依賴 → 並行
-  const [windStep, maStep, turnoverStep, valueStep] = await Promise.all([
+  // wind / ma / turnover / value / industry-flow 互不依賴 → 並行
+  const [windStep, maStep, turnoverStep, valueStep, industryStep] =
+    await Promise.all([
     step("wind", async () => {
       const { computeWindPayload } = await import("@/lib/wind-gauge");
       return computeWindPayload({ force: true, allowNetwork: true });
@@ -479,9 +498,17 @@ async function runDailyClosePackageUnlocked(
       const { buildValuePicks } = await import("@/lib/value-picks");
       return buildValuePicks({ force: true });
     }),
+    step("industry-flow", async () => {
+      const { rebuildIndustryFlowPayload } = await import(
+        "@/lib/build-industry-flow"
+      );
+      return rebuildIndustryFlowPayload({
+        cacheOnly: Boolean(options?.skipGapFill || smallGap),
+      });
+    }),
   ]);
 
-  for (const s of [windStep, maStep, turnoverStep, valueStep]) {
+  for (const s of [windStep, maStep, turnoverStep, valueStep, industryStep]) {
     steps.push({
       name: s.name,
       ok: s.ok,
@@ -498,6 +525,9 @@ async function runDailyClosePackageUnlocked(
   );
   artifacts.valuePicks = Boolean(
     valueStep.ok && valueStep.value?.rows != null,
+  );
+  artifacts.industryFlow = Boolean(
+    industryStep.ok && industryStep.value?.rows?.length,
   );
   if (flowStep.ok && !smallGap) {
     artifacts.klines = true;

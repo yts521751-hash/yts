@@ -72,6 +72,7 @@ describe("gap-sync", () => {
       ma: true,
       turnoverClose: true,
       valuePicks: true,
+      industryFlow: true,
     };
     assert.equal(artifactsComplete(arts), true);
     assert.equal(
@@ -85,6 +86,13 @@ describe("gap-sync", () => {
     assert.equal(
       isPackageUpToDate(
         { asOf: "2026-09-26", artifacts: { ...arts, valuePicks: false } },
+        "20260926",
+      ),
+      false,
+    );
+    assert.equal(
+      isPackageUpToDate(
+        { asOf: "2026-09-26", artifacts: { ...arts, industryFlow: false } },
         "20260926",
       ),
       false,
@@ -105,6 +113,7 @@ describe("gap-sync", () => {
             ma: false,
             turnoverClose: false,
             valuePicks: false,
+            industryFlow: false,
           },
         },
         "20260924",

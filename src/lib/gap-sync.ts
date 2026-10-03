@@ -206,6 +206,8 @@ export type PackageArtifacts = {
   ma: boolean;
   turnoverClose: boolean;
   valuePicks: boolean;
+  /** 產業流（全成分 EOD）；舊 meta 缺欄視為未齊 */
+  industryFlow?: boolean;
 };
 
 export function artifactsComplete(
@@ -220,7 +222,8 @@ export function artifactsComplete(
       artifacts.wind &&
       artifacts.ma &&
       artifacts.turnoverClose &&
-      artifacts.valuePicks,
+      artifacts.valuePicks &&
+      artifacts.industryFlow,
   );
 }
 

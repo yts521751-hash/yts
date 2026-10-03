@@ -46,4 +46,6 @@ export const CLIENT_CACHE_KEYS = {
   ma: "jinliu:cache:ma-screener:v5",
   /** v4：含本益成長比 PEG；對齊最新 quotes 日 close／PE */
   value: "jinliu:cache:value-picks:v4",
+  /** 台股盤後產業流（全成分混合金流） */
+  industryFlow: "jinliu:cache:industry-flow:v1",
 } as const;

@@ -500,6 +500,13 @@ export function HomeApp({
           <>
             依成交額→淨流排序，手機與電腦共用同一份排名。也可看{" "}
             <Link
+              href="/industry-flow"
+              className="font-medium text-[var(--mk-anchor)] underline-offset-4 hover:underline"
+            >
+              產業資金流
+            </Link>
+            （全成分）或{" "}
+            <Link
               href="/ma"
               className="font-medium text-[var(--mk-anchor)] underline-offset-4 hover:underline"
             >
