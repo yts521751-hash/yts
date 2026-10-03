@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   isLikelyUsEquitySymbol,
+  parseNasdaqNumber,
   parseNasdaqScreenerRows,
   selectLiquidCommonByDollarVolume,
   cleanNasdaqCompanyName,
@@ -11,6 +12,9 @@ import {
   US_YI_USD,
   AMOUNT_BASIS,
   UNIVERSE_BASIS,
+  CHANGE_PCT_BASIS_MARKER,
+  changePctFromLastAndNet,
+  resolveUsTurnoverChangePct,
   rankUsTurnoverCandidates,
 } from "./turnover-us";
 import { formatUsTurnoverYi } from "./format";
@@ -27,8 +31,46 @@ describe("us turnover unit / formula", () => {
   it("amount / universe basis describe screener-driven Nasdaq path", () => {
     assert.ok(AMOUNT_BASIS.includes("Nasdaq"));
     assert.ok(AMOUNT_BASIS.includes("screener"));
+    assert.ok(AMOUNT_BASIS.includes(CHANGE_PCT_BASIS_MARKER));
     assert.ok(UNIVERSE_BASIS.includes("screener"));
     assert.ok(!UNIVERSE_BASIS.toLowerCase().includes("whitelist"));
+  });
+
+  it("parses Nasdaq percentageChange / netChange strings", () => {
+    assert.equal(parseNasdaqNumber("+1.02%"), 1.02);
+    assert.equal(parseNasdaqNumber("-2.05%"), -2.05);
+    assert.equal(parseNasdaqNumber("+3.37"), 3.37);
+    assert.equal(changePctFromLastAndNet(333.69, 3.37), (3.37 / (333.69 - 3.37)) * 100);
+  });
+
+  it("resolveUsTurnoverChangePct pairs Nasdaq close with Nasdaq session %", () => {
+    // Before: Yahoo day-file changePct (-0.81) was preferred while close was Nasdaq Oct2
+    const pct = resolveUsTurnoverChangePct({
+      closeSource: "nasdaq",
+      nasdaqPct: 1.02,
+      nasdaqNet: 3.37,
+      nasdaqLast: 333.69,
+      screenerPct: 0.5,
+      cachedPct: -0.81,
+    });
+    assert.equal(pct, 1.02);
+
+    const fromNet = resolveUsTurnoverChangePct({
+      closeSource: "nasdaq",
+      nasdaqPct: null,
+      nasdaqNet: 3.09,
+      nasdaqLast: 233.95,
+      cachedPct: 1.09,
+    });
+    assert.ok(Math.abs(fromNet - (3.09 / (233.95 - 3.09)) * 100) < 1e-9);
+
+    const yahooClose = resolveUsTurnoverChangePct({
+      closeSource: "yahoo",
+      nasdaqPct: 1.02,
+      cachedPct: -0.81,
+      screenerPct: 0.5,
+    });
+    assert.equal(yahooClose, -0.81);
   });
 
   it("formatUsTurnoverYi labels 億美元", () => {
@@ -156,6 +198,64 @@ describe("nasdaq screener liquid universe (systemic)", () => {
     const gamma = ranked.find((r) => r.code === "GAMMA");
     assert.ok(gamma);
     assert.equal(gamma!.volumeSource, "screener");
+  });
+
+  it("rankUsTurnoverCandidates uses Nasdaq session % when close is Nasdaq (not stale Yahoo)", () => {
+    const screener = parseNasdaqScreenerRows([
+      {
+        symbol: "AAPL",
+        name: "Apple Inc. Common Stock",
+        lastsale: "$330.32",
+        volume: "36000000",
+        pctchange: "-0.81%",
+        netchange: "-2.70",
+      },
+      {
+        symbol: "MU",
+        name: "Micron Technology Common Stock",
+        lastsale: "$1097.39",
+        volume: "45000000",
+        pctchange: "3.03%",
+        netchange: "32.28",
+      },
+    ]);
+    const quote = new Map([
+      [
+        "AAPL",
+        {
+          volume: 33_278_651,
+          lastPrice: 333.69,
+          percentageChange: 1.02,
+          netChange: 3.37,
+          companyName: "Apple Inc.",
+        },
+      ],
+      [
+        "MU",
+        {
+          volume: 27_337_722,
+          lastPrice: 1074.89,
+          percentageChange: -2.05,
+          netChange: -22.5,
+          companyName: "Micron Technology",
+        },
+      ],
+    ]);
+    const cachedQuotes = new Map([
+      ["AAPL", { close: 330.32, changePct: -0.81, volume: 36_306_300 }],
+      ["MU", { close: 1097.39, changePct: 3.03, volume: 45_735_400 }],
+    ]);
+    const ranked = rankUsTurnoverCandidates(screener, quote, {
+      limit: 10,
+      cachedQuotes,
+    });
+    const aapl = ranked.find((r) => r.code === "AAPL");
+    const mu = ranked.find((r) => r.code === "MU");
+    assert.ok(aapl && mu);
+    assert.equal(aapl!.close, 333.69);
+    assert.equal(aapl!.changePct, 1.02);
+    assert.equal(mu!.close, 1074.89);
+    assert.equal(mu!.changePct, -2.05);
   });
 
   it("sanity: example high-DV names land near user refs with Nasdaq vol×close", () => {

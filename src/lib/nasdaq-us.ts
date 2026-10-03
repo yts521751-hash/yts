@@ -48,6 +48,10 @@ export type NasdaqQuoteInfo = {
   /** 官方 Share Volume（股） */
   volume: number | null;
   lastPrice: number | null;
+  /** 相對前收漲跌幅（%），與 lastSalePrice 同場次 */
+  percentageChange: number | null;
+  /** 相對前收淨漲跌（USD） */
+  netChange: number | null;
 };
 
 export async function fetchNasdaqQuoteInfo(
@@ -74,6 +78,8 @@ export async function fetchNasdaqQuoteInfo(
         primaryData?: {
           lastSalePrice?: string;
           volume?: string;
+          percentageChange?: string;
+          netChange?: string;
         };
       };
     };
@@ -84,6 +90,8 @@ export async function fetchNasdaqQuoteInfo(
       companyName: String(data.data?.companyName || "").trim(),
       volume: parseNasdaqNumber(primary?.volume),
       lastPrice: parseNasdaqNumber(primary?.lastSalePrice),
+      percentageChange: parseNasdaqNumber(primary?.percentageChange),
+      netChange: parseNasdaqNumber(primary?.netChange),
     };
   } catch {
     return null;

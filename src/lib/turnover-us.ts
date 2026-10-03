@@ -63,10 +63,13 @@ export type UsTurnoverPayload = {
 };
 
 export const AMOUNT_BASIS =
-  "美股成值＝收盤價(USD)×Nasdaq成交股數÷1e8（單位：億美元；宇宙＝Nasdaq screener／movers 依美元成交額之流動普通股，非精選手動名單；Nasdaq quote 失敗時回退 screener／Yahoo volume；不含盤後）";
+  "美股成值＝收盤價(USD)×Nasdaq成交股數÷1e8（單位：億美元；漲跌幅＝與收盤同場次：優先 Nasdaq quote percentageChange／last vs prior close，否則 screener，再否則 Yahoo 日檔；宇宙＝Nasdaq screener／movers 依美元成交額之流動普通股，非精選手動名單；Nasdaq quote 失敗時回退 screener／Yahoo volume；不含盤後）";
 
 export const UNIVERSE_BASIS =
   "Nasdaq screener download＋MostActiveByDollarVolume → 濾 ETF／權證 → 依美元成交額取候選 → quote info 官方量重排 Top N";
+
+/** 快取失效標記：舊成值列把 Yahoo 日檔漲跌幅配 Nasdaq 收盤，場次錯位 */
+export const CHANGE_PCT_BASIS_MARKER = "percentageChange";
 
 /** 1 億美元 */
 export const US_YI_USD = 1e8;
@@ -76,6 +79,71 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 /** 美元成交額 → 億美元 */
 export function usdTurnoverToYi(dollarVolume: number): number {
   return dollarVolume / US_YI_USD;
+}
+
+/** last + netChange → 相對前收漲跌幅（%） */
+export function changePctFromLastAndNet(
+  last: number,
+  netChange: number,
+): number | null {
+  if (!(last > 0) || !Number.isFinite(netChange) || netChange === 0) return null;
+  const prior = last - netChange;
+  if (!(prior > 0)) return null;
+  return (netChange / prior) * 100;
+}
+
+/**
+ * 漲跌幅必須與收盤價同場次：
+ * - 收盤來自 Nasdaq → 優先 Nasdaq percentageChange／netChange
+ * - 收盤來自 Yahoo 日檔 → 用該日 changePct
+ * - 否則 screener → 最後才回退 Yahoo（避免 Nasdaq 收 × Yahoo 昨漲跌）
+ */
+export function resolveUsTurnoverChangePct(args: {
+  closeSource: "nasdaq" | "yahoo" | "screener";
+  nasdaqPct?: number | null;
+  nasdaqNet?: number | null;
+  nasdaqLast?: number | null;
+  screenerPct?: number;
+  screenerNet?: number;
+  screenerLast?: number;
+  cachedPct?: number | null;
+}): number {
+  const fromNasdaq =
+    (args.nasdaqPct != null && Number.isFinite(args.nasdaqPct)
+      ? args.nasdaqPct
+      : null) ??
+    (args.nasdaqLast != null && args.nasdaqNet != null
+      ? changePctFromLastAndNet(args.nasdaqLast, args.nasdaqNet)
+      : null);
+  const fromScreener =
+    args.screenerPct != null && args.screenerPct !== 0
+      ? args.screenerPct
+      : args.screenerLast != null && args.screenerNet != null
+        ? changePctFromLastAndNet(args.screenerLast, args.screenerNet)
+        : null;
+  const fromCache =
+    args.cachedPct != null && Number.isFinite(args.cachedPct)
+      ? args.cachedPct
+      : null;
+
+  if (args.closeSource === "nasdaq") {
+    return fromNasdaq ?? fromScreener ?? fromCache ?? 0;
+  }
+  if (args.closeSource === "yahoo") {
+    return fromCache ?? fromScreener ?? fromNasdaq ?? 0;
+  }
+  return fromScreener ?? fromNasdaq ?? fromCache ?? 0;
+}
+
+function usTurnoverCacheStale(
+  cached: UsTurnoverPayload | null | undefined,
+): boolean {
+  if (!cached?.amountBasis) return false;
+  return (
+    !cached.amountBasis.includes("Nasdaq") ||
+    !cached.amountBasis.includes("screener") ||
+    !cached.amountBasis.includes(CHANGE_PCT_BASIS_MARKER)
+  );
 }
 
 /** 候選池大小：略大於 Top N，讓 quote 校正後名次可上下移動 */
@@ -91,16 +159,21 @@ type Candidate = {
   dollarVolume: number;
 };
 
+export type UsTurnoverQuoteInfo = {
+  volume: number | null;
+  lastPrice: number | null;
+  companyName?: string;
+  percentageChange?: number | null;
+  netChange?: number | null;
+};
+
 /**
  * 純函式：把 screener 列＋quote 官方量合成最終排序列（可單測）。
  * quote 有量 → 用 quote close×vol；否則用 screener dollarVolume。
  */
 export function rankUsTurnoverCandidates(
   screenerRows: NasdaqScreenerRow[],
-  quoteByCode: Map<
-    string,
-    { volume: number | null; lastPrice: number | null; companyName?: string }
-  >,
+  quoteByCode: Map<string, UsTurnoverQuoteInfo>,
   options?: {
     limit?: number;
     cachedQuotes?: Map<
@@ -118,10 +191,16 @@ export function rankUsTurnoverCandidates(
     const cachedQ = cached?.get(code);
     const nasdaqVol =
       q?.volume != null && q.volume > 0 ? q.volume : null;
-    const close =
-      (q?.lastPrice != null && q.lastPrice > 0 ? q.lastPrice : null) ??
-      (cachedQ?.close != null && cachedQ.close > 0 ? cachedQ.close : null) ??
-      row.lastSale;
+    const nasdaqLast =
+      q?.lastPrice != null && q.lastPrice > 0 ? q.lastPrice : null;
+    const cachedClose =
+      cachedQ?.close != null && cachedQ.close > 0 ? cachedQ.close : null;
+    const closeSource: "nasdaq" | "yahoo" | "screener" = nasdaqLast
+      ? "nasdaq"
+      : cachedClose
+        ? "yahoo"
+        : "screener";
+    const close = nasdaqLast ?? cachedClose ?? row.lastSale;
     const volume =
       nasdaqVol ??
       (cachedQ?.volume != null && cachedQ.volume > 0 ? cachedQ.volume : null) ??
@@ -132,14 +211,16 @@ export function rankUsTurnoverCandidates(
         ? "yahoo"
         : "screener";
     const dollar = Math.max(0, close) * Math.max(0, volume);
-    const changePct =
-      cachedQ?.changePct ??
-      (row.pctChange !== 0
-        ? row.pctChange
-        : row.lastSale > 0 && row.netChange !== 0
-          ? (row.netChange / (row.lastSale - row.netChange || row.lastSale)) *
-            100
-          : 0);
+    const changePct = resolveUsTurnoverChangePct({
+      closeSource,
+      nasdaqPct: q?.percentageChange,
+      nasdaqNet: q?.netChange,
+      nasdaqLast,
+      screenerPct: row.pctChange,
+      screenerNet: row.netChange,
+      screenerLast: row.lastSale,
+      cachedPct: cachedQ?.changePct,
+    });
     const names = resolveUsDisplayNames({
       code,
       yahooName: cachedQ?.name || row.name,
@@ -177,10 +258,7 @@ export async function buildUsTurnoverRanking(
   const want = Math.min(100, Math.max(10, limit));
   if (!options?.force) {
     const cached = await readUsCacheFile<UsTurnoverPayload>(US_TURNOVER_CACHE);
-    const staleBasis =
-      cached?.amountBasis &&
-      (!cached.amountBasis.includes("Nasdaq") ||
-        !cached.amountBasis.includes("screener"));
+    const staleBasis = usTurnoverCacheStale(cached);
     const missingNames = cached?.rows?.some((r) => !r.nameEn || !r.nameZh);
     if (cached?.rows?.length && !staleBasis && !missingNames) {
       return {
@@ -297,10 +375,7 @@ export async function getUsTurnoverRanking(
   const want = Math.min(100, Math.max(10, limit));
   if (!options?.force) {
     const cached = await readUsCacheFile<UsTurnoverPayload>(US_TURNOVER_CACHE);
-    const staleBasis =
-      cached?.amountBasis &&
-      (!cached.amountBasis.includes("Nasdaq") ||
-        !cached.amountBasis.includes("screener"));
+    const staleBasis = usTurnoverCacheStale(cached);
     const missingNames = cached?.rows?.some((r) => !r.nameEn || !r.nameZh);
     if (cached?.rows?.length && !staleBasis && !missingNames) {
       return {
