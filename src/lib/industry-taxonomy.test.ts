@@ -6,6 +6,7 @@ import {
   normalizeIndustryName,
 } from "./industry-taxonomy";
 import { computeIndustryFlowRows } from "./industry-flow-compute";
+import { ROTATION_THEME_UNIVERSE } from "./rotation-theme-universe";
 import type { SectorDef } from "./sector-universe";
 
 describe("industry-taxonomy", () => {
@@ -117,5 +118,15 @@ describe("industry-flow full rollup", () => {
     assert.equal(rows[0].dayAmt, 250);
     // 兩檔都有貢獻（非只取 Top-1）
     assert.ok(rows[0].stocks.length >= 2);
+  });
+});
+
+describe("rotation AI supply-chain universe", () => {
+  it("keeps the explicit ASIC／矽智財 group available to industry-flow", () => {
+    const asic = ROTATION_THEME_UNIVERSE.find((x) => x.id === "asic-ip");
+    assert.ok(asic);
+    assert.equal(asic.name, "ASIC／矽智財");
+    assert.ok(asic.members.length >= 5);
+    assert.ok(asic.members.some((x) => x.code === "3661"));
   });
 });

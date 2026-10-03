@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw, Search } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -89,6 +89,7 @@ export function IndustryFlowClient({
   const [scope, setScope] = useState<ScopeFilter>("theme");
   const [mega, setMega] = useState<MegaFilter>("all");
   const [direction, setDirection] = useState<"all" | "in" | "out">("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (initial?.rows?.length) {
@@ -152,6 +153,13 @@ export function IndustryFlowClient({
       if (scope === "industry" && mega !== "all" && r.megaGroup !== mega) {
         return false;
       }
+      const needle = query.trim().toLowerCase();
+      if (
+        needle &&
+        !`${r.name} ${r.id}`.toLowerCase().includes(needle)
+      ) {
+        return false;
+      }
       return true;
     });
     const inflow = list
@@ -171,7 +179,7 @@ export function IndustryFlowClient({
       inflowTotal: inflow.reduce((sum, r) => sum + periodFlow(r, period), 0),
       outflowTotal: outflow.reduce((sum, r) => sum + periodFlow(r, period), 0),
     };
-  }, [data?.rows, scope, mega, period]);
+  }, [data?.rows, scope, mega, period, query]);
 
   return (
     <AppShell
@@ -251,6 +259,19 @@ export function IndustryFlowClient({
               <ColumnTip tip={data?.metricNote ?? COLUMN_TIPS.flow}>
                 <Chip tone="outline">EOD 混合金流 · 80/20</Chip>
               </ColumnTip>
+              <label className="relative min-w-[10rem] flex-1 sm:max-w-56">
+                <Search
+                  className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <span className="sr-only">搜尋供應鏈群組</span>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="搜尋群組，例如 ASIC"
+                  className="h-8 w-full rounded-md border border-line bg-panel py-1 pr-2 pl-8 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-[var(--mk-anchor)]"
+                />
+              </label>
             </div>
             {scope === "industry" ? (
               <div className="flex flex-wrap items-center gap-2">
