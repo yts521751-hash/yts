@@ -46,9 +46,9 @@ const PERIOD_ITEMS = [
 ];
 
 const SCOPE_ITEMS = [
+  { value: "theme" as ScopeFilter, label: "AI 供應鏈" },
   { value: "industry" as ScopeFilter, label: "官方產業" },
-  { value: "theme" as ScopeFilter, label: "題材" },
-  { value: "all" as ScopeFilter, label: "全部" },
+  { value: "all" as ScopeFilter, label: "全部對照" },
 ];
 
 const MEGA_ITEMS = [
@@ -86,7 +86,7 @@ export function IndustryFlowClient({
   const [loading, setLoading] = useState(!initial?.rows?.length);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<RankPeriod>("day");
-  const [scope, setScope] = useState<ScopeFilter>("industry");
+  const [scope, setScope] = useState<ScopeFilter>("theme");
   const [mega, setMega] = useState<MegaFilter>("all");
   const [direction, setDirection] = useState<"all" | "in" | "out">("all");
 
@@ -180,7 +180,7 @@ export function IndustryFlowClient({
       back={{ href: "/", label: "回資金流" }}
       eyebrow="INDUSTRY FLOW · EOD"
       title="產業資金流"
-      description="盤後官方產業全成分加總的混合金流排行（當天／3 天／5 天）。口徑與首頁金流相同，不是 toAlpha 成交占比偏差。"
+      description="以 AI 供應鏈多標籤群為預設的盤後混合金流排行；可切回官方產業全成分。口徑不是成交占比偏差。"
       meta={
         data
           ? `資料日 ${data.brief.date} · ${data.metricNote}`
@@ -271,8 +271,8 @@ export function IndustryFlowClient({
                 流入 {flowLadders.inflow.length} · 流出{" "}
                 {flowLadders.outflow.length}
                 {scope === "theme"
-                  ? " · 題材為人工供應鏈名單（接近 CMoney 題材，非官方產業）"
-                  : ""}
+                  ? " · AI 供應鏈群為本站獨立維護的多標籤代表股，不是官方產業"
+                  : " · AI 供應鏈群與官方產業並列對照"}
               </p>
             )}
           </div>
@@ -389,7 +389,7 @@ function FlowLadder({
                         <Chip>
                           {r.kind === "industry" && r.megaGroup
                             ? r.megaGroup
-                            : "題材"}
+                            : "AI 供應鏈"}
                         </Chip>
                         {r.fullRollup ? <Chip tone="outline">全成分</Chip> : null}
                       </span>

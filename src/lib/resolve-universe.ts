@@ -9,6 +9,7 @@ import {
   type SectorDef,
   type SectorMember,
 } from "@/lib/sector-universe";
+import { ROTATION_THEME_UNIVERSE } from "@/lib/rotation-theme-universe";
 import { isCommonStock } from "@/lib/stock-filter";
 import { discoverAutoThemes, loadAutoThemes } from "@/lib/theme-discovery";
 import {
@@ -18,7 +19,14 @@ import {
 } from "@/lib/tw-market";
 import { membersWithTurnover } from "@/lib/sector-members";
 
-const THEME_WITH_KIND: SectorDef[] = SECTOR_UNIVERSE.map((s) => ({
+const THEME_WITH_KIND: SectorDef[] = [
+  // 供應鏈輪動題材優先，與 /industry-flow 的命名／成分一致；
+  // 舊泛題材只補上未重複的 id。
+  ...ROTATION_THEME_UNIVERSE,
+  ...SECTOR_UNIVERSE.filter(
+    (s) => !ROTATION_THEME_UNIVERSE.some((rotation) => rotation.id === s.id),
+  ),
+].map((s) => ({
   ...s,
   kind: s.kind ?? ("theme" as const),
 }));

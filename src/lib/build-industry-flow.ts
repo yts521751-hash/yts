@@ -11,8 +11,8 @@ import {
 } from "@/lib/industry-flow-compute";
 import {
   buildFullIndustrySectors,
-  resolveActiveUniverse,
 } from "@/lib/resolve-universe";
+import { ROTATION_THEME_UNIVERSE } from "@/lib/rotation-theme-universe";
 import type { SectorDef } from "@/lib/sector-universe";
 import type { MarketBrief } from "@/lib/types";
 import {
@@ -30,6 +30,7 @@ import {
 } from "@/lib/tw-market";
 
 export const INDUSTRY_FLOW_CACHE = "industry-flow-active.json";
+const TAXONOMY = "ai-supply-chain+isin-official" as const;
 
 export type { IndustryFlowRow } from "@/lib/industry-flow-compute";
 
@@ -41,7 +42,7 @@ export type IndustryFlowPayload = {
   builtAt: string;
   formula: "blend-80-20";
   metricNote: string;
-  taxonomy: "isin-official+themes";
+  taxonomy: typeof TAXONOMY;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -126,13 +127,9 @@ export async function rebuildIndustryFlowPayload(options?: {
 
   const latest = dayData[0];
   const industries = await buildFullIndustrySectors(latest.quotes);
-  let themes: SectorDef[] = [];
-  try {
-    const all = await resolveActiveUniverse({ quotes: latest.quotes });
-    themes = all.filter((s) => (s.kind ?? "theme") !== "industry");
-  } catch {
-    themes = [];
-  }
+  // 產業流預設是供應鏈輪動視角：只取人工審核的多標籤 AI 群，
+  // 不混入新聞自動題材或首頁的泛產業題材，避免名稱／成分不穩定。
+  const themes: SectorDef[] = ROTATION_THEME_UNIVERSE;
 
   const universe = [...industries, ...themes];
   const watchCodes = new Set(
@@ -174,7 +171,7 @@ export async function rebuildIndustryFlowPayload(options?: {
     formula: "blend-80-20",
     metricNote:
       "混合金流＝80%×(成交×漲跌 softSign)＋20%×三大法人買賣超金額；產業為 ISIN 全成分加總（非 toAlpha 成交占比偏差）",
-    taxonomy: "isin-official+themes",
+    taxonomy: TAXONOMY,
   };
 
   await writeCacheFile(INDUSTRY_FLOW_CACHE, payload);
@@ -183,7 +180,8 @@ export async function rebuildIndustryFlowPayload(options?: {
 
 export async function getIndustryFlowPayload(): Promise<IndustryFlowPayload | null> {
   const cached = await readCacheFile<IndustryFlowPayload>(INDUSTRY_FLOW_CACHE);
-  if (cached?.rows?.length) {
+  // 旧快取曾以官方 ISIN／泛題材為主；分類版本不一致不可沿用。
+  if (cached?.rows?.length && cached.taxonomy === TAXONOMY) {
     return { ...cached, source: "cache" };
   }
   return null;
