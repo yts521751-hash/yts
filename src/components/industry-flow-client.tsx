@@ -23,6 +23,7 @@ import { STATUS_META } from "@/lib/types";
 import { statusFromFlow } from "@/lib/money-flow";
 import { cn } from "@/lib/utils";
 import { AppShell } from "@/components/app-shell";
+import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
 import { ActionButton } from "@/components/ui/action-button";
 import { Amount } from "@/components/ui/amount";
 import {
@@ -170,7 +171,13 @@ export function IndustryFlowClient({
       return true;
     });
     return [...list].sort((a, b) => {
-      const diff = sortValue(a, sortKey, period) - sortValue(b, sortKey, period);
+      let diff: number;
+      if (direction === "out" && (sortKey === "flow" || sortKey === "insti")) {
+        // 流出/賣超排行：預設最負（流出/賣超最多）排第 1
+        diff = sortValue(b, sortKey, period) - sortValue(a, sortKey, period);
+      } else {
+        diff = sortValue(a, sortKey, period) - sortValue(b, sortKey, period);
+      }
       return asc ? diff : -diff;
     });
   }, [data?.rows, scope, mega, period, sortKey, asc, direction]);
@@ -192,22 +199,39 @@ export function IndustryFlowClient({
         key: "flow" as const,
         label:
           period === "day" ? "淨流" : period === "d3" ? "3 日淨流" : "5 日淨流",
+        tip:
+          period === "day"
+            ? "當日全成分混合金流＝80%×(成交×漲跌軟訊號)＋20%×法人淨買賣超金額。非 toAlpha 成交占比偏差。"
+            : period === "d3"
+              ? "近 3 日全成分混合金流合計（億元）。"
+              : "近 5 日全成分混合金流合計（億元）。",
       },
       {
         key: "amt" as const,
         label:
           period === "day" ? "成交" : period === "d3" ? "3 日成交" : "5 日成交",
+        tip:
+          period === "day"
+            ? COLUMN_TIPS.amt
+            : period === "d3"
+              ? COLUMN_TIPS.amt3
+              : COLUMN_TIPS.amt5,
       },
       {
         key: "insti" as const,
         label:
           period === "day"
-            ? "法人淨買賣超"
+            ? "法人買賣超"
             : period === "d3"
               ? "3 日法人"
               : "5 日法人",
+        tip: "三大法人（外資＋投信＋自營商）買賣超金額合計（億元）＝買賣超股數×收盤價加總。",
       },
-      { key: "accel" as const, label: "加速度" },
+      {
+        key: "accel" as const,
+        label: "加速度",
+        tip: COLUMN_TIPS.accel,
+      },
     ],
     [period],
   );
@@ -415,12 +439,20 @@ export function IndustryFlowClient({
                           state={sortState(col.key)}
                           onClick={() => toggleSort(col.key)}
                         >
-                          {col.label}
+                          <ColumnTip tip={col.tip}>{col.label}</ColumnTip>
                         </SortHeaderButton>
                       </th>
                     ))}
-                    <th className="cell-num">20 日漲幅</th>
-                    <th className="text-right">成分</th>
+                    <th className="cell-num">
+                      <ColumnTip tip={COLUMN_TIPS.priceChange20d}>
+                        20 日漲幅
+                      </ColumnTip>
+                    </th>
+                    <th className="text-right">
+                      <ColumnTip tip="納入加總的上市櫃成分股總檔數（全成分）">
+                        成分
+                      </ColumnTip>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

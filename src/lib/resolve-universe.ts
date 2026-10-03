@@ -242,10 +242,14 @@ export async function lookupSectorDef(id: string): Promise<SectorDef | null> {
   }
 
   if (decoded.startsWith("ind-")) {
-    const industry = decoded.slice(4);
+    const rawIndustry = decoded.slice(4);
+    const { normalizeIndustryName } = await import("@/lib/industry-taxonomy");
+    const industry = normalizeIndustryName(rawIndustry);
     const map = await loadIndustryMap().catch(() => null);
     if (map?.stocks?.length) {
-      const all = map.stocks.filter((s) => s.industry === industry);
+      const all = map.stocks.filter(
+        (s) => s.industry === industry || s.industry === rawIndustry,
+      );
       if (all.length >= 3) {
         const { members } = await membersWithTurnover(
           all.map((s) => ({ code: s.code, name: s.name })),
