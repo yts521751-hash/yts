@@ -19,11 +19,11 @@ export const ROTATION_THEME_UNIVERSE: SectorDef[] = [
   group("foundry", "晶圓代工（台積電）", "AI 加速器製造的單一權值對照", [
     { code: "2330", name: "台積電" },
   ]),
-  group("asic-ip", "ASIC／矽智財", "客製 AI 晶片設計服務與 IP 授權", [
+  group("asic-ip", "ASIC／矽智財", "客製 AI 晶片設計服務與 IP 授權；聯發科以 AI ASIC 設計能力跨標籤", [
     { code: "3661", name: "世芯-KY" }, { code: "3443", name: "創意" },
     { code: "3035", name: "智原" }, { code: "3529", name: "力旺" },
     { code: "6533", name: "晶心科" }, { code: "6643", name: "M31" },
-    { code: "6531", name: "愛普*" },
+    { code: "6531", name: "愛普*" }, { code: "2454", name: "聯發科" },
   ]),
   group("ic-design", "IC 設計", "泛用 Fabless SoC／消費電子與權值設計股；不含 ASIC 設計服務／IP", [
     { code: "2454", name: "聯發科" }, { code: "3034", name: "聯詠" },

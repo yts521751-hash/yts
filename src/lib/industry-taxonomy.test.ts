@@ -132,9 +132,12 @@ describe("rotation AI supply-chain universe", () => {
     assert.ok(asic.members.length >= 5);
     assert.ok(asic.members.some((x) => x.code === "3661"));
     assert.ok(icDesign.members.some((x) => x.code === "2454"));
-    assert.equal(
-      icDesign.members.some((x) => asic.members.some((a) => a.code === x.code)),
-      false,
+    assert.ok(asic.members.some((x) => x.code === "2454"));
+    assert.deepEqual(
+      icDesign.members
+        .filter((x) => asic.members.some((a) => a.code === x.code))
+        .map((x) => x.code),
+      ["2454"],
     );
   });
 });
