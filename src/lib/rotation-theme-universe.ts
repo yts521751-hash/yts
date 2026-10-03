@@ -111,7 +111,7 @@ export const ROTATION_THEME_UNIVERSE: SectorDef[] = [
     { code: "3090", name: "日電貿" }, { code: "2478", name: "大毅" },
     { code: "3357", name: "臺慶科" }, { code: "6449", name: "鈺邦" },
   ]),
-  group("ai-server", "AI 伺服器／ODM", "AI 伺服器與機櫃組裝代工", [
+  group("ai-server", "組裝代工（ODM）", "AI 伺服器與機櫃組裝代工", [
     { code: "6669", name: "緯穎" }, { code: "2382", name: "廣達" },
     { code: "3231", name: "緯創" }, { code: "2356", name: "英業達" },
     { code: "2317", name: "鴻海" }, { code: "2324", name: "仁寶" },

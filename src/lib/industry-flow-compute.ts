@@ -12,6 +12,7 @@ import {
   industryMegaGroup,
   type IndustryMegaGroup,
 } from "@/lib/industry-taxonomy";
+import { isCommonStock } from "@/lib/stock-filter";
 import type { SectorDef } from "@/lib/sector-universe";
 import type { SectorFlow, StockFlow, TideStatus } from "@/lib/types";
 import type { InstiRow, QuoteRow } from "@/lib/tw-market";
@@ -26,6 +27,16 @@ export type IndustryFlowRow = SectorFlow & {
   dayInstiYi: number;
   d3InstiYi: number;
   d5InstiYi: number;
+  /** 最新交易日群組成交值占上市櫃普通股成交值的比例（%） */
+  turnoverSharePct: number;
+  /** 當日占比 − 截至當日近 20 日平均占比（百分點） */
+  dayShareDeltaPp: number;
+  /** 最近 3 個交易日每日 pp 偏離的平均 */
+  d3ShareDeltaPp: number;
+  /** 最近 5 個交易日每日 pp 偏離的平均 */
+  d5ShareDeltaPp: number;
+  /** 最新日為止近 20 日群組成交占比平均（%） */
+  avg20TurnoverSharePct: number;
   fullRollup: boolean;
 };
 
@@ -46,6 +57,11 @@ function flowForCode(day: IndustryFlowDayBundle, code: string) {
   return { parts: blendFlow(price, instiYi), instiYi: instiYi ?? 0 };
 }
 
+function avg(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 /** 全成分加總產業／題材混合金流 */
 export function computeIndustryFlowRows(
   dayData: IndustryFlowDayBundle[],
@@ -59,6 +75,13 @@ export function computeIndustryFlowRows(
   const d20Days = dayData.slice(0, Math.min(20, dayData.length));
   const n5 = d5Days.length;
   const n20 = d20Days.length;
+  // 分母一定從每日完整上市櫃報價檔計算，而非從任何題材成分表推回，
+  // 所以跨題材標籤不會重複放大整體市場成交值。
+  const marketTurnovers = dayData.map((day) =>
+    [...day.quotes.values()]
+      .filter((quote) => isCommonStock(quote.code, quote.name))
+      .reduce((sum, quote) => sum + Math.max(0, quote.turnover), 0),
+  );
 
   return universe
     .map((def) => {
@@ -148,6 +171,25 @@ export function computeIndustryFlowRows(
 
       if (!stocksRich.length) return null;
 
+      const dailyShares = dayData.map((day, index) => {
+        const groupTurnover = def.members.reduce((sum, member) => {
+          const quote = day.quotes.get(member.code);
+          return sum + (quote && isCommonStock(quote.code, quote.name)
+            ? Math.max(0, quote.turnover)
+            : 0);
+        }, 0);
+        const marketTurnover = marketTurnovers[index] ?? 0;
+        return marketTurnover > 0 ? (groupTurnover / marketTurnover) * 100 : 0;
+      });
+      const dailyShareDeltas = dailyShares.map((share, index) =>
+        share - avg(dailyShares.slice(index, index + 20)),
+      );
+      const dayShareDeltaPp = dailyShareDeltas[0] ?? 0;
+      const d3ShareDeltaPp = avg(dailyShareDeltas.slice(0, 3));
+      const d5ShareDeltaPp = avg(dailyShareDeltas.slice(0, 5));
+      const turnoverSharePct = dailyShares[0] ?? 0;
+      const avg20TurnoverSharePct = avg(dailyShares.slice(0, 20));
+
       const dayAmt = stocksRich.reduce((s, x) => s + x.dayAmt, 0);
       const dayFlow = stocksRich.reduce((s, x) => s + x.dayFlow, 0);
       const dayIn = stocksRich.reduce((s, x) => s + x.dayIn, 0);
@@ -230,6 +272,11 @@ export function computeIndustryFlowRows(
         dayInstiYi: round1(dayInstiYi),
         d3InstiYi: round1(d3InstiYi),
         d5InstiYi: round1(d5InstiYi),
+        turnoverSharePct: round2(turnoverSharePct),
+        dayShareDeltaPp: round2(dayShareDeltaPp),
+        d3ShareDeltaPp: round2(d3ShareDeltaPp),
+        d5ShareDeltaPp: round2(d5ShareDeltaPp),
+        avg20TurnoverSharePct: round2(avg20TurnoverSharePct),
         fullRollup: kind === "industry",
       } satisfies IndustryFlowRow;
     })

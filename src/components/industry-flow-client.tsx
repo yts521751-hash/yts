@@ -19,8 +19,6 @@ import type {
   IndustryFlowRow,
 } from "@/lib/build-industry-flow";
 import type { IndustryMegaGroup } from "@/lib/industry-taxonomy";
-import { STATUS_META } from "@/lib/types";
-import { statusFromFlow } from "@/lib/money-flow";
 import { cn } from "@/lib/utils";
 import { AppShell } from "@/components/app-shell";
 import { COLUMN_TIPS, ColumnTip } from "@/components/column-tip";
@@ -29,7 +27,6 @@ import { Amount } from "@/components/ui/amount";
 import {
   Chip,
   RankSlot,
-  StatusPill,
 } from "@/components/ui/chip";
 import { Panel } from "@/components/ui/panel";
 import { Segmented } from "@/components/ui/segmented";
@@ -58,10 +55,10 @@ const MEGA_ITEMS = [
   { value: "傳產" as MegaFilter, label: "傳產" },
 ];
 
-function periodFlow(r: IndustryFlowRow, period: RankPeriod) {
-  if (period === "d3") return r.d3Flow;
-  if (period === "d5") return r.d5Flow;
-  return r.dayFlow;
+function periodShareDelta(r: IndustryFlowRow, period: RankPeriod) {
+  if (period === "d3") return r.d3ShareDeltaPp;
+  if (period === "d5") return r.d5ShareDeltaPp;
+  return r.dayShareDeltaPp;
 }
 
 function periodAmt(r: IndustryFlowRow, period: RankPeriod) {
@@ -74,6 +71,10 @@ function periodInsti(r: IndustryFlowRow, period: RankPeriod) {
   if (period === "d3") return r.d3InstiYi;
   if (period === "d5") return r.d5InstiYi;
   return r.dayInstiYi;
+}
+
+function formatPp(n: number) {
+  return `${n > 0 ? "+" : ""}${n.toFixed(2)}pp`;
 }
 
 export function IndustryFlowClient({
@@ -163,22 +164,20 @@ export function IndustryFlowClient({
       return true;
     });
     const inflow = list
-      .filter((r) => periodFlow(r, period) > 0)
-      .sort((a, b) => periodFlow(b, period) - periodFlow(a, period));
+      .filter((r) => periodShareDelta(r, period) > 0)
+      .sort(
+        (a, b) => periodShareDelta(b, period) - periodShareDelta(a, period),
+      );
     const outflow = list
-      .filter((r) => periodFlow(r, period) < 0)
-      .sort((a, b) => periodFlow(a, period) - periodFlow(b, period));
+      .filter((r) => periodShareDelta(r, period) < 0)
+      .sort(
+        (a, b) => periodShareDelta(a, period) - periodShareDelta(b, period),
+      );
     const maxAbs = Math.max(
       1,
-      ...list.map((r) => Math.abs(periodFlow(r, period))),
+      ...list.map((r) => Math.abs(periodShareDelta(r, period))),
     );
-    return {
-      inflow,
-      outflow,
-      maxAbs,
-      inflowTotal: inflow.reduce((sum, r) => sum + periodFlow(r, period), 0),
-      outflowTotal: outflow.reduce((sum, r) => sum + periodFlow(r, period), 0),
-    };
+    return { inflow, outflow, maxAbs };
   }, [data?.rows, scope, mega, period, query]);
 
   return (
@@ -188,7 +187,7 @@ export function IndustryFlowClient({
       back={{ href: "/", label: "回資金流" }}
       eyebrow="INDUSTRY FLOW · EOD"
       title="產業資金流"
-      description="以 AI 供應鏈多標籤群為預設的盤後混合金流排行；可切回官方產業全成分。口徑不是成交占比偏差。"
+      description="以 AI 供應鏈多標籤群為預設的盤後成交集中度排行；可切回官方產業全成分。"
       meta={
         data
           ? `資料日 ${data.brief.date} · ${data.metricNote}`
@@ -257,7 +256,7 @@ export function IndustryFlowClient({
                 onChange={setDirection}
               />
               <ColumnTip tip={data?.metricNote ?? COLUMN_TIPS.flow}>
-                <Chip tone="outline">EOD 混合金流 · 80/20</Chip>
+                <Chip tone="outline">成交占比相對 20 日均 · pp</Chip>
               </ColumnTip>
               <label className="relative min-w-[10rem] flex-1 sm:max-w-56">
                 <Search
@@ -301,23 +300,21 @@ export function IndustryFlowClient({
           <div className="grid gap-4 lg:grid-cols-2">
             {(direction === "all" || direction === "in") && (
               <FlowLadder
-                title="資金流入"
+                title="成交集中"
                 tone="in"
                 rows={flowLadders.inflow}
                 period={period}
                 maxAbs={flowLadders.maxAbs}
-                total={flowLadders.inflowTotal}
                 query={query}
               />
             )}
             {(direction === "all" || direction === "out") && (
               <FlowLadder
-                title="資金流出"
+                title="成交降溫"
                 tone="out"
                 rows={flowLadders.outflow}
                 period={period}
                 maxAbs={flowLadders.maxAbs}
-                total={flowLadders.outflowTotal}
                 query={query}
               />
             )}
@@ -334,7 +331,6 @@ function FlowLadder({
   rows,
   period,
   maxAbs,
-  total,
   query,
 }: {
   title: string;
@@ -342,15 +338,18 @@ function FlowLadder({
   rows: IndustryFlowRow[];
   period: RankPeriod;
   maxAbs: number;
-  total: number;
   query: string;
 }) {
   const isIn = tone === "in";
   const color = isIn ? "var(--mk-up)" : "var(--mk-down)";
   const background = isIn ? "var(--mk-up-bg)" : "var(--mk-down-bg)";
   const periodLabel =
-    period === "day" ? "當日淨流" : period === "d3" ? "3 日淨流" : "5 日淨流";
-  // 正常掃盤只看每側 |flow| 前 20；搜尋時不截斷，讓低排名群也可被找到。
+    period === "day"
+      ? "當日占比偏離"
+      : period === "d3"
+        ? "3 日平均偏離"
+        : "5 日平均偏離";
+  // 正常掃盤只看每側 |pp| 前 20；搜尋時不截斷，讓低排名群也可被找到。
   const visibleRows = query.trim() ? rows : rows.slice(0, 20);
 
   return (
@@ -361,16 +360,12 @@ function FlowLadder({
       >
         <div>
           <p className="t-eyebrow" style={{ color }}>
-            {isIn ? "INFLOW LADDER" : "OUTFLOW LADDER"}
+            {isIn ? "CONCENTRATION LADDER" : "COOLING LADDER"}
           </p>
           <h2 className="t-title mt-0.5">{title}</h2>
         </div>
         <div className="text-right">
-          <Amount
-            text={formatMarketYiSigned(total)}
-            className={cn("text-lg font-semibold", signedClass(total))}
-          />
-          <p className="t-kicker mt-0.5">
+          <p className="t-kicker">
             {query.trim()
               ? `${visibleRows.length} 個搜尋結果`
               : `TOP ${visibleRows.length} / ${rows.length}`}
@@ -381,11 +376,10 @@ function FlowLadder({
       {visibleRows.length ? (
         <ol className="divide-y divide-line">
           {visibleRows.map((r, index) => {
-            const flow = periodFlow(r, period);
+            const shareDelta = periodShareDelta(r, period);
             const insti = periodInsti(r, period);
             const amt = periodAmt(r, period);
-            const meta = STATUS_META[statusFromFlow(r.d5Flow ?? 0, r.accel ?? 0)];
-            const width = Math.max(4, (Math.abs(flow) / maxAbs) * 100);
+            const width = Math.max(4, (Math.abs(shareDelta) / maxAbs) * 100);
             return (
               <li key={r.id}>
                 <Link
@@ -412,11 +406,6 @@ function FlowLadder({
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="truncate font-medium">{r.name}</span>
-                        <StatusPill
-                          label={meta.label}
-                          color={meta.color}
-                          background={meta.bg}
-                        />
                         <Chip>
                           {r.kind === "industry" && r.megaGroup
                             ? r.megaGroup
@@ -433,20 +422,24 @@ function FlowLadder({
                           />
                         </span>
                         <span>
-                          成交 <Amount text={formatMarketYi(amt)} />
+                          成交 <Amount text={formatMarketYi(amt)} /> · 占比{" "}
+                          {r.turnoverSharePct.toFixed(2)}%
+                        </span>
+                        <span>
+                          20 日均 {r.avg20TurnoverSharePct.toFixed(2)}%
                         </span>
                         <span className={signedClass(r.priceChange20d)}>
-                          20 日 {formatPct(r.priceChange20d)}
-                        </span>
-                        <span className={signedClass(r.accel)}>
-                          加速 {formatMarketYiSigned(r.accel)}
+                          股價 20 日 {formatPct(r.priceChange20d)}
                         </span>
                       </span>
                     </span>
                     <span className="shrink-0 text-right">
                       <Amount
-                        text={formatMarketYiSigned(flow)}
-                        className={cn("text-base font-semibold", signedClass(flow))}
+                        text={formatPp(shareDelta)}
+                        className={cn(
+                          "text-base font-semibold",
+                          signedClass(shareDelta),
+                        )}
                       />
                       <span className="t-kicker mt-0.5 block">{periodLabel}</span>
                     </span>

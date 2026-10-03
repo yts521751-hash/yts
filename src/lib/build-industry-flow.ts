@@ -1,7 +1,7 @@
 /**
  * 台股盤後產業資金流入／流出（EOD）。
- * 口徑＝本站混合金流（80% 成交×softSign + 20% 法人×價），依官方產業全成分加總；
- * 題材列為可選對照（人工宇宙，非全市場細產業）。
+ * 主口徑＝群組成交值占上市櫃普通股成交值 − 截至當日近 20 日平均（pp）。
+ * 題材列為 AI 供應鏈多標籤群；官方產業則依 ISIN 全成分加總。
  */
 
 import {
@@ -30,7 +30,8 @@ import {
 } from "@/lib/tw-market";
 
 export const INDUSTRY_FLOW_CACHE = "industry-flow-active.json";
-const TAXONOMY = "ai-supply-chain+isin-official" as const;
+const TAXONOMY = "ai-supply-chain+isin-official:turnover-share-v2" as const;
+const HISTORY_DAYS = 24;
 
 export type { IndustryFlowRow } from "@/lib/industry-flow-compute";
 
@@ -40,7 +41,7 @@ export type IndustryFlowPayload = {
   tradingDays: string[];
   source: "twse+tpex" | "cache";
   builtAt: string;
-  formula: "blend-80-20";
+  formula: "turnover-share-vs-20d-avg";
   metricNote: string;
   taxonomy: typeof TAXONOMY;
 };
@@ -117,12 +118,13 @@ export async function rebuildIndustryFlowPayload(options?: {
   days?: number;
   cacheOnly?: boolean;
 }): Promise<IndustryFlowPayload> {
-  const needDays = options?.days ?? 20;
+  // 需 24 日，才可讓最近 5 個交易日各自都有完整的 20 日基準。
+  const needDays = options?.days ?? HISTORY_DAYS;
   const cacheOnly = options?.cacheOnly !== false;
 
   let dayData = await loadDayBundles(needDays, cacheOnly, new Set());
-  if (dayData.length < 5) {
-    throw new Error("產業流：成交日資料不足（需至少 5 個交易日快取）");
+  if (dayData.length < HISTORY_DAYS) {
+    throw new Error("產業流：成交日資料不足（需至少 24 個交易日快取）");
   }
 
   const latest = dayData[0];
@@ -144,7 +146,7 @@ export async function rebuildIndustryFlowPayload(options?: {
   }
 
   const rows = computeIndustryFlowRows(dayData, universe).sort(
-    (a, b) => b.dayFlow - a.dayFlow,
+    (a, b) => b.dayShareDeltaPp - a.dayShareDeltaPp,
   );
 
   const { computeFearGauge } = await import("@/lib/fear-gauge");
@@ -168,9 +170,9 @@ export async function rebuildIndustryFlowPayload(options?: {
     tradingDays: dayData.map((d) => d.ymd),
     source: "twse+tpex",
     builtAt: new Date().toISOString(),
-    formula: "blend-80-20",
+    formula: "turnover-share-vs-20d-avg",
     metricNote:
-      "混合金流＝80%×(成交×漲跌 softSign)＋20%×三大法人買賣超金額；產業為 ISIN 全成分加總（非 toAlpha 成交占比偏差）",
+      "成交占比相對 20 日均（pp）＝群組成交值／上市櫃普通股總成交值 − 截至當日近 20 日平均；3／5 天為每日 pp 偏離平均",
     taxonomy: TAXONOMY,
   };
 

@@ -119,6 +119,63 @@ describe("industry-flow full rollup", () => {
     // 兩檔都有貢獻（非只取 Top-1）
     assert.ok(rows[0].stocks.length >= 2);
   });
+
+  it("ranks by turnover-share deviation against each day's 20-day baseline", () => {
+    const makeDay = (ymd: string, hot: boolean) => ({
+      ymd,
+      quotes: new Map([
+        [
+          "2330",
+          {
+            code: "2330",
+            name: "台積電",
+            open: 100,
+            high: 101,
+            low: 99,
+            close: 100,
+            changePct: 0,
+            turnover: hot ? 6e10 : 2e10,
+          },
+        ],
+        [
+          "2303",
+          {
+            code: "2303",
+            name: "聯電",
+            open: 50,
+            high: 51,
+            low: 49,
+            close: 50,
+            changePct: 0,
+            turnover: hot ? 4e10 : 8e10,
+          },
+        ],
+      ]),
+      insti: new Map(),
+      indexChangePct: 0,
+    });
+    const rows = computeIndustryFlowRows(
+      Array.from({ length: 24 }, (_, i) =>
+        makeDay(`202609${String(30 - i).padStart(2, "0")}`, i === 0),
+      ),
+      [
+        {
+          id: "theme-test",
+          name: "測試群",
+          basis: "test",
+          kind: "theme",
+          members: [{ code: "2330", name: "台積電" }],
+        },
+      ],
+    );
+
+    assert.equal(rows[0].turnoverSharePct, 60);
+    assert.equal(rows[0].avg20TurnoverSharePct, 22);
+    assert.equal(rows[0].dayShareDeltaPp, 38);
+    // 3／5 日皆為「每日 pp 偏離」的平均，而不是跨標籤群不可加總的 pp 總和。
+    assert.equal(rows[0].d3ShareDeltaPp, 12.67);
+    assert.equal(rows[0].d5ShareDeltaPp, 7.6);
+  });
 });
 
 describe("rotation AI supply-chain universe", () => {

@@ -46,6 +46,6 @@ export const CLIENT_CACHE_KEYS = {
   ma: "jinliu:cache:ma-screener:v5",
   /** v4：含本益成長比 PEG；對齊最新 quotes 日 close／PE */
   value: "jinliu:cache:value-picks:v4",
-  /** v3：聯發科新增 ASIC／矽智財跨標籤，不能沿用舊成分聚合 */
-  industryFlow: "jinliu:cache:industry-flow:v3",
+  /** v4：主口徑改為成交占比相對 20 日均（pp），不能沿用舊混合金流 */
+  industryFlow: "jinliu:cache:industry-flow:v4",
 } as const;
