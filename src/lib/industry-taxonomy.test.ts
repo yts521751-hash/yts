@@ -124,9 +124,17 @@ describe("industry-flow full rollup", () => {
 describe("rotation AI supply-chain universe", () => {
   it("keeps the explicit ASIC／矽智財 group available to industry-flow", () => {
     const asic = ROTATION_THEME_UNIVERSE.find((x) => x.id === "asic-ip");
+    const icDesign = ROTATION_THEME_UNIVERSE.find((x) => x.id === "ic-design");
     assert.ok(asic);
+    assert.ok(icDesign);
     assert.equal(asic.name, "ASIC／矽智財");
+    assert.equal(icDesign.name, "IC 設計");
     assert.ok(asic.members.length >= 5);
     assert.ok(asic.members.some((x) => x.code === "3661"));
+    assert.ok(icDesign.members.some((x) => x.code === "2454"));
+    assert.equal(
+      icDesign.members.some((x) => asic.members.some((a) => a.code === x.code)),
+      false,
+    );
   });
 });

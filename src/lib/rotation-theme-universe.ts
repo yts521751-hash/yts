@@ -25,6 +25,12 @@ export const ROTATION_THEME_UNIVERSE: SectorDef[] = [
     { code: "6533", name: "晶心科" }, { code: "6643", name: "M31" },
     { code: "6531", name: "愛普*" },
   ]),
+  group("ic-design", "IC 設計", "泛用 Fabless SoC／消費電子與權值設計股；不含 ASIC 設計服務／IP", [
+    { code: "2454", name: "聯發科" }, { code: "3034", name: "聯詠" },
+    { code: "2379", name: "瑞昱" }, { code: "6415", name: "矽力*-KY" },
+    { code: "8016", name: "矽創" }, { code: "3227", name: "原相" },
+    { code: "3545", name: "敦泰" },
+  ]),
   group("bmc", "BMC（信驊）", "伺服器遠端管理晶片；單一指標股對照", [
     { code: "5274", name: "信驊" },
   ]),

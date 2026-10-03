@@ -307,6 +307,7 @@ export function IndustryFlowClient({
                 period={period}
                 maxAbs={flowLadders.maxAbs}
                 total={flowLadders.inflowTotal}
+                query={query}
               />
             )}
             {(direction === "all" || direction === "out") && (
@@ -317,6 +318,7 @@ export function IndustryFlowClient({
                 period={period}
                 maxAbs={flowLadders.maxAbs}
                 total={flowLadders.outflowTotal}
+                query={query}
               />
             )}
           </div>
@@ -333,6 +335,7 @@ function FlowLadder({
   period,
   maxAbs,
   total,
+  query,
 }: {
   title: string;
   tone: "in" | "out";
@@ -340,12 +343,15 @@ function FlowLadder({
   period: RankPeriod;
   maxAbs: number;
   total: number;
+  query: string;
 }) {
   const isIn = tone === "in";
   const color = isIn ? "var(--mk-up)" : "var(--mk-down)";
   const background = isIn ? "var(--mk-up-bg)" : "var(--mk-down-bg)";
   const periodLabel =
     period === "day" ? "當日淨流" : period === "d3" ? "3 日淨流" : "5 日淨流";
+  // 正常掃盤只看每側 |flow| 前 20；搜尋時不截斷，讓低排名群也可被找到。
+  const visibleRows = query.trim() ? rows : rows.slice(0, 20);
 
   return (
     <Panel className="overflow-hidden">
@@ -364,13 +370,17 @@ function FlowLadder({
             text={formatMarketYiSigned(total)}
             className={cn("text-lg font-semibold", signedClass(total))}
           />
-          <p className="t-kicker mt-0.5">{rows.length} 個族群</p>
+          <p className="t-kicker mt-0.5">
+            {query.trim()
+              ? `${visibleRows.length} 個搜尋結果`
+              : `TOP ${visibleRows.length} / ${rows.length}`}
+          </p>
         </div>
       </div>
 
-      {rows.length ? (
+      {visibleRows.length ? (
         <ol className="divide-y divide-line">
-          {rows.map((r, index) => {
+          {visibleRows.map((r, index) => {
             const flow = periodFlow(r, period);
             const insti = periodInsti(r, period);
             const amt = periodAmt(r, period);
