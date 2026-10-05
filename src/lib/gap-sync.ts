@@ -246,6 +246,24 @@ export function isPackageUpToDate(
 }
 
 /**
+ * 是否走輕量日終（本機日檔＋衍生，不重打 25 日 exclusions／全量 fundamentals／MA）。
+ * 報價水位已到目標時一律輕量——重路徑曾讓同步卡在「更新個股金流／…」逾時失敗。
+ */
+export function shouldUseLightDailyClose(input: {
+  force?: boolean;
+  latestQuoteYmd: string | null | undefined;
+  targetYmd: string;
+  /** 呼叫端提示（gap.fetched 小） */
+  preferLight?: boolean;
+}): boolean {
+  if (input.force) return false;
+  const latest = input.latestQuoteYmd;
+  if (!latest) return false;
+  if (latest >= input.targetYmd) return true;
+  return Boolean(input.preferLight);
+}
+
+/**
  * 激進短路：日終 meta 的 asOf 已等於同步目標交易日。
  * （不強制 artifacts 全綠——有 active flow 即可略過交易所）
  */

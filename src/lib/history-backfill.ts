@@ -124,24 +124,25 @@ export async function runHistoryBackfill(reason: string) {
         `missing=${gap.missing.length} fetched=${gap.fetched} skipped≈${gap.skipped}`,
     );
 
-    const smallGap =
-      gap.fetched > 0 &&
-      gap.fetched <= 2 &&
-      gap.missing.length <= 2;
+    // fetched=0（水位已齊）也要走輕量日終，否則會掉進全量 stocks／MA 重路徑逾時
+    const lightGap = gap.fetched <= 3 && gap.missing.length <= 3;
 
+    const { runDailyClosePackage, isDailyCloseRunning } = await import(
+      "@/lib/daily-close-package"
+    );
     setRebuildProgress({
       percent: 42,
-      label:
-        gap.fetched > 0
-          ? smallGap
+      label: isDailyCloseRunning()
+        ? "等待進行中的日終同步…"
+        : gap.fetched > 0
+          ? lightGap
             ? `輕量日終（補了 ${gap.fetched} 日：報價＋法人＋資金流）`
             : "日終大包（資金流／個股／均線等）"
-          : "檢查日終大包是否最新",
+          : "更新日終大包（輕量）",
     });
-    const { runDailyClosePackage } = await import("@/lib/daily-close-package");
     const meta = await runDailyClosePackage(`backfill:${reason}`, {
       skipGapFill: true,
-      smallGap,
+      smallGap: lightGap,
     });
 
     const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);

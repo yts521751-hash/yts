@@ -98,20 +98,33 @@ export async function GET() {
         }
 
         const skippedCurrent = Boolean(result?.meta?.skipped);
+        const failedSteps =
+          result?.meta?.steps?.filter((s) => !s.ok).map((s) => s.name) ?? [];
+        const flowOk = Boolean(result?.meta?.artifacts?.flow) || skippedCurrent;
         pushProgress(
           100,
-          skippedCurrent ? "資料已是最新" : "同步完成",
+          !flowOk
+            ? "同步失敗"
+            : skippedCurrent
+              ? "資料已是最新"
+              : failedSteps.length
+                ? `同步完成（部分略過：${failedSteps.join("、")}）`
+                : "同步完成",
           false,
         );
         send({
           type: "done",
-          ok: true,
+          ok: flowOk,
+          error: flowOk
+            ? undefined
+            : failedSteps.length
+              ? `核心資金流未完成：${failedSteps.join(",")}`
+              : "同步未完成",
           quoteDays: result?.quoteDays,
           target: result?.target,
           skippedCurrent,
           gap: result?.gap,
-        });
-      } catch (err) {
+        });      } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         send({ type: "done", ok: false, error: message });
       } finally {

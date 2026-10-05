@@ -8,6 +8,7 @@ import {
   isPackageUpToDate,
   listWeekdaysBetween,
   resolveSyncTargetYmd,
+  shouldUseLightDailyClose,
   toCompactYmd,
 } from "./gap-sync";
 
@@ -122,6 +123,39 @@ describe("gap-sync", () => {
     );
     assert.equal(
       isMetaAsOfTarget({ asOf: "2026-09-24", artifacts: {} as never }, "20260925"),
+      false,
+    );
+  });
+
+  it("shouldUseLightDailyClose when quotes at target", () => {
+    assert.equal(
+      shouldUseLightDailyClose({
+        latestQuoteYmd: "20261005",
+        targetYmd: "20261005",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldUseLightDailyClose({
+        force: true,
+        latestQuoteYmd: "20261005",
+        targetYmd: "20261005",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldUseLightDailyClose({
+        latestQuoteYmd: "20261002",
+        targetYmd: "20261005",
+        preferLight: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldUseLightDailyClose({
+        latestQuoteYmd: "20261002",
+        targetYmd: "20261005",
+      }),
       false,
     );
   });
