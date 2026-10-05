@@ -23,10 +23,11 @@ import {
  *
  * 設計原則（依產品建議）：
  * - 平日 18:00／18:30／19:00 一次向證交所／櫃買把「網站會用到的盤後資料」拉齊寫入 .cache
- * - 之後各頁（資金流、個股、產業 K、均線、風度）只讀這批快照，不再為了開頁去打交易所
+ * - 之後各頁（資金流、個股、均線、風度、產業流）只讀這批快照，不再為了開頁去打交易所
  * - 成交排行改為日終快照（一般成交口徑），不再盤中即時輪詢
  * - 增量：先補水位之後缺日；若 active 大包已對齊最新交易日且 artifacts 齊則略過重算
  * - 小缺口（≈1 日）：本機日檔重算、略過二次 60 日回補／重複法人掃描
+ * - 台股產業 K 線頁已下線：同步不再暖全產業 K（artifacts.klines 固定標齊）
  *
  * 快照仍拆成多個 cache 檔（較好增量更新／灰度），但由本模組統一編排與寫入 meta 索引。
  */
@@ -47,7 +48,7 @@ export type DailyCloseMeta = {
   artifacts: {
     flow: boolean;
     quotesWarm: boolean;
-    klines: boolean;
+    klines: boolean; // 保留欄位；產業 K 頁已下線，寫入時固定 true
     stocks: boolean;
     wind: boolean;
     ma: boolean;
@@ -262,8 +263,8 @@ async function runDailyClosePackageUnlocked(
   let asOf: string | null = null;
 
   // —— 輕量路徑（≈1 日）：quotes+insti 已由 gap-fill 補齊 →
-  // flow（本機日檔、略過 K 暖機）→ 並行 stocks／wind／turnover／value；
-  // 略過均線全掃（開頁／背景再補）；產業 K 改懶加載。
+  // flow（本機日檔）→ 並行 stocks／wind／turnover／value／industry；
+  // 略過均線全掃（開頁／背景再補）；產業 K 頁已下線不再暖機。
   if (smallGap && !options?.force) {
     markStep("輕量日終：資金流（本機日檔）", 42, 55, 0, 2);
     const flowStep = await step("flow", async () => {
@@ -285,8 +286,7 @@ async function runDailyClosePackageUnlocked(
     if (flowStep.ok && flowStep.value) {
       artifacts.flow = true;
       artifacts.quotesWarm = true;
-      // 小缺口略過全產業 K 暖機；沿用前次齊備旗標（開頁會對齊最新日）
-      artifacts.klines = Boolean(prevMeta?.artifacts?.klines);
+      artifacts.klines = true;
       asOf = flowStep.value.brief?.date ?? null;
     }
 
@@ -426,7 +426,7 @@ async function runDailyClosePackageUnlocked(
       promote: true,
       cacheOnly: Boolean(options?.skipGapFill || smallGap),
       skipEnsureHistory: Boolean(options?.skipGapFill || smallGap),
-      skipKlineWarm: Boolean(smallGap),
+      skipKlineWarm: true,
       manageProgress: false,
     });
   });
@@ -439,7 +439,7 @@ async function runDailyClosePackageUnlocked(
   if (flowStep.ok && flowStep.value) {
     artifacts.flow = true;
     artifacts.quotesWarm = true;
-    artifacts.klines = !smallGap;
+    artifacts.klines = true;
     asOf = flowStep.value.brief?.date ?? null;
   }
 
@@ -529,11 +529,8 @@ async function runDailyClosePackageUnlocked(
   artifacts.industryFlow = Boolean(
     industryStep.ok && industryStep.value?.rows?.length,
   );
-  if (flowStep.ok && !smallGap) {
-    artifacts.klines = true;
-  } else if (smallGap) {
-    artifacts.klines = Boolean(prevMeta?.artifacts?.klines);
-  }
+  // 產業 K 頁已下線：固定標齊，避免舊 meta / 略過暖機拖垮 packageUpToDate
+  artifacts.klines = true;
 
   try {
     const { warmBrokerTargetsFromUniverse } = await import(

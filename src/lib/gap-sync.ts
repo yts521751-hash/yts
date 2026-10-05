@@ -217,7 +217,7 @@ export function artifactsComplete(
   return Boolean(
     artifacts.flow &&
       artifacts.quotesWarm &&
-      artifacts.klines &&
+      // klines：台股產業 K 頁已下線，不再阻擋日終大包「已齊」判定
       artifacts.stocks &&
       artifacts.wind &&
       artifacts.ma &&

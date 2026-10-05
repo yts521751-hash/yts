@@ -28,7 +28,9 @@ function bag(): SchedulerGlobal {
 const TZ = process.env.SYNC_TZ || "Asia/Taipei";
 
 /**
- * 預設：週一～五 18:00、18:30、19:00（台北時間）
+ * 預設：週一～五 18:00、18:30、19:00（台北時間）；實際執行時再以
+ * isNonTradingYmd 略過證交所休市日（與 resolveSyncTargetYmd 同一日曆）。
+ * 註冊點：src/instrumentation.ts → startScheduler()（Node runtime）。
  * 可用環境變數覆寫：
  *   SYNC_CRON="0 18 * * 1-5;0 19 * * 1-5"
  *   SYNC_TZ="Asia/Taipei"
@@ -52,7 +54,7 @@ function describe(expressions: string[]): string {
     expressions.includes("30 18 * * 1-5") &&
     expressions.includes("0 19 * * 1-5")
   ) {
-    return `週一至週五 ${TZ} 18:00／18:30／19:00 灰度同步（staging→active）`;
+    return `週一至週五 ${TZ} 18:00／18:30／19:00 日終同步（休市日自動略過）`;
   }
   return `排程 ${expressions.join("、")}（時區 ${TZ}）`;
 }
@@ -88,8 +90,20 @@ async function runSync(reason: string) {
   state.lastRunAt = new Date().toISOString();
   console.log(`[scheduler] start sync (${reason}) at ${state.lastRunAt}`);
   try {
-    // 日終大包：一次拉齊資金流／報價／K 線／個股／風度／均線／收盤成交排行
-    // 之後各頁只讀 .cache（含成交排行日終快照）
+    // 非開市日（週末／證交所休市）略過；與 resolveSyncTargetYmd 同一套日曆
+    const { readTaipeiClock, isNonTradingYmd } = await import("@/lib/gap-sync");
+    const clock = readTaipeiClock();
+    if (isNonTradingYmd(clock.ymd)) {
+      state.lastResult = "skipped";
+      state.lastError = null;
+      console.log(
+        `[scheduler] skip (${reason}): non-trading day ${clock.ymd}`,
+      );
+      return;
+    }
+
+    // 日終大包：一次拉齊資金流／報價／個股／風度／均線／收盤成交排行／價值／產業流
+    // 之後各頁只讀 .cache（含成交排行日終快照）；R2 write-through 供 Free 重啟還原
     const { runDailyClosePackage } = await import("@/lib/daily-close-package");
     const meta = await runDailyClosePackage(reason);
     const failed = meta.steps.filter((s) => !s.ok);
@@ -172,7 +186,7 @@ export function startScheduler() {
 
   state.enabled = b.tasks.length > 0;
   state.expressions = expressions;
-  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋K線＋個股＋風度＋均線＋成交排行）；開盤前暖機 08:50；新聞每 5 分鐘；美股日終 America/New_York 18:00／19:00／20:00`;
+  state.description = `${describe(expressions)}（日終大包：資金流＋報價＋個股＋風度＋均線＋成交排行＋價值＋產業流；開市日才跑）；開盤前暖機 08:50；新聞每 5 分鐘；美股日終 America/New_York 18:00／19:00／20:00`;
   console.log(`[scheduler] started: ${state.description}`);
 
   // 美股日終大包：週一至週五 18:00／19:00／20:00 America/New_York

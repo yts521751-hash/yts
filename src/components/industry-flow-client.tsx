@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronRight, RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -382,10 +381,7 @@ function FlowLadder({
             const width = Math.max(4, (Math.abs(shareDelta) / maxAbs) * 100);
             return (
               <li key={r.id}>
-                <Link
-                  href={`/sectors/${encodeURIComponent(r.id)}?from=industry-flow`}
-                  className="group relative block min-h-[5.25rem] overflow-hidden px-3 py-3 transition-colors hover:bg-sunken active:bg-sunken sm:px-4"
-                >
+                <div className="group relative block min-h-[5.25rem] overflow-hidden px-3 py-3 sm:px-4">
                   <span
                     className={cn(
                       "absolute top-0 bottom-0 opacity-20 transition-[width] duration-300",
@@ -443,12 +439,8 @@ function FlowLadder({
                       />
                       <span className="t-kicker mt-0.5 block">{periodLabel}</span>
                     </span>
-                    <ChevronRight
-                      className="mt-1 size-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5"
-                      aria-hidden
-                    />
                   </span>
-                </Link>
+                </div>
               </li>
             );
           })}

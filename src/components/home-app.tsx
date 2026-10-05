@@ -599,13 +599,6 @@ export function HomeApp({
                   selectedId={selected?.id}
                   onSelect={(s) => {
                     setSelected(s);
-                    // 台股：點選板塊時預熱產業 K 線；美股版不提供 K 線入口
-                    if (market !== "us") {
-                      void fetch(
-                        `${apiBase}/sector/${encodeURIComponent(s.id)}?days=80`,
-                        { cache: "force-cache" },
-                      ).catch(() => null);
-                    }
                   }}
                   filter={filter}
                   kindFilter="all"

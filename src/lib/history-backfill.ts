@@ -135,7 +135,7 @@ export async function runHistoryBackfill(reason: string) {
         gap.fetched > 0
           ? smallGap
             ? `輕量日終（補了 ${gap.fetched} 日：報價＋法人＋資金流）`
-            : "日終大包（含產業 K／均線）"
+            : "日終大包（資金流／個股／均線等）"
           : "檢查日終大包是否最新",
     });
     const { runDailyClosePackage } = await import("@/lib/daily-close-package");

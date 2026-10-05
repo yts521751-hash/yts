@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SectorFlow } from "@/lib/types";
 import { STATUS_META } from "@/lib/types";
@@ -13,7 +12,7 @@ import {
   signedClass,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { CandlestickChart, MousePointerClick, X } from "lucide-react";
+import { MousePointerClick, X } from "lucide-react";
 import { marketFromPath } from "@/components/market-switch";
 import { UsStockName } from "@/components/us-stock-name";
 import { Segmented } from "@/components/ui/segmented";
@@ -49,8 +48,6 @@ export function SectorDetail({
 }: Props) {
   const pathname = usePathname();
   const market = marketFromPath(pathname);
-  const apiBase = market === "us" ? "/api/us" : "/api";
-  const sectorPageBase = market === "us" ? "/us/sectors" : "/sectors";
   const isSheet = variant === "sheet";
   const [periodInner, setPeriodInner] = useState<StockPeriod>("day");
   const stockPeriod = periodProp ?? periodInner;
@@ -169,36 +166,6 @@ export function SectorDetail({
             tone={sector.priceChange20d}
           />
         </div>
-
-        {market !== "us" ? (
-          <div className="px-4 pb-3">
-            <Link
-              href={`${sectorPageBase}/${encodeURIComponent(sector.id)}?from=home`}
-              prefetch
-              onMouseEnter={() => {
-                // 滑過就預熱 API／路由，點進去幾乎秒開
-                void fetch(
-                  `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
-                  { cache: "force-cache" },
-                ).catch(() => null);
-              }}
-              onTouchStart={() => {
-                void fetch(
-                  `${apiBase}/sector/${encodeURIComponent(sector.id)}?days=80`,
-                  { cache: "force-cache" },
-                ).catch(() => null);
-              }}
-              onClick={(e) => {
-                // 避免行動版底層 sheet／overlay 攔截導致「打不開」
-                e.stopPropagation();
-              }}
-              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-line bg-sunken text-[0.8125rem] font-medium transition-colors hover:border-line-strong"
-            >
-              <CandlestickChart className="size-4" aria-hidden />
-              產業 K 線
-            </Link>
-          </div>
-        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5">
           <p className="t-kicker">成分股金流 · {stocks.length} 檔</p>

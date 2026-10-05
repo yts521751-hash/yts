@@ -66,7 +66,7 @@ describe("gap-sync", () => {
     const arts = {
       flow: true,
       quotesWarm: true,
-      klines: true,
+      klines: false, // 產業 K 已下線：不再阻擋「已齊」
       stocks: true,
       wind: true,
       ma: true,

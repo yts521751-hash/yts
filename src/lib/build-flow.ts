@@ -26,7 +26,6 @@ import {
   type InstiRow,
   type QuoteRow,
 } from "@/lib/tw-market";
-import { warmSectorKlineCaches } from "@/lib/sector-kline";
 import {
   beginRebuildProgress,
   finishRebuildProgress,
@@ -277,8 +276,7 @@ export async function rebuildFlowPayload(options?: {
   /** 為 false 時不 begin/finish 全域進度（由日終大包擁有進度條） */
   manageProgress?: boolean;
   /**
-   * 略過產業 K 線暖機（小缺口日終：開頁／均線掃描再補；
-   * 避免 1 日增量同步卡在全產業 K 重算）
+   * @deprecated 台股產業 K 線頁已下線；同步一律略過暖機，此旗標忽略。
    */
   skipKlineWarm?: boolean;
 }): Promise<FlowPayload> {
@@ -286,7 +284,6 @@ export async function rebuildFlowPayload(options?: {
   const manageProgress = options?.manageProgress !== false;
   const cacheOnly = Boolean(options?.cacheOnly);
   const skipEnsureHistory = Boolean(options?.skipEnsureHistory);
-  const skipKlineWarm = Boolean(options?.skipKlineWarm);
   if (manageProgress) beginRebuildProgress("同步資金流");
   else setRebuildProgress({ label: "重算資金流（本機日檔）" });
   try {
@@ -416,7 +413,7 @@ export async function rebuildFlowPayload(options?: {
       );
     }
 
-    // 預熱產業 K 線快取（近約 60 交易日），避免點進頁面才重算
+    // 歷史報價：產業 K 線頁已下線，同步不再暖全產業 K（均線掃描開頁／日終 ma 步驟再補）
     try {
       if (!skipEnsureHistory) {
         const { ensureQuoteHistory } = await import("@/lib/turnover");
@@ -428,7 +425,7 @@ export async function rebuildFlowPayload(options?: {
           onProgress: (done, need) => {
             if (!manageProgress) return;
             setRebuildProgress({
-              percent: progressInRange(45, 72, done, need),
+              percent: progressInRange(45, 98, done, need),
               label: `補齊歷史報價 ${done}/${need}`,
             });
           },
@@ -438,46 +435,11 @@ export async function rebuildFlowPayload(options?: {
           label: "略過歷史報價回補（缺口已補）",
         });
       }
-      if (skipKlineWarm) {
-        setRebuildProgress({
-          label: "略過產業 K 線暖機（小缺口／開頁再補）",
-        });
-      } else {
-        const { HISTORY_TRADING_DAYS } = await import("@/lib/tw-market");
-        if (manageProgress) {
-          setRebuildProgress({ percent: 75, label: "重算產業 K 線" });
-        } else {
-          setRebuildProgress({ label: "更新產業 K 線（僅過期）" });
-        }
-        let warmDefs = universe;
-        try {
-          const { listIndustryDefs } = await import("@/lib/ma-screener");
-          const industries = await listIndustryDefs();
-          const byId = new Map(universe.map((d) => [d.id, d]));
-          for (const d of industries) byId.set(d.id, d);
-          warmDefs = [...byId.values()];
-        } catch {
-          /* industries optional — still warm flow universe */
-        }
-        await warmSectorKlineCaches(HISTORY_TRADING_DAYS, warmDefs, {
-          force: false,
-          allowEnsureHistory: !skipEnsureHistory,
-          onProgress: (done, total) => {
-            if (manageProgress) {
-              setRebuildProgress({
-                percent: progressInRange(75, 98, done, total),
-                label: `重算產業 K 線 ${done}/${total}`,
-              });
-            } else {
-              setRebuildProgress({
-                label: `更新產業 K 線 ${done}/${total}`,
-              });
-            }
-          },
-        });
-      }
+      setRebuildProgress({
+        label: "略過產業 K 線暖機（功能已下線）",
+      });
     } catch (err) {
-      console.warn("[rebuild] kline warm failed:", err);
+      console.warn("[rebuild] quote history ensure failed:", err);
     }
 
     await writeDeployMeta({ syncing: false, lastError: null });

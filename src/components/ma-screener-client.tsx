@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
   CLIENT_CACHE_KEYS,
   readClientCache,
@@ -94,17 +93,10 @@ function Flag({ on, label }: { on: boolean; label: string }) {
   );
 }
 
-function sectorHref(id: string) {
-  return `/sectors/${encodeURIComponent(id)}?from=ma`;
-}
-
 function RowCard({ row }: { row: MaScreenerRow }) {
   const flags = rowFlags(row);
   return (
-    <Link
-      href={sectorHref(row.id)}
-      className="surface block p-3 transition-colors hover:border-line-strong"
-    >
+    <div className="surface block p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-[0.9375rem] font-medium">{row.name}</div>
@@ -116,10 +108,6 @@ function RowCard({ row }: { row: MaScreenerRow }) {
         <div className="flex shrink-0 items-center gap-1.5">
           <Flag on={flags.above5} label="5" />
           <Flag on={flags.above10} label="10" />
-          <ChevronRight
-            className="size-4 text-muted-foreground/60"
-            aria-hidden
-          />
         </div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -141,7 +129,7 @@ function RowCard({ row }: { row: MaScreenerRow }) {
           />
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -428,12 +416,7 @@ export function MaScreenerClient({
                     return (
                       <tr key={row.id}>
                         <td>
-                          <Link
-                            href={sectorHref(row.id)}
-                            className="font-medium transition-colors hover:text-[var(--mk-anchor)]"
-                          >
-                            {row.name}
-                          </Link>
+                          <span className="font-medium">{row.name}</span>
                         </td>
                         <td className="cell-num text-muted-foreground">
                           {row.close.toFixed(2)}
