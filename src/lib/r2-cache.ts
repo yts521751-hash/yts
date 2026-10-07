@@ -303,11 +303,31 @@ export function trackR2Upload(p: Promise<boolean>): Promise<boolean> {
 }
 
 /** 等待目前所有 write-through 上傳結束（成功或失敗都算） */
-export async function flushR2Uploads(): Promise<{ pending: number }> {
+export async function flushR2Uploads(options?: {
+  timeoutMs?: number;
+}): Promise<{ pending: number; timedOut?: boolean }> {
   const batch = [...pendingUploads];
   if (!batch.length) return { pending: 0 };
-  await Promise.allSettled(batch);
-  return { pending: batch.length };
+  const timeoutMs = options?.timeoutMs;
+  if (!timeoutMs || timeoutMs <= 0) {
+    await Promise.allSettled(batch);
+    return { pending: batch.length };
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      Promise.allSettled(batch).then(() => "ok" as const),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      }),
+    ]);
+    return {
+      pending: batch.length,
+      timedOut: result === "timeout",
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /** 從 R2 讀取 JSON 字串；沒有或不存在回 null */

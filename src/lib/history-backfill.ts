@@ -147,21 +147,26 @@ export async function runHistoryBackfill(reason: string) {
 
     const quoteDays = await listCachedTradingDays(HISTORY_TRADING_DAYS);
 
-    try {
-      const { flushCacheSideEffects } = await import("@/lib/tw-market");
-      setRebuildProgress({ percent: 99, label: "寫入 R2 快照" });
-      await flushCacheSideEffects();
-      console.log(`[backfill] cache side-effects flushed`);
-    } catch (err) {
-      console.warn("[backfill] r2 flush:", err);
-    }
-
+    // 先標完成並回傳——R2 flush 不可再擋住 /api/sync 的 done 事件
+    // （先前卡在 99%「寫入 R2 快照」會讓前端收到斷線 +「同步未完成」）
     finishRebuildProgress(true);
     const skipNote = meta.skipped ? " skipped-current" : "";
     console.log(
       `[backfill] done (${reason}) quoteDays=${quoteDays.length} asOf=${meta.asOf ?? "—"}${skipNote} ` +
         `artifactsComplete=${artifactsComplete(meta.artifacts)}`,
     );
+
+    // 短超時盡力 flush；逾時／失敗不影響同步成功（背景上傳可續跑）
+    try {
+      const { flushCacheSideEffects } = await import("@/lib/tw-market");
+      const flush = await flushCacheSideEffects({ timeoutMs: 8_000 });
+      console.log(
+        `[backfill] cache side-effects flushed timedOut=${flush.timedOut}`,
+      );
+    } catch (err) {
+      console.warn("[backfill] r2 flush:", err);
+    }
+
     return {
       meta,
       quoteDays: quoteDays.length,

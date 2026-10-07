@@ -221,7 +221,7 @@ export function artifactsComplete(
       artifacts.stocks &&
       artifacts.wind &&
       artifacts.ma &&
-      artifacts.turnoverClose &&
+      // turnoverClose：成交排行可開頁再補，不阻擋同步完成判定
       artifacts.valuePicks &&
       artifacts.industryFlow,
   );

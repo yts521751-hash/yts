@@ -19,6 +19,8 @@ export type RebuildProgress = {
 };
 
 const PROGRESS_CACHE = "rebuild-progress.json";
+/** 進度檔若標示 active 但超過此時長未更新，視為殭屍（crash／逾時） */
+const STALE_ACTIVE_MS = 8 * 60 * 1000;
 
 type ProgressListener = (progress: RebuildProgress) => void;
 
@@ -81,8 +83,21 @@ export function getRebuildProgress(): RebuildProgress {
 /** API 輪詢用：記憶體與磁碟取較新／進行中的狀態（跨實例） */
 export async function readRebuildProgress(): Promise<RebuildProgress> {
   const mem = bag();
-  const disk = await readCacheFile<RebuildProgress>(PROGRESS_CACHE);
-  if (!disk || typeof disk.percent !== "number") return { ...mem };
+  const diskRaw = await readCacheFile<RebuildProgress>(PROGRESS_CACHE);
+  if (!diskRaw || typeof diskRaw.percent !== "number") return { ...mem };
+
+  const disk = { ...diskRaw };
+  // 殭屍 active：同步 crash／連線斷在 99% 時會永久寫 active=true 進 R2
+  if (
+    disk.active &&
+    Date.now() - (disk.updatedAt || 0) > STALE_ACTIVE_MS
+  ) {
+    disk.active = false;
+    if (!disk.error) disk.label = disk.label || "同步中斷";
+    // 清掉毒化的記憶體／落盤，避免 /api/progress 一直 busy
+    Object.assign(mem, disk);
+    schedulePersist(true);
+  }
 
   const diskNewer = (disk.updatedAt || 0) >= (mem.updatedAt || 0);
   if (disk.active || (diskNewer && !mem.active)) {

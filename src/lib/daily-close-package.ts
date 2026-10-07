@@ -187,7 +187,30 @@ export async function runDailyClosePackage(
     setRebuildProgress({
       label: "等待進行中的日終同步…",
     });
-    return bag.current;
+    const JOIN_MS = 180_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        bag.current,
+        new Promise<DailyCloseMeta>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new Error(`join timed out after ${JOIN_MS}ms`)),
+            JOIN_MS,
+          );
+        }),
+      ]);
+    } catch (err) {
+      // 殭屍 in-flight：丟棄後重跑，避免使用者永遠卡在近 100%
+      console.warn(
+        `[daily-close] join abandoned (${reason}), rerun:`,
+        err instanceof Error ? err.message : err,
+      );
+      bag.current = null;
+      bag.running = false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   const run = () => {
@@ -623,8 +646,10 @@ async function runDailyClosePackageUnlocked(
 async function flushUploadsSafe() {
   try {
     const { flushCacheSideEffects } = await import("@/lib/tw-market");
-    await flushCacheSideEffects();
-    console.log(`[daily-close] cache side-effects flushed`);
+    const flush = await flushCacheSideEffects({ timeoutMs: 8_000 });
+    console.log(
+      `[daily-close] cache side-effects flushed timedOut=${flush.timedOut}`,
+    );
   } catch (err) {
     console.warn("[daily-close] r2 flush:", err);
   }

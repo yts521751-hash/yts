@@ -124,7 +124,8 @@ export async function GET() {
           target: result?.target,
           skippedCurrent,
           gap: result?.gap,
-        });      } catch (err) {
+        });
+      } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         send({ type: "done", ok: false, error: message });
       } finally {

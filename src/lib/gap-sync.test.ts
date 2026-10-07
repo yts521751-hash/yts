@@ -71,7 +71,7 @@ describe("gap-sync", () => {
       stocks: true,
       wind: true,
       ma: true,
-      turnoverClose: true,
+      turnoverClose: false, // 成交排行可開頁再補
       valuePicks: true,
       industryFlow: true,
     };

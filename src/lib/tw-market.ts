@@ -425,14 +425,41 @@ export async function writeCacheFile(name: string, data: unknown) {
 }
 
 /** 等待 writeCacheFile 引發的 R2 上傳都結束（sync 收尾用） */
-export async function flushCacheSideEffects() {
-  const batch = [...pendingCacheSideEffects];
-  if (batch.length) await Promise.allSettled(batch);
+export async function flushCacheSideEffects(options?: {
+  /** 逾時後不再等待（上傳仍可在背景繼續）；預設 12s */
+  timeoutMs?: number;
+}): Promise<{ flushed: boolean; timedOut: boolean }> {
+  const timeoutMs = options?.timeoutMs ?? 12_000;
+  const work = (async () => {
+    const batch = [...pendingCacheSideEffects];
+    if (batch.length) await Promise.allSettled(batch);
+    try {
+      const { flushR2Uploads, isR2Enabled } = await import("@/lib/r2-cache");
+      if (isR2Enabled()) await flushR2Uploads();
+    } catch {
+      /* ignore */
+    }
+  })();
+
+  if (!timeoutMs || timeoutMs <= 0) {
+    await work;
+    return { flushed: true, timedOut: false };
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const { flushR2Uploads, isR2Enabled } = await import("@/lib/r2-cache");
-    if (isR2Enabled()) await flushR2Uploads();
-  } catch {
-    /* ignore */
+    const result = await Promise.race([
+      work.then(() => "ok" as const),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      }),
+    ]);
+    return {
+      flushed: result === "ok",
+      timedOut: result === "timeout",
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

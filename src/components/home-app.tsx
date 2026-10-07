@@ -304,54 +304,57 @@ export function HomeApp({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
+      const consumeLine = (trimmed: string) => {
+        if (!trimmed) return;
+        let msg: {
+          type?: string;
+          percent?: number;
+          label?: string;
+          ok?: boolean;
+          error?: string;
+          skippedCurrent?: boolean;
+        };
+        try {
+          msg = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (msg.type === "progress") {
+          const percent = Math.max(
+            1,
+            Math.min(100, Number(msg.percent) || 1),
+          );
+          const label = String(msg.label || "同步中");
+          setSyncProgress((prev) => ({
+            percent: Math.max(prev?.percent ?? 1, percent),
+            label,
+          }));
+        } else if (msg.type === "done") {
+          ok = Boolean(msg.ok);
+          errMsg = msg.error ? String(msg.error) : null;
+          const skipped = Boolean(msg.skippedCurrent);
+          setSyncProgress({
+            percent: 100,
+            label: !ok
+              ? "同步失敗"
+              : skipped
+                ? "資料已是最新"
+                : "同步完成",
+          });
+        }
+      };
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let msg: {
-            type?: string;
-            percent?: number;
-            label?: string;
-            ok?: boolean;
-            error?: string;
-          };
-          try {
-            msg = JSON.parse(trimmed);
-          } catch {
-            continue;
-          }
-          if (msg.type === "progress") {
-            const percent = Math.max(
-              1,
-              Math.min(100, Number(msg.percent) || 1),
-            );
-            const label = String(msg.label || "同步中");
-            setSyncProgress((prev) => ({
-              percent: Math.max(prev?.percent ?? 1, percent),
-              label,
-            }));
-          } else if (msg.type === "done") {
-            ok = Boolean(msg.ok);
-            errMsg = msg.error ? String(msg.error) : null;
-            const skipped = Boolean(
-              (msg as { skippedCurrent?: boolean }).skippedCurrent,
-            );
-            setSyncProgress({
-              percent: 100,
-              label: !ok
-                ? "同步失敗"
-                : skipped
-                  ? "資料已是最新"
-                  : "同步完成",
-            });
-          }
-        }
+        for (const line of lines) consumeLine(line.trim());
       }
+      // 串流結束後處理最後一行（無尾端換行時否則會漏掉 done）
+      buf += decoder.decode();
+      if (buf.trim()) consumeLine(buf.trim());
+
       if (!ok && errMsg) throw new Error(errMsg);
       if (!ok) throw new Error("同步未完成");
       await loadFlow();

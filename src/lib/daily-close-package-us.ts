@@ -101,8 +101,10 @@ async function ensureUsHydrated() {
 async function flushUploadsSafe() {
   try {
     const { flushCacheSideEffects } = await import("@/lib/tw-market");
-    setRebuildProgress({ percent: 99, label: "寫入 R2 快照（us/）" });
-    await flushCacheSideEffects();
+    const flush = await flushCacheSideEffects({ timeoutMs: 8_000 });
+    console.log(
+      `[us-daily-close] cache side-effects flushed timedOut=${flush.timedOut}`,
+    );
   } catch (err) {
     console.warn("[us-daily-close] r2 flush:", err);
   }
